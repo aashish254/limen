@@ -163,6 +163,37 @@ def openai_synthetic(i, model="gpt-5-mini"):
                 for name, desc in TOOLS[:18]]}
 
 
+def gemini_synthetic(i, model="gemini-2.5-flash"):
+    contents = [{"role": "user", "parts": [{"text":
+        "Fix the retry loop in app/payments/retry.py and keep gateway_client.py working."}]}]
+    for t in range(4):
+        contents.append({"role": "model", "parts": [{"text": "reading retry.py " * (3 + t)}]})
+        contents.append({"role": "user", "parts": [{"text": tool_result_blob(i + t)}]})
+    return {
+        "systemInstruction": {"parts": [{"text": system_prompt(i)}]},
+        "contents": contents,
+        "tools": [{"functionDeclarations": [
+            {"name": name, "description": desc,
+             "parameters": {"type": "object", "properties": {}}
+             # keep the first 14 so tool_gate has something to drop
+             } for name, desc in TOOLS[:14]]}],
+        }
+
+
+def responses_synthetic(i, model="gpt-5"):
+    return {
+        "model": model,
+        "instructions": system_prompt(i),
+        "input": [{"role": "user", "content": [
+            {"type": "input_text",
+             "text": "Fix the retry loop in app/payments/retry.py."}]}],
+        "tools": [{"type": "function", "name": name, "description": desc,
+                   "parameters": {"type": "object", "properties": {}}}
+                  for name, desc in TOOLS[:16]],
+        "stream": True,
+    }
+
+
 def post(url, obj, headers=None, timeout=30):
     raw = protocol.dump_body(obj)
     h = {"content-type": "application/json", "x-api-key": "mock-key",

@@ -33,9 +33,20 @@ else:
 def dialect_for(path):
     if "/messages" in path:
         return "anthropic"
-    if "/chat/completions" in path or "/responses" in path or "/completions" in path:
+    if "generateContent" in path or "streamGenerateContent" in path:
+        return "gemini"
+    if "/responses" in path:
+        return "responses"
+    if "/chat/completions" in path or "/completions" in path:
         return "openai"
     return None
+
+
+def _upstream_for(dialect, config):
+    return {
+        "anthropic": config.anthropic_upstream,
+        "gemini": config.gemini_upstream,
+    }.get(dialect, config.openai_upstream)
 
 
 def client_name(headers):
@@ -59,16 +70,14 @@ def analyze_request(body):
     for idx, (role, text, kind) in enumerate(msgs):
         cat_chars[kind] = cat_chars.get(kind, 0) + len(text)
         hist.setdefault(kind, []).append((idx + 1) / total)
-    tools = (body or {}).get("tools") or []
+    tools = protocol.flatten_tools((body or {}).get("tools"))
     tool_names = []
     tool_spec_chars = 0
     for t in tools:
-        if not isinstance(t, dict):
-            continue
-        name = t.get("name") or (t.get("function") or {}).get("name")
-        if name:
+        name = protocol.tool_name(t)
+        if name != "?":
             tool_names.append(name)
-        tool_spec_chars += len(json.dumps(t, separators=(",", ":")))
+        tool_spec_chars += t.get("_spec_chars", 0)
     all_text = "\n".join(t for _, t, _ in msgs)
     est = sum(protocol.approx_tokens("x" * n) for n in cat_chars.values() if n)
     est += protocol.approx_tokens("x" * tool_spec_chars) if tool_spec_chars else 0
@@ -115,16 +124,22 @@ def relay(dialect, path, req_headers, raw_body, config, timeout=600.0, tries=2):
     Yields ("head", status, headers), then ("ttfb", ms) on the first body read,
     then ("chunk", bytes) per network read.
     """
-    base = config.openai_upstream if dialect == "openai" else config.anthropic_upstream
+    base = _upstream_for(dialect, config)
     target = base + path
     parts = urllib.parse.urlparse(target)
     hdrs = dict((k, v) for k, v in req_headers.items() if k.lower() not in HOP_BY_HOP)
-    if not any(k.lower() in ("authorization", "x-api-key", "api-key") for k in hdrs):
-        key = os.environ.get("OPENAI_API_KEY" if dialect == "openai" else "ANTHROPIC_API_KEY", "")
+    if not any(k.lower() in ("authorization", "x-api-key", "api-key", "x-goog-api-key")
+               for k in hdrs):
+        env_key = {"openai": "OPENAI_API_KEY", "responses": "OPENAI_API_KEY",
+                   "gemini": "GEMINI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[dialect]
+        key = os.environ.get(env_key, "")
         if key:
-            hdrs["Authorization" if dialect == "openai" else "x-api-key"] = (
-                "Bearer " + key if dialect == "openai" else key
-            )
+            if dialect == "anthropic":
+                hdrs["x-api-key"] = key
+            elif dialect == "gemini":
+                hdrs["x-goog-api-key"] = key
+            else:
+                hdrs["Authorization"] = "Bearer " + key
     for attempt in range(tries):
         conn = _connect(target, timeout)
         try:

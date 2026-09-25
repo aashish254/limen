@@ -40,6 +40,28 @@ def _last_user(body, dialect):
     return (len(msgs) - 1 if msgs else -1), (msgs[-1][1] if msgs else "")
 
 
+def _filter_tools(tools, keep):
+    """Rebuild the request's tools list keeping only names in `keep` (lowercased).
+
+    Preserves each dialect's shape: OpenAI/Anthropic tools are flat entries, while
+    Gemini packs declarations under one wrapper — so we filter the inner list and
+    drop the wrapper entirely once it empties.
+    """
+    out = []
+    for t in tools or []:
+        if isinstance(t, dict) and isinstance(t.get("functionDeclarations"), list):
+            kept = [
+                d for d in t["functionDeclarations"]
+                if protocol.tool_name(d).lower() in keep
+            ]
+            if kept:
+                out.append(dict(t, functionDeclarations=kept))
+            continue
+        if protocol.tool_name(t).lower() in keep:
+            out.append(t)
+    return out
+
+
 class Engine:
     def __init__(self, config, graph_path=None):
         self.config = config
@@ -73,26 +95,22 @@ class Engine:
         msgs_norm = protocol.normalize_messages(body)
         tools = body.get("tools") or []
 
-        if tools:
-            hs = heuristics.tool_gate(tools, last_user or analysis.get("query", ""))
-            probs = _ask_laya(self.laya, last_user[:512], tools,
-                              lambda t: (t.get("name") or "?").lower()) if self.laya else None
-            backend = "laya"
+        flat_tools = protocol.flatten_tools(tools)
+        if flat_tools:
+            hs = heuristics.tool_gate(flat_tools, last_user or analysis.get("query", ""))
+            probs = _ask_laya(self.laya, last_user[:512], flat_tools,
+                              lambda t: protocol.tool_name(t).lower()) if self.laya else None
+            backend = "laya" if probs else "heuristic"
             if probs:
                 for d in hs:
                     if d["target"] in probs:
                         d["score"] = round(probs[d["target"]], 3)
                         d["keep"] = probs[d["target"]] >= 0.5 or "core" in (d["why"] or [])
-                        d["backend"] = "laya"
-            else:
-                backend = "heuristic"
             for d in hs:
                 d.setdefault("backend", backend)
             dropped = [d["target"] for d in hs if not d["keep"]]
-            saved_chars = sum(
-                len(protocol.dump_body(t)) for t in tools
-                if (t.get("name") or (t.get("function") or {}).get("name") or "?").lower()
-                in set(dropped))
+            saved_chars = sum(t.get("_spec_chars", 0) for t in flat_tools
+                              if protocol.tool_name(t).lower() in set(dropped))
             decisions.append({
                 "slot": "tool_gate", "backend": backend, "applied": "tool_gate" in apply_set,
                 "dropped": dropped, "kept": len(hs) - len(dropped),
@@ -100,12 +118,9 @@ class Engine:
                 "candidates": hs,
             })
             if "tool_gate" in apply_set and dropped:
-                keep_names = set(d["target"] for d in hs if d["keep"])
+                keep = set(d["target"] for d in hs if d["keep"])
                 new_body = dict(new_body or body)
-                new_body["tools"] = [
-                    t for t in tools
-                    if (t.get("name") or (t.get("function") or {}).get("name") or "?").lower()
-                    in keep_names]
+                new_body["tools"] = _filter_tools(tools, keep)
 
         if est_in > 4000 and len(msgs_norm) > 8:
             budget = max(1500, int(est_in * 0.45))

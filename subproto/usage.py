@@ -62,6 +62,55 @@ def from_anthropic(obj):
     }
 
 
+def from_gemini(obj):
+    um = obj.get("usageMetadata")
+    if not um:
+        return None
+    inp = _int(um.get("promptTokenCount"))
+    cached = _int(um.get("cachedContentTokenCount"))
+    return {
+        "model": obj.get("modelVersion") or obj.get("model"),
+        "input_uncached": max(0, inp - cached),
+        "cache_write": 0,
+        "cache_read": cached,
+        "output": _int(um.get("candidatesTokenCount")),
+        "reasoning": _int(um.get("thoughtsTokenCount")),
+        "source": "gemini",
+    }
+
+
+def from_responses(obj):
+    """OpenAI /v1/responses: usage lives on the (completed) response object."""
+    resp = obj.get("response") if (obj.get("type") or "").startswith("response.") else obj
+    if not isinstance(resp, dict):
+        return None
+    u = resp.get("usage")
+    if not u:
+        return None
+    inp = _int(u.get("input_tokens"))
+    cached = _int((u.get("input_tokens_details") or {}).get("cached_tokens"))
+    reasoning = _int((u.get("output_tokens_details") or {}).get("reasoning_tokens"))
+    return {
+        "model": resp.get("model") or obj.get("model"),
+        "input_uncached": max(0, inp - cached),
+        "cache_write": 0,
+        "cache_read": cached,
+        "output": _int(u.get("output_tokens")),
+        "reasoning": reasoning,
+        "source": "responses",
+    }
+
+
+# Every non-anthropic dialect reads a single usage object per response (or the
+# final cumulative one for streams), so a plain overwrite is correct.
+_DIALECT_READERS = {
+    "openai": from_openai,
+    "gemini": from_gemini,
+    "responses": from_responses,
+}
+
+
+
 def merge(streamed, final):
     if not streamed:
         return final
@@ -126,10 +175,11 @@ class UsageAccumulator:
             return
         if obj.get("model") and not self.model:
             self.model = obj["model"]
-        if self.dialect == "openai":
-            u = from_openai(obj)
+        reader = _DIALECT_READERS.get(self.dialect)
+        if reader is not None:
+            u = reader(obj)
             if u:
-                self.source = "openai"
+                self.source = u["source"]
                 self.input_uncached = u["input_uncached"]
                 self.cache_write = u["cache_write"]
                 self.cache_read = u["cache_read"]

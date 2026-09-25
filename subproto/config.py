@@ -5,6 +5,8 @@ DEFAULT_DATA_DIR = os.path.expanduser("~/.subproto")
 
 OPENAI_UPSTREAM = os.environ.get("SUBPROTO_OPENAI_UPSTREAM", "https://api.openai.com")
 ANTHROPIC_UPSTREAM = os.environ.get("SUBPROTO_ANTHROPIC_UPSTREAM", "https://api.anthropic.com")
+GEMINI_UPSTREAM = os.environ.get("SUBPROTO_GEMINI_UPSTREAM",
+                                 "https://generativelanguage.googleapis.com")
 
 TRUTHY = ("1", "true", "yes", "on")
 
@@ -60,6 +62,10 @@ class Config:
         return (self._get("anthropic_upstream") or ANTHROPIC_UPSTREAM).rstrip("/")
 
     @property
+    def gemini_upstream(self):
+        return (self._get("gemini_upstream") or GEMINI_UPSTREAM).rstrip("/")
+
+    @property
     def db_path(self):
         return os.path.join(self.data_dir, "telemetry.db")
 
@@ -106,4 +112,5 @@ class Config:
             "laya_url": self.laya_url,
             "openai_upstream": self.openai_upstream,
             "anthropic_upstream": self.anthropic_upstream,
+            "gemini_upstream": self.gemini_upstream,
         }

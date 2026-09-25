@@ -79,11 +79,93 @@ def content_to_text(content):
     return str(content)
 
 
+def _gemini_parts_text(parts):
+    chunks = []
+    for p in parts or []:
+        if not isinstance(p, dict):
+            continue
+        if "text" in p:
+            chunks.append(p["text"] or "")
+        elif "functionCall" in p:
+            chunks.append(json.dumps((p["functionCall"] or {}).get("args"), separators=(",", ":")))
+        elif "functionResponse" in p:
+            chunks.append(json.dumps((p["functionResponse"] or {}).get("response"),
+                                     separators=(",", ":")))
+        elif "inlineData" in p or "fileData" in p:
+            chunks.append("[media]")
+    return "\n".join(chunks)
+
+
+def _gemini_kind(parts):
+    for p in parts or []:
+        if isinstance(p, dict):
+            if "functionCall" in p:
+                return "assistant_tool_call"
+            if "functionResponse" in p:
+                return "tool_result"
+    return None
+
+
+def _normalize_gemini(body):
+    out = []
+    si = body.get("systemInstruction") or body.get("system_instruction")
+    if isinstance(si, dict):
+        txt = _gemini_parts_text(si.get("parts"))
+        if txt:
+            out.append(("system", txt, "system"))
+    elif isinstance(si, str) and si:
+        out.append(("system", si, "system"))
+    for c in body.get("contents") or []:
+        if not isinstance(c, dict):
+            continue
+        role = c.get("role") or "user"
+        if role == "model":
+            role = "assistant"
+        parts = c.get("parts")
+        if isinstance(parts, str):
+            parts = [{"text": parts}]
+        kind = _gemini_kind(parts) or ("assistant" if role == "assistant" else "user")
+        out.append((role, _gemini_parts_text(parts), kind))
+    return out
+
+
+def flatten_tools(tools):
+    """Normalize OpenAI / Anthropic / Gemini tool specs into [{name, description, _spec_chars}].
+
+    Gemini packs many tools under one `functionDeclarations` list, so the per-spec
+    character cost is measured on the individual declaration, not the wrapper —
+    otherwise tool_gate would report a misleading savings figure.
+    """
+    flat = []
+    for t in tools or []:
+        if isinstance(t, dict) and isinstance(t.get("functionDeclarations"), list):
+            for d in t["functionDeclarations"]:
+                if isinstance(d, dict):
+                    item = dict(d)
+                    item["_spec_chars"] = len(json.dumps(d, separators=(",", ":")))
+                    flat.append(item)
+            continue
+        if not isinstance(t, dict):
+            continue
+        item = dict(t)
+        item["_spec_chars"] = len(json.dumps(t, separators=(",", ":")))
+        flat.append(item)
+    return flat
+
+
+def tool_name(t):
+    if not isinstance(t, dict):
+        return "?"
+    return (t.get("name") or (t.get("function") or {}).get("name") or "?")
+
+
 def normalize_messages(body):
     """Return [(role, text, kind)] for either dialect, in request order."""
     out = []
     if not isinstance(body, dict):
         return out
+    if "contents" in body and "messages" not in body:
+        return _normalize_gemini(body)
     sys_ = body.get("system")
     if sys_:
         out.append(("system", content_to_text(sys_), "system"))

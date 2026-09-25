@@ -51,6 +51,64 @@ def openai_stream(usage):
     yield "data: [DONE]\n\n"
 
 
+def _responses_obj(usage):
+    return {"id": "resp_mock", "object": "response", "model": usage["model"],
+            "status": "completed",
+            "output": [{"type": "message", "role": "assistant",
+                        "content": [{"type": "output_text", "text": "done"}]}],
+            "usage": {
+                "input_tokens": usage["input_uncached"] + usage["cache_read"],
+                "output_tokens": usage["output"],
+                "input_tokens_details": {"cached_tokens": usage["cache_read"]},
+                "output_tokens_details": {"reasoning_tokens": usage["reasoning"]}}}
+
+
+def responses_stream(usage):
+    # OpenAI /v1/responses streams lifecycle events; usage rides on the final
+    # `response.completed` event, so the parser must pick it up from there.
+    for name, payload in (
+        ("response.created", {"type": "response.created",
+                              "response": {"id": "resp_mock", "model": usage["model"],
+                                           "status": "in_progress"}}),
+        ("response.output_text.delta", {"type": "response.output_text.delta", "delta": "done"}),
+        ("response.completed", {"type": "response.completed", "response": _responses_obj(usage)}),
+    ):
+        yield "event: %s\ndata: %s\n\n" % (name, json.dumps(payload))
+        if SLEEP:
+            time.sleep(SLEEP)
+
+
+def _gemini_obj(usage):
+    return {"candidates": [{"content": {"role": "model",
+                                        "parts": [{"text": "done"}]},
+                            "finishReason": "STOP"}],
+            "modelVersion": usage["model"],
+            "usageMetadata": {
+                "promptTokenCount": usage["input_uncached"] + usage["cache_read"],
+                "candidatesTokenCount": usage["output"],
+                "thoughtsTokenCount": usage["reasoning"],
+                "cachedContentTokenCount": usage["cache_read"]}}
+
+
+def gemini_stream(usage):
+    # Gemini streams `:streamGenerateContent` as SSE `data:` frames; each carries
+    # cumulative usageMetadata, so the last frame is authoritative.
+    yield "data: %s\n\n" % json.dumps(
+        {"candidates": [{"content": {"role": "model", "parts": [{"text": "do"}]}}]})
+    yield "data: %s\n\n" % json.dumps(_gemini_obj(usage))
+    if SLEEP:
+        time.sleep(SLEEP)
+
+
+def _sse(self):
+    self.send_response(200)
+    self.send_header("content-type", "text/event-stream")
+    self.send_header("connection", "close")
+    self.close_connection = True
+    self.end_headers()
+    return self.wfile
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -78,18 +136,37 @@ class Handler(BaseHTTPRequestHandler):
         stream = bool(body.get("stream"))
         usage = {"model": model, "input_uncached": 120, "cache_write": 0,
                  "cache_read": 48000, "output": 320, "reasoning": 0}
+        is_gemini = "generateContent" in self.path or "streamGenerateContent" in self.path
+        is_responses = "/responses" in self.path
         is_anthropic = "/messages" in self.path
+        if is_gemini:
+            stream = stream or "streamGenerateContent" in self.path
+            usage.update({"input_uncached": 220, "cache_read": 5100,
+                          "output": 410, "reasoning": 90})
+            if stream:
+                wfile = _sse(self)
+                for line in gemini_stream(usage):
+                    wfile.write(line.encode())
+                    wfile.flush()
+                return
+            return self._json(_gemini_obj(usage))
+        if is_responses:
+            usage.update({"input_uncached": 340, "cache_read": 52000,
+                          "output": 210, "reasoning": 64})
+            if stream:
+                wfile = _sse(self)
+                for line in responses_stream(usage):
+                    wfile.write(line.encode())
+                    wfile.flush()
+                return
+            return self._json(_responses_obj(usage))
         if is_anthropic:
             usage.update({"cache_read": 48000, "cache_write": 900})
             if stream:
-                self.send_response(200)
-                self.send_header("content-type", "text/event-stream")
-                self.send_header("connection", "close")
-                self.close_connection = True
-                self.end_headers()
+                wfile = _sse(self)
                 for line in anthropic_stream(usage):
-                    self.wfile.write(line.encode())
-                    self.wfile.flush()
+                    wfile.write(line.encode())
+                    wfile.flush()
                 return
             return self._json({"id": "mock", "type": "message", "role": "assistant",
                                "model": model, "content": [{"type": "text", "text": "done"}],
@@ -98,14 +175,10 @@ class Handler(BaseHTTPRequestHandler):
                                          "cache_read_input_tokens": usage["cache_read"],
                                          "output_tokens": usage["output"]}})
         if stream:
-            self.send_response(200)
-            self.send_header("content-type", "text/event-stream")
-            self.send_header("connection", "close")
-            self.close_connection = True
-            self.end_headers()
+            wfile = _sse(self)
             for line in openai_stream(usage):
-                self.wfile.write(line.encode())
-                self.wfile.flush()
+                wfile.write(line.encode())
+                wfile.flush()
             return
         return self._json({"id": "mock", "object": "chat.completion", "model": model,
                            "choices": [{"index": 0, "message": {"role": "assistant",
