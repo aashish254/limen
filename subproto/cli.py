@@ -213,9 +213,8 @@ def cmd_demo(args):
     print(report.render_text(report.summarize(telemetry)))
     print("")
     print("replayed %d synthetic agent requests through the proxy" % n)
-    print("recorded bodies: %d" % len(__import__("subproto.dataset", fromlist=["record_bodies"]).record_bodies(config)))
+    print("recorded bodies: %d" % len(dataset.record_bodies(config)))
     if args.audit:
-        from . import dataset
         print(json.dumps(dataset.audit(config, telemetry, engine=engine, limit=50), indent=1))
     srv.shutdown()
     telemetry.close()

@@ -8,6 +8,7 @@ supervision signal for the fine-tune that closes the gap.
 """
 
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -48,7 +49,7 @@ class LayaClient:
             "options": list(options),
             "output": "probability",
         }).encode()
-        started = __import__("time").time()
+        started = time.time()
         try:
             req = urllib.request.Request(
                 self.base_url + "/score", data=payload,
@@ -57,9 +58,9 @@ class LayaClient:
                 data = json.loads(r.read().decode())
         except (urllib.error.URLError, OSError, ValueError) as exc:
             self.last_error = "%s" % exc
-            self.last_latency_ms = int((__import__("time").time() - started) * 1000)
+            self.last_latency_ms = int((time.time() - started) * 1000)
             return None
-        self.last_latency_ms = int((__import__("time").time() - started) * 1000)
+        self.last_latency_ms = int((time.time() - started) * 1000)
         probs = (data or {}).get("probabilities") or (data or {}).get("scores")
         if not isinstance(probs, dict):
             self.last_error = "unexpected response: %s" % str(data)[:120]
