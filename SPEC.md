@@ -257,14 +257,38 @@ Until all seven, "perfect" = "the claim is always at least as strong as the evid
 
 ---
 
-## 11. Decisions I need from you before the next build sprint
+## 11. Locked decisions (2026-09-25)
 
-1. **Target hardware for the on-device model** — Apple-silicon Mac (MLX) first, or
-   pure-Python CPU (portable but slower)? Sets M2 backend.
-2. **Task suite for the live harness** — SWE-bench subset, or a small curated
-   terminal-agent suite we control end-to-end? Sets M3.
-3. **How much real-API spend are you OK authorizing** for M1/M3 (a few dollars), or do
-   we build the entire held-pass-rate harness against the mock first and validate with
-   keys later?
-4. **Name/brand lock-in** — keep `subproto`? (I chose it as a fast System One that sits
-   *before* the frontier "protocol". Alternatives if you want a more brandable/viral handle.)
+1. **On-device model backend → Apple MLX** (M2/M3/M4 first). M2 builds the Laya
+   server on MLX, quantized, measured on Apple silicon. ONNX/CPU stays a documented
+   fallback, not the default path.
+2. **Live harness task suite → SWE-bench subset** (M3). We stand up `bench/live.py`
+   against a SWE-bench-style subset with a grader; this is the source of the hero
+   number's pass-rate claim.
+3. **API spend → none yet, mock-first.** M1/M3 are built and validated entirely
+   against `fakeup` + projections first; real-key validation is a separate, gated
+   step after the harness is trustworthy. Keeps invariant I6 (measured-not-claimed)
+   honest and the project $0 to reproduce.
+4. **Name → keep `subproto`.** System One that runs *before* the frontier protocol.
+
+---
+
+## 12. Current sprint — M1, mock-first
+
+Because spend is capped at $0 and the harness targets SWE-bench later, this sprint
+stays fully reproducible:
+
+1. **Per-tool wiring docs + validation matrix** — exact `base_url`/env for Claude Code,
+   Codex, Gemini CLI, Cline, aider, OpenCode, Antigravity; verified against `fakeup`.
+2. **FR-8 streaming edges against the mock** — OpenAI `responses` reasoning + Gemini
+   `generateContent` shapes added to `fakeup` and parsed, so the proxy is truly
+   dialect-complete before any real key touches it.
+3. **Scaffold `bench/live.py` against `fakeup`** — pass-rate-held harness skeleton with
+   a mock grader and a SWE-bench-shaped task adapter stub, so M3 is wiring, not design.
+4. **Latency measurement plumbing** — per-decision timing recorded so the M2 MLX number
+   has somewhere to land.
+
+Exit: every README claim is either (a) shipped + tested, or (b) explicitly labelled a
+projection with a one-command repro. No regressions on 3.9/3.11.
+
+
