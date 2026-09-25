@@ -59,3 +59,16 @@ def test_engine_falls_back_when_laya_unreachable(tmp_path):
     _, decisions = eng.decide("anthropic", body, analyze_request(body), cfg)
     gate = [d for d in decisions if d["slot"] == "tool_gate"][0]
     assert gate["backend"] == "heuristic"
+
+
+def test_engine_records_per_decision_latency(tmp_path):
+    cfg = _cfg(tmp_path)
+    eng = Engine(cfg)
+    body = synthetic_request(0)
+    _, decisions = eng.decide("anthropic", body, analyze_request(body), cfg)
+    assert decisions, "expect at least one slot decision"
+    for d in decisions:
+        assert "decision_ms" in d, d["slot"]
+        assert d["decision_ms"] >= 0.0
+    # heuristics are sub-millisecond on this tiny corpus
+    assert sum(d["decision_ms"] for d in decisions) < 500.0

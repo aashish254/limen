@@ -7,6 +7,13 @@ from .heuristics import route_effort, tool_gate
 from .telemetry import CATEGORIES
 
 
+def _percentile(sorted_vals, q):
+    if not sorted_vals:
+        return None
+    idx = min(len(sorted_vals) - 1, int(len(sorted_vals) * q))
+    return sorted_vals[idx]
+
+
 def summarize(telemetry, since=None, until=None):
     where, args = [], []
     if since:
@@ -43,12 +50,21 @@ def summarize(telemetry, since=None, until=None):
     days = telemetry.query(
         "SELECT day, count(*) n, sum(cost_usd) cost, sum(in_tok+cw_tok+cr_tok) in_tok, "
         "sum(out_tok) out_tok FROM requests " + w + " GROUP BY day ORDER BY day", args)
-    return {"totals": tot, "by_model": by_model, "by_client": by_client,
-            "cat_chars": cats, "by_day": days,
-            "requests": telemetry.query(
-                "SELECT id, ts, api, client, model, status, in_tok, cw_tok, cr_tok, out_tok, "
-                "cost_usd, latency_ms, ttfb_ms, tool_spec_chars, est_in_tok, interventions, err "
-                "FROM requests " + w + " ORDER BY id DESC LIMIT 500", args)}
+    summary = {"totals": tot, "by_model": by_model, "by_client": by_client,
+               "cat_chars": cats, "by_day": days,
+               "requests": telemetry.query(
+                   "SELECT id, ts, api, client, model, status, in_tok, cw_tok, cr_tok, out_tok, "
+                   "cost_usd, latency_ms, ttfb_ms, engine_ms, tool_spec_chars, est_in_tok, "
+                   "interventions, err FROM requests " + w + " ORDER BY id DESC LIMIT 500", args)}
+    ems = sorted(float(r["engine_ms"]) for r in summary["requests"]
+                 if r.get("engine_ms") is not None)
+    summary["decision_latency"] = {
+        "n": len(ems),
+        "p50": _percentile(ems, 0.50),
+        "p95": _percentile(ems, 0.95),
+        "avg": round(sum(ems) / len(ems), 3) if ems else None,
+    }
+    return summary
 
 
 def cache_opportunity(by_model):
@@ -125,7 +141,11 @@ def render_text(summary, since=None, until=None):
     if ttft:
         ttft.sort()
         lines.append("  time to first token p50 %4dms  p95 %5dms" % (
-            ttft[len(ttft) // 2], ttft[min(len(ttft) - 1, int(len(ttft) * 0.95))]))
+            _percentile(ttft, 0.50), _percentile(ttft, 0.95)))
+    dl = summary.get("decision_latency") or {}
+    if dl.get("n"):
+        lines.append("  slot decision latency p50 %.1fms  p95 %.1fms  (n=%d)" % (
+            dl["p50"], dl["p95"], dl["n"]))
     lines.append("")
     lines.append("  where the input tokens came from (request characters)")
     cats = summary["cat_chars"]

@@ -39,11 +39,20 @@ CREATE TABLE IF NOT EXISTS requests (
   features TEXT,
   decisions TEXT,
   interventions TEXT,
-  est_in_tok INTEGER
+  est_in_tok INTEGER,
+  engine_ms REAL
 );
 CREATE INDEX IF NOT EXISTS requests_day ON requests(day);
 CREATE INDEX IF NOT EXISTS requests_model ON requests(model);
 """
+
+# Columns added after the initial release. Fresh DBs get them from SCHEMA above;
+# existing DBs are upgraded idempotently by Telemetry._migrate so a session that
+# started before this column existed keeps recording into it (SPEC invariant I1:
+# telemetry stays honest across upgrades).
+NEW_COLUMNS = (
+    ("engine_ms", "REAL"),
+)
 
 CATEGORIES = ("system", "tool_result", "assistant_tool_call", "assistant", "user")
 
@@ -58,7 +67,18 @@ class Telemetry:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _columns(self):
+        return {r["name"] for r in
+                self._conn.execute("PRAGMA table_info(requests)").fetchall()}
+
+    def _migrate(self):
+        have = self._columns()
+        for name, decl in NEW_COLUMNS:
+            if name not in have:
+                self._conn.execute("ALTER TABLE requests ADD COLUMN %s %s" % (name, decl))
 
     def close(self):
         with self._lock:
@@ -109,14 +129,15 @@ class Telemetry:
             json.dumps(rec.get("decisions")) if rec.get("decisions") else None,
             json.dumps(rec.get("interventions")) if rec.get("interventions") else None,
             feats.get("est_in_tok"),
+            rec.get("engine_ms"),
         )
         sql = """INSERT INTO requests (
             ts, day, api, path, client, model, stream, status, err, latency_ms, ttfb_ms,
             in_tok, cw_tok, cr_tok, out_tok, reasoning_tok, usage_source, cost_usd,
             msg_count, sys_chars, tool_spec_chars, tool_count, tool_names, cat_chars,
             hist_age_rank, body_sha, features_sha, features, decisions, interventions,
-            est_in_tok
-        ) VALUES (""" + ",".join("?" * 31) + ")"
+            est_in_tok, engine_ms
+        ) VALUES (""" + ",".join("?" * 32) + ")"
         with self._lock:
             self._conn.execute(sql, row)
             self._conn.commit()

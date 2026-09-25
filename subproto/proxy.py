@@ -270,6 +270,8 @@ def make_handler(config, telemetry, engine):
                     new_body, decisions = engine.decide(dialect, body, analysis, config)
                     if decisions:
                         rec["decisions"] = decisions
+                        rec["engine_ms"] = round(
+                            sum(d.get("decision_ms", 0) for d in decisions), 3)
                         if new_body is not None:
                             sent = protocol.dump_body(new_body)
                             rec["interventions"] = [d["slot"] for d in decisions

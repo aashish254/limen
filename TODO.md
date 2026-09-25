@@ -15,8 +15,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **T03** `proxy.py`: `dialect_for` + relay route `generateContent`/`streamGenerateContent` → `gemini`, `/v1/responses` → `responses`; add `gemini_upstream` config + `x-goog-api-key` injection.
 - [x] **T04** `fakeup/server.py`: add `/v1/responses` and `:generateContent`/`:streamGenerateContent` endpoints emitting those exact shapes.
 - [x] **T05** tests: unit for gemini + responses usage; e2e through the proxy asserting tokens/cost recorded for both dialects.
-- [ ] **T06** Latency plumbing: `engine.py` records per-decision `decision_ms`; `telemetry.py` adds an idempotent `engine_ms` column + stores it; `report.py` shows decision-latency p50/p95.
-- [ ] **T07** Telemetry schema migration: idempotent `ALTER TABLE ADD COLUMN` for any new columns so existing DBs upgrade cleanly (test old-schema → new).
+- [x] **T06** Latency plumbing: `engine.py` records per-decision `decision_ms`; `telemetry.py` adds an idempotent `engine_ms` column + stores it; `report.py` shows decision-latency p50/p95.
+- [x] **T07** Telemetry schema migration: idempotent `ALTER TABLE ADD COLUMN` for any new columns so existing DBs upgrade cleanly (test old-schema → new).
 - [ ] **T08** `bench/live.py`: pass-rate-held A/B harness against `fakeup` — same task run observe-vs-enforce, mock grader, emits input-token Δ, p50 ttfb Δ, pass-rate Δ with bootstrap CI; writes `bench/live_results.md`.
 - [ ] **T09** `bench/live.py` SWE-bench-shaped task adapter (loader reads a JSONL of `{task, context, expected_files, grader}`); ship a small `bench/tasks.sample.jsonl` that runs on the mock.
 - [ ] **T10** tests: run the live harness in-process against fakeup; assert it completes, pass-rate is held (Δ ≥ −1%), and emits a numeric token reduction.

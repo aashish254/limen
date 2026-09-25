@@ -6,6 +6,7 @@ a slot explicitly with SUBPROTO_APPLY=tool_gate,compact,context.
 """
 
 import os
+import time
 
 from . import graph as graph_mod
 from . import heuristics
@@ -14,6 +15,10 @@ from . import protocol
 
 ALL_SLOTS = ("tool_gate", "compact", "context", "effort")
 DEFAULT_APPLY = ("tool_gate", "compact")
+
+
+def _now_ms():
+    return time.time() * 1000.0
 
 
 def _apply_set():
@@ -97,6 +102,7 @@ class Engine:
 
         flat_tools = protocol.flatten_tools(tools)
         if flat_tools:
+            _t0 = _now_ms()
             hs = heuristics.tool_gate(flat_tools, last_user or analysis.get("query", ""))
             probs = _ask_laya(self.laya, last_user[:512], flat_tools,
                               lambda t: protocol.tool_name(t).lower()) if self.laya else None
@@ -116,6 +122,7 @@ class Engine:
                 "dropped": dropped, "kept": len(hs) - len(dropped),
                 "savings_est_tok": int(saved_chars / 3.6),
                 "candidates": hs,
+                "decision_ms": round(_now_ms() - _t0, 3),
             })
             if "tool_gate" in apply_set and dropped:
                 keep = set(d["target"] for d in hs if d["keep"])
@@ -123,6 +130,7 @@ class Engine:
                 new_body["tools"] = _filter_tools(tools, keep)
 
         if est_in > 4000 and len(msgs_norm) > 8:
+            _t0 = _now_ms()
             budget = max(1500, int(est_in * 0.45))
             flags = heuristics.compact_messages(msgs_norm, budget)
             backend = "heuristic"
@@ -144,6 +152,7 @@ class Engine:
                 "slot": "compact", "backend": backend, "applied": "compact" in apply_set,
                 "dropped_count": len(dropped_idx), "savings_est_tok": saved_tok,
                 "budget_tok": budget, "candidates": flags,
+                "decision_ms": round(_now_ms() - _t0, 3),
             })
             if "compact" in apply_set and dropped_idx:
                 new_body = dict(new_body or body)
@@ -151,6 +160,7 @@ class Engine:
                     m for i, m in enumerate(body.get("messages") or []) if i not in set(dropped_idx)]
 
         if self.graph is not None:
+            _t0 = _now_ms()
             query = last_user or analysis.get("query", "")
             hits = graph_mod.search(self.graph, query, top_k=10)
             ds = heuristics.file_drop_scores(query, hits)
@@ -162,6 +172,7 @@ class Engine:
                     "candidates": ds,
                     "top": [d["target"] for d in ds[:5]],
                     "cost_est_tok": 0,
+                    "decision_ms": round(_now_ms() - _t0, 3),
                 })
                 if "context" in apply_set:
                     add = ("Relevant files in this repo, ranked by a local code graph "
@@ -177,11 +188,13 @@ class Engine:
                                 {"type": "text", "text": add}])] + new_body["messages"][1:]
 
         if analysis:
+            _t0 = _now_ms()
             route = heuristics.route_effort(analysis, last_user, est_in)
             decisions.append({
                 "slot": "effort", "backend": "heuristic", "applied": False,
                 "tier": route["tier"], "small_model_ok": route["small_model_ok"],
                 "reasons": route["reasons"], "savings_est_tok": 0,
+                "decision_ms": round(_now_ms() - _t0, 3),
             })
 
         return new_body, decisions
