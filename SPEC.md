@@ -14,6 +14,10 @@ input tokens, pass-rate held, bootstrap CI, no key). The remaining gaps are gate
 external resources — a real quantized checkpoint, non-zero API spend, and a public
 task suite — and stay labelled **BLOCKED(external)**, never falsely checked.
 
+*The forward plan lives in [`ROADMAP.md`](ROADMAP.md): a v2→v13 spec that keeps a
+~8-month lead, and it deliberately makes the tiny decision model a **pluggable System
+One backend** (Laya is adapter #1, not the bet).*
+
 ---
 
 ## 1. The goal (what "winning" means)
@@ -183,17 +187,22 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **FR-3d effort:** route trivial turns to low tier / small model. **AC:** complex vs
   trivial requests classify correctly on the heuristic; observational only by default.
 
-### FR-4 Laya backend adapter + local scoring server — ✅ interface + mock backend shipped; real checkpoint BLOCKED(external)
-`laya.py`, `laya_server.py`, `bench/ablation.py`
-- **AC today:** adapter asks per-candidate keep/drop; falls back to heuristics if the
-  server is unreachable; backend recorded per decision (`laya` vs `heuristic`). A
-  local `/health`+`/score` server (deterministic lexical scorer, MLX path behind an
-  import guard) runs on an ephemeral port; `bench/ablation.py` reports laya-vs-
-  heuristic precision on labelled ground truth (both lexical today → they agree, and
-  the report says so).
-- **AC target:** point `LAYA_URL` at a quantized MLX Laya checkpoint and show a real
-  laya-vs-heuristic precision delta + CPU latency curve. **BLOCKED(external):** needs
-  ~808MB HF weights + Apple MLX runtime.
+### FR-4 Pluggable System One backend — ✅ interface + mock backend shipped; **not** Laya-fixed
+`systemone/` (planned SPI), `laya.py` (first adapter), `laya_server.py`, `bench/ablation.py`
+- **Design principle (de-fixation):** the tiny decision model is a **swappable component,
+  not the product bet.** `laya.py` is being generalised into a `ModelAdapter` SPI
+  (`health`/`score`) with a registry of adapters — Laya, OpenJev, djev, SemIf, our own
+  `mlx_lora`, GGUF, hosted `jev_api`, an arbitrary `http://` endpoint, and the always-on
+  `heuristic` fallback — selected per slot by the v2 ablation. New small models become an
+  *upgrade we adopt in a day*, never a threat. See [`ROADMAP.md`](ROADMAP.md) §1 & §4.
+- **AC today:** the adapter asks per-candidate keep/drop; falls back to heuristics if the
+  server is unreachable; backend recorded per decision. A local `/health`+`/score` server
+  (deterministic lexical scorer, MLX path behind an import guard) runs on an ephemeral
+  port; `bench/ablation.py` reports laya-vs-heuristic precision on labelled ground truth
+  (both lexical today → they agree, and the report says so).
+- **AC target (v2):** point the SPI at any quantized checkpoint (MLX/GGUF) and show a
+  real per-slot precision/latency trade-off across **adapters**. **BLOCKED(external):**
+  needs ~400–808MB HF weights + a runtime (MLX/llama.cpp).
 
 ### FR-5 Dataset harvest & label loop — ✅ shipped
 `dataset.py`, `subproto export`, `subproto label`, `subproto split`, `train/finetune_mlx.py`

@@ -8,16 +8,18 @@ A local, OpenAI- / Anthropic- / Gemini-compatible proxy (chat, `messages`,
 `generateContent`, and `responses`) that sits in front of Claude Code,
 Codex CLI, Gemini CLI, Cline, OpenCode, aider and anything else that honours a
 `base_url`. It measures exactly where your agent's tokens go, then — one routing
-decision at a time — removes them using a tiny [Laya](https://huggingface.co/convaiinnovations/laya)-style
-decision model instead of your frontier model.
+decision at a time — removes them using a tiny, **swappable System One decision
+model** ([Laya](https://huggingface.co/convaiinnovations/laya) today; OpenJev, MLX
+LoRAs, GGUF or any `http://` classifier tomorrow) instead of your frontier model.
 
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
 just by using it.*
 
-[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
+[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Benchmark](#benchmark) · [Roadmap v2→v13](ROADMAP.md)
 
 The full product & engineering spec — goal, requirements, success criteria — lives in
-[`SPEC.md`](SPEC.md).
+[`SPEC.md`](SPEC.md), and the forward plan (why there's no room to catch us for ~8
+months) lives in [`ROADMAP.md`](ROADMAP.md).
 
 </div>
 
@@ -33,9 +35,11 @@ intelligence:
    "is this file relevant?" or "can I drop this old log?" is a *classification*,
    not a generation task.
 
-subproto offloads those classifications to a 300–400M decision model (Laya, the
-Apache-2.0 open alternative to [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev))
-that answers in tens of milliseconds, and only keeps the reasoning that actually
+subproto offloads those classifications to a tiny **System One** decision model — a
+~300–400M "state in → typed decision out" classifier, **swappable** (Laya, the Apache-2.0
+open alternative to [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+is the first one we wire up; any newer or better small model drops in via the adapter
+SPI) — that answers in tens of milliseconds, and only keeps the reasoning that actually
 needs the frontier model.
 
 ## Why this exists
@@ -191,15 +195,17 @@ real provider billing:
 > projected −32.3% above are exactly what they're labelled — you can reproduce both
 > locally in one command, no key.
 
-## Bring your own Laya
+## Bring your own System One model (not just Laya)
 
-subproto ships with heuristics so it is useful on day zero. It also ships a local
-scoring server that speaks the adapter's `/health` + `/score` contract (deterministic
+subproto ships with heuristics so it is useful on day zero, and the decision model is a
+**pluggable backend** — Laya is just adapter #1, so when a better small model lands you
+swap it, you don't fork the project (see [`ROADMAP.md`](ROADMAP.md) §1). It also ships a
+local scoring server that speaks the adapter's `/health` + `/score` contract (deterministic
 lexical scorer, with an MLX path guarded behind an import check):
 
 ```bash
 python -m subproto.laya_server --port 8000        # the mock-verifiable backend
-LAYA_URL=http://localhost:8000 subproto up --slots
+LAYA_URL=http://localhost:8000 subproto up --slots   # any /health+/score server, Laya or not
 ```
 
 The `subproto/laya.py` adapter asks the model per-candidate keep/drop questions and
@@ -225,6 +231,11 @@ train/finetune_mlx.py   # LoRA fine-tune (guarded: exits honestly without MLX + 
    nobody else has — the thing that makes the tiny model beat the zero-shot baseline.
 
 ## Roadmap
+
+The full forward plan — **v2→v13**, engineered so the pluggable model core, the
+labelled-decision dataset, the pass-rate-held measurement and the breadth of
+integrations compound into an ~8-month lead — is its own spec:
+**[`ROADMAP.md`](ROADMAP.md)**. The short version, v1:
 
 - [x] Transparent OpenAI + Anthropic proxy with SSE-aware usage capture
 - [x] Gemini native + OpenAI `responses` dialects (usage, routing, mock, tests)
