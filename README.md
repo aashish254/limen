@@ -78,17 +78,19 @@ Enforce a slot explicitly with `SUBPROTO_APPLY=tool_gate,compact`.
 
 ## Install
 
-```bash
-pipx install subproto        # or: pip install subproto
-# no API keys, no account, runs entirely on your machine
-```
-
-<details>
-<summary>From source (bleeding edge)</summary>
+Works from source today; a PyPI/pipx package is pending the first tagged release.
 
 ```bash
 git clone https://github.com/<you>/subproto && cd subproto
-./install.sh                 # symlink ./subproto onto your PATH
+./install.sh                 # symlinks a `subproto` shim onto your PATH
+# or, without installing:  python3 -m subproto  (stdlib only, Python 3.9+)
+```
+
+<details>
+<summary>Once published</summary>
+
+```bash
+pipx install subproto        # or: pip install subproto
 ```
 </details>
 
