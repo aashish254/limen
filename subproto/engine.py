@@ -155,9 +155,13 @@ class Engine:
                 "decision_ms": round(_now_ms() - _t0, 3),
             })
             if "compact" in apply_set and dropped_idx:
+                # normalize_messages prepends a top-level `system` entry (Anthropic
+                # shape), so normalized indices sit one ahead of body["messages"].
+                offset = 1 if isinstance(body.get("system"), str) and body.get("system") else 0
+                drop = set(i - offset for i in dropped_idx if i - offset >= 0)
                 new_body = dict(new_body or body)
                 new_body["messages"] = [
-                    m for i, m in enumerate(body.get("messages") or []) if i not in set(dropped_idx)]
+                    m for i, m in enumerate(body.get("messages") or []) if i not in drop]
 
         if self.graph is not None:
             _t0 = _now_ms()

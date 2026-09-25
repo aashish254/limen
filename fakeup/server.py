@@ -78,6 +78,18 @@ def responses_stream(usage):
             time.sleep(SLEEP)
 
 
+def _anthropic_obj(usage, echo=None):
+    obj = {"id": "mock", "type": "message", "role": "assistant",
+           "model": usage["model"], "content": [{"type": "text", "text": "done"}],
+           "usage": {"input_tokens": usage["input_uncached"],
+                     "cache_creation_input_tokens": usage["cache_write"],
+                     "cache_read_input_tokens": usage["cache_read"],
+                     "output_tokens": usage["output"]}}
+    if echo is not None:
+        obj["_mock_echo"] = echo
+    return obj
+
+
 def _gemini_obj(usage):
     return {"candidates": [{"content": {"role": "model",
                                         "parts": [{"text": "done"}]},
@@ -168,12 +180,7 @@ class Handler(BaseHTTPRequestHandler):
                     wfile.write(line.encode())
                     wfile.flush()
                 return
-            return self._json({"id": "mock", "type": "message", "role": "assistant",
-                               "model": model, "content": [{"type": "text", "text": "done"}],
-                               "usage": {"input_tokens": usage["input_uncached"],
-                                         "cache_creation_input_tokens": usage["cache_write"],
-                                         "cache_read_input_tokens": usage["cache_read"],
-                                         "output_tokens": usage["output"]}})
+            return self._json(_anthropic_obj(usage, body if body.get("_mock_echo") else None))
         if stream:
             wfile = _sse(self)
             for line in openai_stream(usage):

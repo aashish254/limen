@@ -17,9 +17,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **T05** tests: unit for gemini + responses usage; e2e through the proxy asserting tokens/cost recorded for both dialects.
 - [x] **T06** Latency plumbing: `engine.py` records per-decision `decision_ms`; `telemetry.py` adds an idempotent `engine_ms` column + stores it; `report.py` shows decision-latency p50/p95.
 - [x] **T07** Telemetry schema migration: idempotent `ALTER TABLE ADD COLUMN` for any new columns so existing DBs upgrade cleanly (test old-schema → new).
-- [ ] **T08** `bench/live.py`: pass-rate-held A/B harness against `fakeup` — same task run observe-vs-enforce, mock grader, emits input-token Δ, p50 ttfb Δ, pass-rate Δ with bootstrap CI; writes `bench/live_results.md`.
-- [ ] **T09** `bench/live.py` SWE-bench-shaped task adapter (loader reads a JSONL of `{task, context, expected_files, grader}`); ship a small `bench/tasks.sample.jsonl` that runs on the mock.
-- [ ] **T10** tests: run the live harness in-process against fakeup; assert it completes, pass-rate is held (Δ ≥ −1%), and emits a numeric token reduction.
+- [x] **T08** `bench/live.py`: pass-rate-held A/B harness against `fakeup` — same task run observe-vs-enforce, mock grader, emits input-token Δ, p50 ttfb Δ, pass-rate Δ with bootstrap CI; writes `bench/live_results.md`.
+- [x] **T09** `bench/live.py` SWE-bench-shaped task adapter (loader reads a JSONL of `{task, context, expected_files, grader}`); ship a small `bench/tasks.sample.jsonl` that runs on the mock.
+- [x] **T10** tests: run the live harness in-process against fakeup; assert it completes, pass-rate is held (Δ ≥ −1%), and emits a numeric token reduction.
 - [ ] **T11** `WIRING.md`: exact base_url/env per tool (Claude Code, Codex, Gemini CLI, Cline, aider, OpenCode, Antigravity) + a test that the proxy serves every documented path.
 - [ ] **T12** Invariant tests: I5 byte-for-byte passthrough (no-slot proxy request bytes == response forwarded); I2 context slot appends only (never deletes/reorders prefix) when applied; I3 tail-protection holds under tiny budgets.
 
