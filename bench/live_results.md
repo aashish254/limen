@@ -1,11 +1,11 @@
 # subproto live harness (mock, pass-rate held)
 
-Tasks: `tasks.sample.jsonl` · n=8 · bootstrap CI · mock upstream, $0, no key.
+Tasks: `tasks.sample.jsonl` · n=20 · bootstrap CI · mock upstream, $0, no key.
 
 | metric | observe | enforce | delta | 95% CI |
 |---|--:|--:|--:|:--|
-| input tokens (mean/task) | 19920 | 14306 | **27.9%** | [24.8, 30.9] |
-| p50 request latency (ms) | 8.1 | 7.8 | 3.3% | [0.6, 5.6] |
+| input tokens (mean/task) | 19704 | 13728 | **30.2%** | [28.5, 31.7] |
+| p50 request latency (ms) | 12.6 | 12.4 | 0.8% | [-3.9, 4.7] |
 | task pass-rate | 100.0% | 100.0% | **+0.0 pp** | [+0.0, +0.0] |
 
 **Correctness floor (I3): pass-rate delta 0.0 pp — HELD (gate: >= -1.0pp).**

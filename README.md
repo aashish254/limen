@@ -170,16 +170,16 @@ python bench/live.py --mock    # measured: replay-vs-enforce against the local m
 python bench/ab.py   --mock    # projected: per-slot headroom over recorded prompt shapes
 ```
 
-**Measured on the mock harness** (`bench/live_results.md`, n=8 SWE-bench-shaped
+**Measured on the mock harness** (`bench/live_results.md`, n=20 SWE-bench-shaped
 tasks, bootstrap 95% CI, $0 / no key — the enforced body is echoed back so the
 token delta is *delivered*, not estimated):
 
 | metric | observe | enforce | delta |
 |---|--:|--:|--:|
-| input tokens / task | 19,920 | 14,306 | **−27.9%** `[−24.8, −30.9]` |
+| input tokens / task | 19,704 | 13,728 | **−30.2%** `[−28.5, −31.7]` |
 | task pass-rate | 100% | 100% | **+0.0 pp** (held) |
 
-**Projected on heuristic prompt shapes** (`bench/results.md`): −32.4% if every slot
+**Projected on heuristic prompt shapes** (`bench/results.md`): −32.3% if every slot
 enforces. These are prompt-shape projections, not billed savings, and latency is a
 request-shape proxy against the mock rather than a real time-to-first-token.
 
@@ -187,8 +187,8 @@ The hero metric we publish once against a real SWE-bench-style suite + grader an
 real provider billing:
 
 > **same 20 tasks, same model, held pass-rate: −X% input tokens, −Y ms p50 to first
-> token, $A → $B** (billed). Until that exists, the mock-measured −27.9% and the
-> projected −32.4% above are exactly what they're labelled — you can reproduce both
+> token, $A → $B** (billed). Until that exists, the mock-measured −30.2% and the
+> projected −32.3% above are exactly what they're labelled — you can reproduce both
 > locally in one command, no key.
 
 ## Bring your own Laya

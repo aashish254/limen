@@ -9,7 +9,7 @@ proxy (OpenAI chat + `responses`, Anthropic `messages`, Gemini `generateContent`
 telemetry + waste/slot-precision report, 4 decision slots (observation + opt-in
 enforce), code graph, dataset export + label loop + deterministic train/val split, a
 guarded MLX LoRA script, a local Laya scoring server + ablation harness, a live
-terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−27.9%
+terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−30.2%
 input tokens, pass-rate held, bootstrap CI, no key). The remaining gaps are gated on
 external resources — a real quantized checkpoint, non-zero API spend, and a public
 task suite — and stay labelled **BLOCKED(external)**, never falsely checked.
@@ -211,7 +211,7 @@ Requirement IDs map to the shipped modules so progress is auditable.
   table with no key.
 - **AC:** `python bench/live.py --mock` runs the **pass-rate-held** A/B (observe vs
   enforce) against `fakeup` with a SWE-bench-shaped task set + mock grader, and emits
-  the delivered input-token Δ with bootstrap 95% CI: −27.9% tokens, pass-rate +0.0 pp.
+  the delivered input-token Δ with bootstrap 95% CI: −30.2% tokens, pass-rate +0.0 pp.
   The enforced body is echoed by the mock so the token number is *delivered*, not
   estimated. Latency there is a request-shape proxy, labelled as such.
 - **AC target:** run the same harness over a **public** task suite with a real grader
@@ -256,7 +256,7 @@ Requirement IDs map to the shipped modules so progress is auditable.
 1. **One-command truth.** `subproto demo` + `bench/ab.py --mock` work with no key,
    no signup, on a fresh clone. (Done.)
 2. **The hero image is a bill.** README's first visual is `$A → $B, same tasks,
-   same pass rate`. **Mock-measured today** (−27.9% tokens, pass-rate held, CI);
+   same pass rate`. **Mock-measured today** (−30.2% tokens, pass-rate held, CI);
    the *billed* bill drop needs FR-6-real + M3 (non-zero API spend) — kept labelled a
    projection until then, per I6.
 3. **A killer demo gif.** Terminal side-by-side: agent reading 8 files vs `subproto
@@ -284,7 +284,7 @@ Requirement IDs map to the shipped modules so progress is auditable.
   harness shipped and tested (lexical backend). The **real quantized MLX checkpoint**
   and published CPU latency curve need ~808MB HF weights + MLX runtime.
 - **M3 (harness shipped — billed number BLOCKED external)** — `bench/live.py` runs the
-  pass-rate-held A/B with bootstrap CI and reports a mock-delivered −27.9% token
+  pass-rate-held A/B with bootstrap CI and reports a mock-delivered −30.2% token
   reduction. The **public task suite + real grader + billed provider savings** need API
   spend.
 - **M4 (pipeline shipped — training BLOCKED external)** — export + label loop +
@@ -318,7 +318,7 @@ subproto is "perfect" when:
    no task regressions. **(BLOCKED external: real sessions + API spend; mock-measured
    held-pass-rate harness is in place)**
 3. The README hero number is **measured**, not projected, with a public reproducible
-   harness and confidence intervals. **(mock-delivered −27.9% w/ CI is measured today;
+   harness and confidence intervals. **(mock-delivered −30.2% w/ CI is measured today;
    the billed/provider number is M3)**
 4. Laya (on-device) beats the heuristic baseline on slot precision in an ablation.
    **(ablation harness + local scorer shipped; needs the quantized checkpoint — M2)**
@@ -389,8 +389,10 @@ gate** (invariant I6). No v2 item is silently assumed complete.
   reduction with no correctness regression, self-assessed by the user.
 
 ### V2-B — The billed hero number · `gate: approved API budget + a public task suite`
-- **V2-B1** Port `bench/tasks.sample.jsonl` to a curated 20-task SWE-bench-style set with
-  real graders (or import a public subset).
+- **V2-B1** ~~Port `bench/tasks.sample.jsonl` to a curated 20-task SWE-bench-style set~~
+  **done locally** — the mock corpus is now a 20-task curated set (varied stale-context
+  shapes, `files_present` graders). Remaining: swap in a public subset with **real**
+  graders when the spend gate opens.
 - **V2-B2** `bench/live.py` runs observe-vs-enforce against the **real provider**, model
   held constant: emits input-token Δ, **billed $ Δ**, p50 TTFB Δ, pass-rate Δ, each with
   bootstrap 95% CI.
