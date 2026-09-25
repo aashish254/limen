@@ -1,0 +1,322 @@
+{
+ "n_cases": 10,
+ "agreement": 1.0,
+ "heuristic": {
+  "precision": 0.9722,
+  "recall": 0.9859,
+  "f1": 0.979
+ },
+ "laya": {
+  "precision": 0.9722,
+  "recall": 0.9859,
+  "f1": 0.979
+ },
+ "precision_delta_laya_minus_heuristic": 0.0,
+ "per_case": [
+  {
+   "query": "read app/config.py and run the failing tests",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__figma__read",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__figma__read",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "post the nightly build status to the #release sl",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__slack__post",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__slack__post",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__slack__post",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "open a pull request and fetch review comments",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__github__pr",
+    "mcp__github__review",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__github__review",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__github__review",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "screenshot the checkout page and click the pay b",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__click",
+    "mcp__browser__screenshot",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__click",
+    "mcp__browser__screenshot",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__click",
+    "mcp__browser__screenshot",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "query the orders table for pending rows and prin",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__db__query",
+    "mcp__db__schema",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__db__query",
+    "mcp__db__schema",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__db__query",
+    "mcp__db__schema",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "refactor the retry loop, keep interfaces stable,",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__figma__read",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__figma__read",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "create a linear issue for the tracked regression",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__linear__create",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__linear__create",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__linear__create",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "list recent sentry errors for the release",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__sentry__list",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__sentry__list",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__sentry__list",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "search the codebase for the deprecated helper an",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "read",
+    "write"
+   ]
+  },
+  {
+   "query": "navigate the browser to staging and fill the log",
+   "gold": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__fill",
+    "mcp__browser__navigate",
+    "read",
+    "write"
+   ],
+   "heuristic": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__fill",
+    "mcp__browser__navigate",
+    "read",
+    "write"
+   ],
+   "laya": [
+    "bash",
+    "edit",
+    "glob",
+    "grep",
+    "mcp__browser__fill",
+    "mcp__browser__navigate",
+    "read",
+    "write"
+   ]
+  }
+ ]
+}

@@ -25,9 +25,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 ## FR-4 / M2 — Laya backend (mock-verifiable adapter; real MLX weights = external)
 
-- [ ] **T13** `subproto/laya_server.py`: HTTP scoring server implementing the `/health` + `/score` contract `laya.py` expects; deterministic lexical scorer, with an MLX path guarded behind `if importlib.util.find_spec("mlx")`.
-- [ ] **T14** test: start `laya_server` on an ephemeral port, point engine `laya_url` at it, assert `backend == "laya"` is recorded for tool_gate and laya scores drive keep/drop.
-- [ ] **T15** `bench/ablation.py`: laya-vs-heuristic precision/agreement on a labelled synthetic ground-truth set; integrates into the report's "slot precision".
+- [x] **T13** `subproto/laya_server.py`: HTTP scoring server implementing the `/health` + `/score` contract `laya.py` expects; deterministic lexical scorer, with an MLX path guarded behind `if importlib.util.find_spec("mlx")`.
+- [x] **T14** test: start `laya_server` on an ephemeral port, point engine `laya_url` at it, assert `backend == "laya"` is recorded for tool_gate and laya scores drive keep/drop.
+- [x] **T15** `bench/ablation.py`: laya-vs-heuristic precision/agreement on a labelled synthetic ground-truth set; integrates into the report's "slot precision".
 - [~] **T16** Real quantized MLX Laya checkpoint on-device + published CPU/MLX latency curve — BLOCKED(external): needs ~808MB HF weights + Apple MLX runtime.
 
 ## FR-9 / M5 — the shareable surface (TUI is testable; publish/post = external)

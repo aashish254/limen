@@ -14,6 +14,21 @@ def _percentile(sorted_vals, q):
     return sorted_vals[idx]
 
 
+def precision_metrics(gold, pred):
+    """Binary-set precision/recall/F1/accuracy — shared by the ablation harness
+    (bench/ablation.py) and label-driven slot precision (subproto audit)."""
+    gold = set(gold)
+    pred = set(pred)
+    tp = len(gold & pred)
+    fp = len(pred - gold)
+    fn = len(gold - pred)
+    precision = tp / float(tp + fp) if (tp + fp) else 1.0
+    recall = tp / float(tp + fn) if (tp + fn) else 1.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    return {"precision": round(precision, 4), "recall": round(recall, 4),
+            "f1": round(f1, 4), "tp": tp, "fp": fp, "fn": fn}
+
+
 def summarize(telemetry, since=None, until=None):
     where, args = [], []
     if since:
