@@ -89,6 +89,17 @@ def cmd_report(args):
     telemetry.close()
 
 
+def cmd_live(args):
+    config = Config.load(args.config, data_dir=args.home)
+    telemetry = _open_telemetry(config)
+    from . import live
+    try:
+        live.run(telemetry, interval=args.interval, once=args.once)
+    finally:
+        telemetry.close()
+    return 0
+
+
 def cmd_graph(args):
     from . import graph as graph_mod
 
@@ -245,6 +256,10 @@ def build_parser():
     rp.add_argument("--until")
     rp.add_argument("--json", action="store_true")
 
+    lv = sub.add_parser("live", parents=[common], help="live terminal savings meter")
+    lv.add_argument("--interval", type=float, default=1.0, help="refresh seconds")
+    lv.add_argument("--once", action="store_true", help="print one snapshot and exit (CI/screenshots)")
+
     gr = sub.add_parser("graph", parents=[common], help="index a repo (imports + symbols)")
     gr.add_argument("path", nargs="?", default=".")
     gr.add_argument("--out")
@@ -290,7 +305,8 @@ def main(argv=None):
     if not getattr(args, "cmd", None):
         build_parser().print_help()
         return 0
-    fn = {"up": cmd_up, "report": cmd_report, "graph": cmd_graph, "where": cmd_where,
+    fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
+          "where": cmd_where,
           "audit": cmd_audit, "export": cmd_export, "label": cmd_label,
           "inject": cmd_inject, "demo": cmd_demo}[args.cmd]
     return fn(args) or 0

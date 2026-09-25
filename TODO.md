@@ -32,8 +32,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 ## FR-9 / M5 — the shareable surface (TUI is testable; publish/post = external)
 
-- [ ] **T17** `subproto/live.py`: ANSI terminal savings meter (pure `render(snapshot) -> str`) + `subproto live` command tailing telemetry; `--once` snapshot mode for CI/screenshots.
-- [ ] **T18** test: `live.render()` produces the "saved X% / N tok · $A → $B" line from a telemetry snapshot; `subproto live --once` exits 0 and prints the meter.
+- [x] **T17** `subproto/live.py`: ANSI terminal savings meter (pure `render(snapshot) -> str`) + `subproto live` command tailing telemetry; `--once` snapshot mode for CI/screenshots.
+- [x] **T18** test: `live.render()` produces the "saved X% / N tok · $A → $B" line from a telemetry snapshot; `subproto live --once` exits 0 and prints the meter.
 - [~] **T19** Tagged PyPI release + Product-Hunt/HN launch post + recorded demo GIF — BLOCKED(external): human actions + real API spend for the on-screen bill.
 
 ## FR-5 / M4 — dataset moat (pipeline testable; actual training = external)

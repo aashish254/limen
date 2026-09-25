@@ -1,6 +1,6 @@
 # subproto benchmark (projection)
 
-Corpus: `/var/folders/jn/pnnpl_cn0gx93p8v1yf8jb080000gn/T/subproto-bench-q7401nj9` — 25 recorded requests, 299,365 est input tokens total.
+Corpus: `/var/folders/jn/pnnpl_cn0gx93p8v1yf8jb080000gn/T/subproto-bench-iexwhxnz` — 25 recorded requests, 299,365 est input tokens total.
 
 | slot | decisions | dropped units | est tokens saved | % of input | tokens/req |
 |---|--:|--:|--:|--:|--:|
