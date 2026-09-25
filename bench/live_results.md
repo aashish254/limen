@@ -5,7 +5,7 @@ Tasks: `tasks.sample.jsonl` · n=8 · bootstrap CI · mock upstream, $0, no key.
 | metric | observe | enforce | delta | 95% CI |
 |---|--:|--:|--:|:--|
 | input tokens (mean/task) | 19920 | 14306 | **27.9%** | [24.8, 30.9] |
-| p50 request latency (ms) | 38.0 | 29.0 | 14.0% | [-0.5, 24.6] |
+| p50 request latency (ms) | 8.1 | 7.8 | 3.3% | [0.6, 5.6] |
 | task pass-rate | 100.0% | 100.0% | **+0.0 pp** | [+0.0, +0.0] |
 
 **Correctness floor (I3): pass-rate delta 0.0 pp — HELD (gate: >= -1.0pp).**

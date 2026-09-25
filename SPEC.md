@@ -4,10 +4,15 @@
 > agent and makes it cheaper and faster by deciding — with a ~400M model, not the
 > frontier one — what context, tools, and effort each turn actually needs.
 
-Status: **P0 + P1 shipped and tested** (transparent proxy, telemetry, 4 decision
-slots in observation mode, code graph, dataset export, offline benchmark, no-key
-demo). This spec defines the goal and the requirements that turn a working core
-into the thing people can't not star.
+Status: **P0 + P1 + M1-sprint shipped and tested.** A three/four-dialect transparent
+proxy (OpenAI chat + `responses`, Anthropic `messages`, Gemini `generateContent`),
+telemetry + waste/slot-precision report, 4 decision slots (observation + opt-in
+enforce), code graph, dataset export + label loop + deterministic train/val split, a
+guarded MLX LoRA script, a local Laya scoring server + ablation harness, a live
+terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−27.9%
+input tokens, pass-rate held, bootstrap CI, no key). The remaining gaps are gated on
+external resources — a real quantized checkpoint, non-zero API spend, and a public
+task suite — and stay labelled **BLOCKED(external)**, never falsely checked.
 
 ---
 
@@ -114,11 +119,13 @@ things whose claims survive a one-command check.
 
 Requirement IDs map to the shipped modules so progress is auditable.
 
-### FR-1 Transparent, dual-dialect proxy — ✅ shipped
+### FR-1 Transparent, multi-dialect proxy — ✅ shipped
 `proxy.py`, `protocol.py`, `usage.py`
-- **AC:** OpenAI (`/chat/completions`, `/responses`) and Anthropic (`/messages`) both
-  relay correctly, streamed (SSE) and non-streamed.
-- **AC:** SSE usage reconstructed for cache-read / cache-write / reasoning tokens.
+- **AC:** OpenAI (`/chat/completions`, `/responses`), Anthropic (`/messages`) and
+  Gemini (`generateContent`/`streamGenerateContent`) all relay correctly, streamed
+  (SSE) and non-streamed.
+- **AC:** SSE usage reconstructed for cache-read / cache-write / reasoning tokens on
+  every dialect.
 - **AC:** Byte-for-byte passthrough in observation mode verified by e2e test.
 
 ### FR-2 Telemetry & waste report — ✅ shipped
@@ -141,24 +148,40 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **FR-3d effort:** route trivial turns to low tier / small model. **AC:** complex vs
   trivial requests classify correctly on the heuristic; observational only by default.
 
-### FR-4 Laya backend adapter — ⚠️ interface shipped, live inference pending
-`laya.py`
+### FR-4 Laya backend adapter + local scoring server — ✅ interface + mock backend shipped; real checkpoint BLOCKED(external)
+`laya.py`, `laya_server.py`, `bench/ablation.py`
 - **AC today:** adapter asks per-candidate keep/drop; falls back to heuristics if the
-  server is unreachable; backend recorded per decision (`laya` vs `heuristic`).
-- **AC target:** `LAYA_URL=… subproto up` uses a real local Laya scoring server and the
-  report shows **laya vs heuristic precision delta** on the same corpus.
+  server is unreachable; backend recorded per decision (`laya` vs `heuristic`). A
+  local `/health`+`/score` server (deterministic lexical scorer, MLX path behind an
+  import guard) runs on an ephemeral port; `bench/ablation.py` reports laya-vs-
+  heuristic precision on labelled ground truth (both lexical today → they agree, and
+  the report says so).
+- **AC target:** point `LAYA_URL` at a quantized MLX Laya checkpoint and show a real
+  laya-vs-heuristic precision delta + CPU latency curve. **BLOCKED(external):** needs
+  ~808MB HF weights + Apple MLX runtime.
 
 ### FR-5 Dataset harvest & label loop — ✅ shipped
-`dataset.py`, `subproto export`, `subproto label`
+`dataset.py`, `subproto export`, `subproto label`, `subproto split`, `train/finetune_mlx.py`
 - **AC:** JSONL `subproto/1` records per-decision: features, candidates+scores, backend,
   applied flag, token/cost outcome, and any human label.
 - **AC:** export is stable and append-only across releases (it's a training asset).
+- **AC:** `subproto split` emits a deterministic, seeded, body_sha-de-duplicated
+  train/val split in the `{state,question,options,answer}` supervision format; no
+  train/val leakage (tested). `train/finetune_mlx.py` is a guarded LoRA script that
+  exits honestly without MLX + weights.
 
-### FR-6 Offline benchmark harness — ✅ shipped (projection only)
-`bench/ab.py`, `bench/results.md`
-- **AC:** `python bench/ab.py --mock` reproduces the per-slot savings table with no key.
-- **AC target:** `bench/live.py` runs the **pass-rate-held** A/B against a real task
-  suite + grader and emits the hero number with confidence intervals.
+### FR-6 Benchmark harness — ✅ shipped (projection + mock-measured; billed hero BLOCKED(external))
+`bench/ab.py`, `bench/results.md`, `bench/live.py`, `bench/tasks.sample.jsonl`
+- **AC:** `python bench/ab.py --mock` reproduces the per-slot savings **projection**
+  table with no key.
+- **AC:** `python bench/live.py --mock` runs the **pass-rate-held** A/B (observe vs
+  enforce) against `fakeup` with a SWE-bench-shaped task set + mock grader, and emits
+  the delivered input-token Δ with bootstrap 95% CI: −27.9% tokens, pass-rate +0.0 pp.
+  The enforced body is echoed by the mock so the token number is *delivered*, not
+  estimated. Latency there is a request-shape proxy, labelled as such.
+- **AC target:** run the same harness over a **public** task suite with a real grader
+  and real provider billing to publish the billed hero number. **BLOCKED(external):**
+  non-zero API spend + a curated SWE-bench subset.
 
 ### FR-7 CLI, install, demo — ✅ shipped
 `cli.py`, `install.sh`, `demo.py`, `fakeup/server.py`
@@ -166,14 +189,19 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **AC:** `subproto up --for claude|codex|gemini|aider` prints exact env vars; `inject`
   and `--help` work on 3.9 and 3.11.
 
-### FR-8 Gemini-native + OpenAI `responses` streaming edges — ❌ not started
-- **AC:** vertex/gemini `generateContent` streaming usage captured; `responses` SSE
-  reasoning tokens captured. (Current OpenAI path covers chat completions + best-effort
-  responses.)
+### FR-8 Gemini-native + OpenAI `responses` streaming edges — ✅ shipped
+`usage.py`, `proxy.py`, `fakeup/server.py`, `demo.py`
+- **AC:** Gemini `generateContent`/`streamGenerateContent` usage (`usageMetadata`:
+  prompt/candidates/thoughts/cached tokens) parsed streamed + non-streamed and routed
+  with `x-goog-api-key`; OpenAI `responses` usage (incl. cached-input + reasoning
+  tokens) parsed. Both exercised end-to-end through the proxy against `fakeup`, which
+  now emits those exact shapes.
 
-### FR-9 TUI overlay — ❌ not started (the shareable moment)
-- **AC:** live terminal meter: "saved 38% / 4,120 tok this session · $1.02 → $0.63".
-  This is the screenshot that spreads.
+### FR-9 TUI overlay — ✅ shipped
+`live.py`, `subproto live`
+- **AC:** live terminal meter: "saved 38% / 4,120 tok this session · $1.02 → $0.63",
+  tailing telemetry; `subproto live --once` emits a deterministic snapshot for CI and
+  screenshots. Pure `render(snapshot) -> str`, ANSI-tested.
 
 ---
 
@@ -193,9 +221,12 @@ Requirement IDs map to the shipped modules so progress is auditable.
 1. **One-command truth.** `subproto demo` + `bench/ab.py --mock` work with no key,
    no signup, on a fresh clone. (Done.)
 2. **The hero image is a bill.** README's first visual is `$A → $B, same tasks,
-   same pass rate` — measured, not projected. (Needs FR-6 live + M3.)
+   same pass rate`. **Mock-measured today** (−27.9% tokens, pass-rate held, CI);
+   the *billed* bill drop needs FR-6-real + M3 (non-zero API spend) — kept labelled a
+   projection until then, per I6.
 3. **A killer demo gif.** Terminal side-by-side: agent reading 8 files vs `subproto
-   where` jumping to the right one, with the token counter visibly lower. (Needs FR-9.)
+   where` jumping to the right one, with the token counter visibly lower. (Needs the
+   external launch assets; `subproto live` supplies the meter.)
 4. **Rides the Jev/Laya wave.** Framing is "System One for coding agents," positioned
    next to the models people are already excited about.
 5. **Contributors can add value in 5 minutes** via `subproto label` — the OSS loop
@@ -209,19 +240,24 @@ Requirement IDs map to the shipped modules so progress is auditable.
 
 - **M0 (done)** — P0 proxy + telemetry + report; P1 slots + graph + dataset + demo +
   offline benchmark. Green on 3.9 & 3.11.
-- **M1 — Real traffic, real numbers (projection → measurement).** Document per-tool
-  wiring (Claude/Codex/Gemini/Cline/aider/OpenCode/Antigravity), validate the waste
-  report against ≥3 real sessions, harden OpenAI `responses` + Gemini streaming (FR-8).
-- **M2 — Laya on-device.** Stand up a local Laya scoring server (MLX/ONNX quantized),
-  wire FR-4 end-to-end, prove laya-beats-heuristic precision on the ablation, publish
-  the CPU latency curve (target ≤150ms/decision on Apple silicon, ≤350ms worst case).
-- **M3 — The held-pass-rate harness.** `bench/live.py` over a public task suite
-  (SWE-bench-style / a curated 20-task set) with a grader; publish `results.md` with
-  confidence intervals. This is what upgrades every claim.
-- **M4 — LoRA fine-tune + release the dataset.** Train on harvested labels, ship a
-  v0 routing model, publish the dataset. The moat goes live.
-- **M5 — The viral layer.** TUI live-savings overlay (FR-9), demo gif, launch copy,
-  first tagged PyPI release, Product-Hunt / HN post anchored on the hero number.
+- **M1 (done)** — Per-tool wiring docs (`WIRING.md`, path-served test), FR-8 hardened
+  (OpenAI `responses` + Gemini `generateContent` shapes in `fakeup` + parsed + e2e),
+  `bench/live.py` pass-rate-held harness against `fakeup` with a SWE-bench-shaped task
+  adapter + mock grader, and per-decision latency plumbing. Report now carries
+  cache-hit-rate, decision latency, and label-driven slot precision.
+- **M2 (partial — BLOCKED external)** — Local Laya scoring server + adapter + ablation
+  harness shipped and tested (lexical backend). The **real quantized MLX checkpoint**
+  and published CPU latency curve need ~808MB HF weights + MLX runtime.
+- **M3 (harness shipped — billed number BLOCKED external)** — `bench/live.py` runs the
+  pass-rate-held A/B with bootstrap CI and reports a mock-delivered −27.9% token
+  reduction. The **public task suite + real grader + billed provider savings** need API
+  spend.
+- **M4 (pipeline shipped — training BLOCKED external)** — export + label loop +
+  deterministic train/val split + guarded LoRA script all tested. **Actual fine-tune +
+  dataset publication** need weights/runtime and a real training run.
+- **M5 (TUI shipped — release/post/GIF BLOCKED external)** — `subproto live` meter is
+  screenshot-ready. The tagged PyPI release, demo GIF, and launch posts are human
+  actions + spend.
 
 ---
 
@@ -244,14 +280,19 @@ Requirement IDs map to the shipped modules so progress is auditable.
 subproto is "perfect" when:
 1. A new user clones, runs `subproto demo`, and *gets it* in <60s with no key. **(done)**
 2. A real user wires it into ≥5 agents and sees a measured, verified bill drop with
-   no task regressions. **(M1 + M3)**
+   no task regressions. **(BLOCKED external: real sessions + API spend; mock-measured
+   held-pass-rate harness is in place)**
 3. The README hero number is **measured**, not projected, with a public reproducible
-   harness and confidence intervals. **(M3)**
-4. Laya (on-device) beats the heuristic baseline on slot precision in an ablation. **(M2 + M4)**
-5. There is an open, versioned routing-decision dataset people can contribute labels to. **(M4)**
-6. A live TUI savings meter exists that is screenshot-worthy. **(M5)**
+   harness and confidence intervals. **(mock-delivered −27.9% w/ CI is measured today;
+   the billed/provider number is M3)**
+4. Laya (on-device) beats the heuristic baseline on slot precision in an ablation.
+   **(ablation harness + local scorer shipped; needs the quantized checkpoint — M2)**
+5. There is an open, versioned routing-decision dataset people can contribute labels
+   to. **(export + label loop + seeded split pipeline shipped; publishing the corpus
+   is external)**
+6. A live TUI savings meter exists that is screenshot-worthy. **(done — `subproto live`)**
 7. Test suite stays green on 3.9 & 3.11 with the held-pass-rate harness as a gate, not
-   just token math. **(ongoing)**
+   just token math. **(mock harness gates in `run_tests.sh`; real-suite gate is M3)**
 
 Until all seven, "perfect" = "the claim is always at least as strong as the evidence."
 
@@ -288,7 +329,8 @@ stays fully reproducible:
 4. **Latency measurement plumbing** — per-decision timing recorded so the M2 MLX number
    has somewhere to land.
 
-Exit: every README claim is either (a) shipped + tested, or (b) explicitly labelled a
-projection with a one-command repro. No regressions on 3.9/3.11.
+Exit (met): every README claim is either (a) shipped + tested, or (b) explicitly
+labelled a projection with a one-command repro. The wiring docs, FR-8 dialect hardening,
+`bench/live.py` scaffold, and latency plumbing all shipped; no regressions on 3.9/3.11.
 
 

@@ -4,7 +4,8 @@
 
 **A System One layer for coding agents — decide before you pay.**
 
-A local, OpenAI/Anthropic-compatible proxy that sits in front of Claude Code,
+A local, OpenAI- / Anthropic- / Gemini-compatible proxy (chat, `messages`,
+`generateContent`, and `responses`) that sits in front of Claude Code,
 Codex CLI, Gemini CLI, Cline, OpenCode, aider and anything else that honours a
 `base_url`. It measures exactly where your agent's tokens go, then — one routing
 decision at a time — removes them using a tiny [Laya](https://huggingface.co/convai/laya)-style
@@ -13,7 +14,7 @@ decision model instead of your frontier model.
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
 just by using it.*
 
-[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
+[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
 
 The full product & engineering spec — goal, requirements, success criteria — lives in
 [`SPEC.md`](SPEC.md).
@@ -115,12 +116,19 @@ subproto report
 # 4. What would the slots have removed? (offline, over your recorded traffic)
 subproto audit
 
-# 5. Build the fine-tuning set, then enforce when you trust it.
-subproto export            # writes ~/.subproto/dataset-YYYYMMDD.jsonl
+# 5. Watch it work — a live terminal meter of tokens/$ saved this session.
+subproto live                 # ANSI meter, tails telemetry; --once for a snapshot
+
+# 6. Build the fine-tuning set (de-duplicated, seeded train/val split),
+#    then enforce when you trust it.
+subproto export               # writes ~/.subproto/dataset-YYYYMMDD.jsonl
+subproto split                # -> train.jsonl / val.jsonl in the Laya supervision format
 SUBPROTO_APPLY=tool_gate subproto up --slots
 ```
 
 `subproto inject claude|codex|gemini|aider` prints the exact env vars for each tool.
+For the precise `base_url`/endpoint every supported agent uses, see
+[`WIRING.md`](WIRING.md).
 
 ## The code graph
 
@@ -136,34 +144,57 @@ The agent stops paying a frontier model to `grep` its way around the repo.
 ## Benchmark
 
 Because the whole pitch is "fewer tokens, same correctness," every release ships
-with the number. `bench/ab.py` replays a fixed workload in observe vs enforce mode
-and reports the projected reduction per slot:
+with the number — and we separate *measured* from *projected* (design tenet: never
+overclaim).
 
 ```bash
-python bench/ab.py --mock        # reproducible, no API key
-python bench/ab.py --home ~/.subproto   # your real traffic
+python bench/live.py --mock    # measured: replay-vs-enforce against the local mock
+python bench/ab.py   --mock    # projected: per-slot headroom over recorded prompt shapes
 ```
 
-The hero metric we optimise and publish:
+**Measured on the mock harness** (`bench/live_results.md`, n=8 SWE-bench-shaped
+tasks, bootstrap 95% CI, $0 / no key — the enforced body is echoed back so the
+token delta is *delivered*, not estimated):
+
+| metric | observe | enforce | delta |
+|---|--:|--:|--:|
+| input tokens / task | 19,920 | 14,306 | **−27.9%** `[−24.8, −30.9]` |
+| task pass-rate | 100% | 100% | **+0.0 pp** (held) |
+
+**Projected on heuristic prompt shapes** (`bench/results.md`): −32.4% if every slot
+enforces. These are prompt-shape projections, not billed savings, and latency is a
+request-shape proxy against the mock rather than a real time-to-first-token.
+
+The hero metric we publish once against a real SWE-bench-style suite + grader and
+real provider billing:
 
 > **same 20 tasks, same model, held pass-rate: −X% input tokens, −Y ms p50 to first
-> token, $A → $B.**  (Filled in per release from `bench/results.md`.)
-
-Until we have a stable pass-rate harness we label these as *projections*, not
-claims — you can verify any of them locally in one command.
+> token, $A → $B** (billed). Until that exists, the mock-measured −27.9% and the
+> projected −32.4% above are exactly what they're labelled — you can reproduce both
+> locally in one command, no key.
 
 ## Bring your own Laya
 
-subproto ships with heuristics so it is useful on day zero. When you have a
-[Laya](https://huggingface.co/convai/laya) scoring server up:
+subproto ships with heuristics so it is useful on day zero. It also ships a local
+scoring server that speaks the adapter's `/health` + `/score` contract (deterministic
+lexical scorer, with an MLX path guarded behind an import check):
 
 ```bash
+python -m subproto.laya_server --port 8000        # the mock-verifiable backend
 LAYA_URL=http://localhost:8000 subproto up --slots
 ```
 
 The `subproto/laya.py` adapter asks the model per-candidate keep/drop questions and
-falls back to heuristics if it's unreachable — the exported dataset is exactly the
-supervision signal for the fine-tune that closes the zero-shot accuracy gap.
+falls back to heuristics if it's unreachable. `bench/ablation.py` reports laya-vs-
+heuristic agreement on labelled ground truth — today both are lexical, so they agree
+and we say so; the delta becomes meaningful when a quantized checkpoint replaces the
+scorer. The full loop from usage to a specialised model is:
+
+```bash
+subproto export   # telemetry -> JSONL of every decision
+subproto split    # -> train.jsonl / val.jsonl (seeded, de-duplicated by body_sha)
+train/finetune_mlx.py   # LoRA fine-tune (guarded: exits honestly without MLX + weights)
+```
 
 ## Design tenets
 
@@ -178,14 +209,21 @@ supervision signal for the fine-tune that closes the zero-shot accuracy gap.
 ## Roadmap
 
 - [x] Transparent OpenAI + Anthropic proxy with SSE-aware usage capture
+- [x] Gemini native + OpenAI `responses` dialects (usage, routing, mock, tests)
 - [x] Prompt-shape telemetry + SQLite + token/cost/waste report
 - [x] Four decision slots (tool_gate, compact, context, effort) in observation mode
 - [x] graphify-lite code graph (`subproto graph` / `subproto where`)
 - [x] Dataset export + human-label loop (`subproto export` / `subproto label`)
-- [ ] Live Laya inference backend (beyond the adapter) and the LoRA fine-tune
-- [ ] Pass-rate–held A/B harness wired to SWE-bench-style tasks
-- [ ] TUI overlay: live "you just saved 38% this session" meter
-- [ ] Providers: Gemini native + OpenAI `responses` streaming edge cases
+- [x] Deterministic, de-duplicated train/val split (`subproto split`)
+- [x] Guarded MLX LoRA fine-tune script (`train/finetune_mlx.py`)
+- [x] Local Laya scoring server behind the adapter (`python -m subproto.laya_server`)
+- [x] Pass-rate–held A/B harness on SWE-bench-shaped tasks (mock; `bench/live.py`)
+- [x] TUI overlay: live "you just saved 38% this session" meter (`subproto live`)
+- [ ] Real quantized MLX Laya checkpoint on-device + published latency curve
+      (needs ~808MB HF weights + Apple MLX runtime — external)
+- [ ] Hero metric on a real SWE-bench-style suite + billed provider savings
+      (needs non-zero API spend — external; mock-measured number ships meanwhile)
+- [ ] Tagged PyPI release + launch post + demo GIF (external)
 
 ## Contributing
 

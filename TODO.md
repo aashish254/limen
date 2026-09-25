@@ -46,9 +46,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 - [x] **T23** `report.py`: add cache-hit-rate, per-decision latency, and slot-precision sections to text + json render; ensure `render_json` stays backward-compatible.
 - [x] **T24** test: report text/json contains the new sections given a corpus with decisions + labels.
-- [ ] **T25** Sync `SPEC.md` + `README.md` status markers to reality (FR-4/8/9 → shipped-or-blocked, no overclaim per I6).
+- [x] **T25** Sync `SPEC.md` + `README.md` status markers to reality (FR-4/8/9 → shipped-or-blocked, no overclaim per I6).
 
 ## Cross-cutting verification
 
-- [ ] **T26** Full suite green on 3.11 **and** 3.9; `python3 -m compileall` 0 warnings; `bench/ab.py --mock` + `bench/live.py --mock` both run end-to-end with no key.
-- [ ] **T27** `run_tests.sh` one-command gate (compileall + pytest + both benches + `subproto demo --slots`), used as the pre-commit proof for every task above.
+- [x] **T26** Full suite green on 3.11 **and** 3.9; `python3 -m compileall` 0 warnings; `bench/ab.py --mock` + `bench/live.py --mock` both run end-to-end with no key.
+- [x] **T27** `run_tests.sh` one-command gate (compileall + pytest + both benches + `subproto demo --slots`), used as the pre-commit proof for every task above.
