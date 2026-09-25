@@ -80,8 +80,9 @@ def cmd_up(args):
 def cmd_report(args):
     config = Config.load(args.config, data_dir=args.home)
     telemetry = _open_telemetry(config)
-    from . import report
-    summary = report.summarize(telemetry, since=args.since, until=args.until)
+    from . import dataset, report
+    summary = report.summarize(telemetry, since=args.since, until=args.until,
+                               labels=dataset.load_labels(config))
     if args.json:
         print(json.dumps(report.render_json(summary), indent=1, default=str))
     else:

@@ -44,8 +44,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 ## Report completeness (SPEC §6) + docs sync
 
-- [ ] **T23** `report.py`: add cache-hit-rate, per-decision latency, and slot-precision sections to text + json render; ensure `render_json` stays backward-compatible.
-- [ ] **T24** test: report text/json contains the new sections given a corpus with decisions + labels.
+- [x] **T23** `report.py`: add cache-hit-rate, per-decision latency, and slot-precision sections to text + json render; ensure `render_json` stays backward-compatible.
+- [x] **T24** test: report text/json contains the new sections given a corpus with decisions + labels.
 - [ ] **T25** Sync `SPEC.md` + `README.md` status markers to reality (FR-4/8/9 → shipped-or-blocked, no overclaim per I6).
 
 ## Cross-cutting verification

@@ -29,7 +29,54 @@ def precision_metrics(gold, pred):
             "f1": round(f1, 4), "tp": tp, "fp": fp, "fn": fn}
 
 
-def summarize(telemetry, since=None, until=None):
+def slot_precision(telemetry, labels):
+    """Label-driven per-slot approval rate from the `subproto label` corpus.
+
+    Human labels are verdicts on a whole decision (good/bad/uncertain), so the
+    honest precision signal is the approval rate over labelled decisions:
+    good / (good + bad). Uncertain and unlabelled decisions are excluded, and a
+    slot with no labels is reported as `None` rather than a fabricated 1.0.
+    """
+    rows = telemetry.query(
+        "SELECT id, decisions FROM requests WHERE decisions IS NOT NULL ORDER BY id")
+    tally = {}
+    for r in rows:
+        try:
+            decisions = json.loads(r["decisions"] or "[]")
+        except ValueError:
+            continue
+        entry = labels.get(str(r["id"])) or {}
+        for d in decisions:
+            slot = d.get("slot")
+            verdict = entry.get(slot)
+            if verdict not in ("good", "bad", "uncertain"):
+                continue
+            t = tally.setdefault(slot, {"good": 0, "bad": 0, "uncertain": 0})
+            t[verdict] += 1
+    out = {}
+    for slot, t in sorted(tally.items()):
+        den = t["good"] + t["bad"]
+        out[slot] = {
+            "labelled": sum(t.values()),
+            "good": t["good"], "bad": t["bad"], "uncertain": t["uncertain"],
+            "approval_rate": round(t["good"] / float(den), 4) if den else None,
+        }
+    return out
+
+
+def _cache_hit_rate(totals):
+    """Cached share of input tokens actually read from cache, across all requests."""
+    fin = int(totals.get("in_tok") or 0) + int(totals.get("cw_tok") or 0)
+    cin = int(totals.get("cr_tok") or 0)
+    denom = fin + cin
+    return {
+        "fresh_in": fin,
+        "cached_in": cin,
+        "hit_rate": round(cin / float(denom), 4) if denom else None,
+    }
+
+
+def summarize(telemetry, since=None, until=None, labels=None):
     where, args = [], []
     if since:
         where.append("day >= ?")
@@ -79,6 +126,9 @@ def summarize(telemetry, since=None, until=None):
         "p95": _percentile(ems, 0.95),
         "avg": round(sum(ems) / len(ems), 3) if ems else None,
     }
+    summary["cache_hit_rate"] = _cache_hit_rate(summary["totals"] or {})
+    if labels:
+        summary["slot_precision"] = slot_precision(telemetry, labels)
     return summary
 
 
@@ -161,6 +211,11 @@ def render_text(summary, since=None, until=None):
     if dl.get("n"):
         lines.append("  slot decision latency p50 %.1fms  p95 %.1fms  (n=%d)" % (
             dl["p50"], dl["p95"], dl["n"]))
+    chr_ = summary.get("cache_hit_rate") or {}
+    if chr_.get("hit_rate") is not None:
+        lines.append("  cache hit rate      %12.1f%%  (%d cached / %d input tok)" % (
+            100.0 * chr_["hit_rate"], chr_["cached_in"],
+            chr_["cached_in"] + chr_["fresh_in"]))
     lines.append("")
     lines.append("  where the input tokens came from (request characters)")
     cats = summary["cat_chars"]
@@ -197,6 +252,15 @@ def render_text(summary, since=None, until=None):
         lines.append("    %-10s %9d tok total  %6d/req  %5.1f%% of input" % (
             g["slot"], g["est_tok_total"], g["est_tok_per_req"], 100 * g["share_of_input"]))
         lines.append("               %s" % g["note"])
+    sp = summary.get("slot_precision")
+    if sp:
+        lines.append("")
+        lines.append("  slot precision (from `subproto label` verdicts; approval = good/(good+bad))")
+        for slot, m in sorted(sp.items()):
+            ar = m["approval_rate"]
+            lines.append("    %-10s labelled %3d   good %3d  bad %3d  uncertain %3d   approval %s" % (
+                slot, m["labelled"], m["good"], m["bad"], m["uncertain"],
+                ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
     lines.append("")
     lines.append("  run `subproto audit` to see what the slots would drop, "
                  "and `subproto export` to build the fine-tuning set.")
