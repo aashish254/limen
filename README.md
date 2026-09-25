@@ -15,6 +15,9 @@ just by using it.*
 
 [Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
 
+The full product & engineering spec — goal, requirements, success criteria — lives in
+[`SPEC.md`](SPEC.md).
+
 </div>
 
 ---
