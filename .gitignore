@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# local runtime state
+.subproto/
+*.db
+*.db-journal
+dataset*.jsonl
+bodies/
+
+# editors
+.DS_Store
+.idea/
+.vscode/

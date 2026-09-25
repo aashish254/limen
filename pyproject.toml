@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subproto"
+version = "0.1.0"
+description = "A System One layer for coding agents: decide before you pay."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.scripts]
+subproto = "subproto.cli:main"
+
+[tool.setuptools]
+packages = ["subproto", "fakeup"]
+
+[tool.setuptools.package-data]
+subproto = ["data/*.json"]

@@ -1,0 +1,270 @@
+"""graphify-lite: an offline import/symbol graph of the working repo.
+
+The point of the graph is that a decision can be made about *which files a task
+touches* without asking a frontier model to read through the repo. Indexing is
+paid once at `subproto graph`; every later lookup is a sub-millisecond scan of
+the cached index.
+"""
+
+import ast
+import json
+import os
+import re
+import time
+
+LANG_BY_EXT = {
+    ".py": "python", ".js": "javascript", ".jsx": "javascript",
+    ".mjs": "javascript", ".cjs": "javascript", ".ts": "typescript",
+    ".tsx": "typescript",
+}
+
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
+             ".next", ".pytest_cache", "target", "vendor", ".mypy_cache", ".ruff_cache",
+             ".subproto", "site-packages"}
+
+FILE_CAP = 4 * 1024 * 1024
+
+JS_IMPORT_RE = re.compile(
+    r"""(?:^|[\s;}])import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]"""
+    r"""|(?:^|[\s;}])export\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]"""
+    r"""|\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)"""
+    r"""|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)""",
+    re.M,
+)
+JS_EXPORT_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:async\s+)?(?:default\s+)?"
+    r"(?:function\s*\*?\s*([A-Za-z0-9_]+)|class\s+([A-Za-z0-9_]+)"
+    r"|(?:const|let|var)\s+([A-Za-z0-9_]+))",
+    re.M,
+)
+JS_IDENT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{2,}")
+COMMENT_RE = re.compile(r"(?:^|\n)[ \t]*(?:#|//)[ \t]*(.{4,160})")
+
+
+def walk(root, max_files=20000):
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in SKIP_DIRS and not d.endswith((".egg-info",)))
+        for name in sorted(filenames):
+            ext = os.path.splitext(name)[1]
+            if ext not in LANG_BY_EXT:
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                if os.path.getsize(path) > FILE_CAP:
+                    continue
+            except OSError:
+                continue
+            files.append(path)
+            if len(files) >= max_files:
+                return files
+    return files
+
+
+def _read(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _rel(root, path):
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
+def parse_python(src):
+    syms = []
+    imports = []
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return syms, imports
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            syms.append(node.name)
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    syms.append(sub.name)
+        elif isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    syms.append(tgt.id)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                imports.append((a.name, 0))
+        elif isinstance(node, ast.ImportFrom):
+            if node.module or node.names:
+                names = [a.name for a in node.names]
+                imports.append(((node.module or "") + " " + " ".join(names), node.level or 0))
+    doc = ""
+    try:
+        doc = ast.get_docstring(tree) or ""
+    except Exception:
+        doc = ""
+    return syms, imports, doc
+
+
+def parse_js(src):
+    imports = []
+    for m in JS_IMPORT_RE.finditer(src):
+        spec = next((g for g in m.groups() if g), None)
+        if spec:
+            imports.append((spec, 0))
+    syms = []
+    for m in JS_EXPORT_RE.finditer(src):
+        for g in m.groups():
+            if g:
+                syms.append(g)
+    return syms, imports
+
+
+def resolve_python(rel_path, module, level):
+    if level:
+        base = os.path.dirname(rel_path)
+        for _ in range(level - 1):
+            base = os.path.dirname(base)
+        parts = module.split(".") if module else []
+        cand = [os.path.normpath(os.path.join(base, *(parts + ["__init__.py"])))]
+        cand.append(os.path.normpath(os.path.join(base, *(parts + [".py"]))))
+        for i in range(len(parts)):
+            cand.append(os.path.normpath(os.path.join(base, *(parts[:i] + [parts[i] + ".py"]))))
+        return cand
+    return ["site:" + module]
+
+
+def resolve_js(rel_path, spec):
+    if not spec.startswith("."):
+        return ["pkg:" + spec.split("/")[0]]
+    base = os.path.normpath(os.path.join(os.path.dirname(rel_path), spec))
+    out = []
+    for leaf in ("", ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+                 "/index.js", "/index.ts", "/index.tsx", "/__init__.py"):
+        out.append(base + leaf)
+    return out
+
+
+def build(root):
+    root = os.path.abspath(root)
+    paths = walk(root)
+    index = set(_rel(root, p) for p in paths)
+    nodes = {}
+    edges = []
+    for p in paths:
+        rel = _rel(root, p)
+        lang = LANG_BY_EXT[os.path.splitext(p)[1]]
+        src = _read(p)
+        lines = src.count("\n") + 1
+        if lang == "python":
+            parsed = parse_python(src)
+            syms, imports = parsed[0], parsed[1]
+            doc = parsed[2] if len(parsed) > 2 else ""
+        else:
+            syms, imports = parse_js(src)
+            doc = " ".join(m.group(1) for m in list(COMMENT_RE.finditer(src))[:4])
+        hints = sorted(set(
+            [x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9_]{3,}", src)]
+            + [os.path.basename(rel).lower()] + [s.lower() for s in syms]
+        ))[:400]
+        nodes[rel] = {
+            "lang": lang,
+            "lines": lines,
+            "symbols": syms[:200],
+            "doc": doc[:400],
+            "hints": hints,
+            "mtime": os.path.getmtime(p),
+        }
+        for spec, level in imports:
+            for cand in (resolve_python(rel, spec.split(" ")[0], level) if lang == "python"
+                         else resolve_js(rel, spec)):
+                if cand in index:
+                    edges.append((rel, cand))
+                elif cand.startswith(("site:", "pkg:")):
+                    edges.append((rel, cand))
+    deps = {}
+    dependents = {}
+    for a, b in edges:
+        deps.setdefault(a, []).append(b)
+        dependents.setdefault(b, []).append(a)
+    return {
+        "root": root,
+        "built_at": time.time(),
+        "file_count": len(nodes),
+        "edge_count": len(edges),
+        "nodes": nodes,
+        "deps": deps,
+        "dependents": dependents,
+    }
+
+
+def index_path(root):
+    return os.path.join(os.path.abspath(root), ".subproto-graph.json")
+
+
+def save(graph, path):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(graph, f, separators=(",", ":"))
+    os.replace(tmp, path)
+    return path
+
+
+def load(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def score_files(graph, query_terms, file_mentions, exclude=()):
+    """Lexical relevance per file. Returns [(rel, score, why)]."""
+    q = set(t.lower() for t in query_terms)
+    mention_set = set(m.lower() for m in file_mentions)
+    nodes = graph.get("nodes") or {}
+    deps = graph.get("deps") or {}
+    dependents = graph.get("dependents") or {}
+    out = []
+    for rel, node in nodes.items():
+        if rel in exclude:
+            continue
+        low = rel.lower()
+        why = []
+        score = 0.0
+        syms = set(s.lower() for s in node.get("symbols") or [])
+        hints = set(node.get("hints") or [])
+        for t in q:
+            if t in syms:
+                score += 3.0
+                why.append("sym:" + t)
+            elif t in low:
+                score += 2.0
+                why.append("path:" + t)
+            elif t in hints:
+                score += 0.6
+        if not q and not mention_set:
+            continue
+        for m in mention_set:
+            if m in low or low.endswith(m):
+                score += 8.0
+                why.append("mentioned")
+        for dep in deps.get(rel, []):
+            if dep in mention_set or any(dep.endswith(m) for m in mention_set):
+                score += 2.0
+                why.append("imports-mentioned")
+        for back in dependents.get(rel, []):
+            if back in mention_set or any(back.endswith(m) for m in mention_set):
+                score += 1.2
+                why.append("imported-by-mentioned")
+        if score > 0:
+            out.append((rel, round(score, 2), sorted(set(why))[:6]))
+    out.sort(key=lambda r: (-r[1], r[0]))
+    return out
+
+
+def search(graph, query, top_k=12):
+    from . import protocol
+
+    terms = protocol.lexical_tokens(query, limit=60)
+    mentions = protocol.extract_paths(query)
+    scored = score_files(graph, terms, mentions)
+    return scored[:top_k]

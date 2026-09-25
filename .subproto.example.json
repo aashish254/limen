@@ -1,0 +1,9 @@
+{
+  "data_dir": "~/.subproto",
+  "port": 8787,
+  "store_bodies": false,
+  "record_features": true,
+  "laya_url": null,
+  "openai_upstream": "https://api.openai.com",
+  "anthropic_upstream": "https://api.anthropic.com"
+}
