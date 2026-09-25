@@ -80,13 +80,13 @@ def measure(cfg):
     return totals, slots
 
 
-def render(totals, slots, home):
+def render(totals, slots, corpus):
     n = max(1, totals["requests"])
     est_in = max(1, totals["est_in_tok"])
     lines = []
     lines.append("# subproto benchmark (projection)\n")
     lines.append("Corpus: `%s` — %d recorded requests, %s est input tokens total.\n"
-                 % (home, totals["requests"], f"{est_in:,}"))
+                 % (corpus, totals["requests"], f"{est_in:,}"))
     lines.append("| slot | decisions | dropped units | est tokens saved | % of input | tokens/req |")
     lines.append("|---|--:|--:|--:|--:|--:|")
     order = ["tool_gate", "compact", "context", "effort"]
@@ -102,7 +102,8 @@ def render(totals, slots, home):
                  "(heuristic stand-ins; the Laya fine-tune is expected to raise "
                  "precision, not change this ceiling.)" % (100.0 * total_save / est_in))
     lines.append("\n*These are projections from measured prompt shapes, not billed "
-                 "savings. The live pass-rate–held harness is on the roadmap.*")
+                 "savings. See `bench/live.py` (`live_results.md`) for the delivered, "
+                 "pass-rate–held numbers measured against the mock.*")
     return "\n".join(lines)
 
 
@@ -114,6 +115,8 @@ def main():
                     help="state dir with recorded bodies (start proxy with --store-bodies)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                   "results.md"))
+    ap.add_argument("--write", action="store_true",
+                    help="refresh the committed results file (default: print only)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -125,14 +128,17 @@ def main():
               "or use --mock." % home)
         return 1
     totals, slots = measure(cfg)
+    corpus = ("mock — %d deterministic synthetic requests" % args.mock
+              if args.mock else home)
     if args.json:
         print(json.dumps({"totals": totals, "slots": slots}, indent=1))
     else:
-        text = render(totals, slots, home)
+        text = render(totals, slots, corpus)
         print(text)
-        with open(args.out, "w") as f:
-            f.write(text + "\n")
-        print("\n-> wrote %s" % args.out)
+        if args.write:
+            with open(args.out, "w") as f:
+                f.write(text + "\n")
+            print("\n-> wrote %s" % args.out)
     return 0
 
 

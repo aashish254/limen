@@ -271,6 +271,10 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--mock", action="store_true", help="accepted for parity; always mock")
     ap.add_argument("--out", default=os.path.join(here, "live_results.md"))
+    ap.add_argument("--write", action="store_true",
+                    help="refresh the committed results file (default: print only, "
+                         "so the gate can run the harness without dirtying tracked "
+                         "evidence)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -286,9 +290,10 @@ def main():
     else:
         text = render(m, args.tasks)
         print(text)
-        with open(args.out, "w") as f:
-            f.write(text + "\n")
-        print("\n-> wrote %s" % args.out)
+        if args.write:
+            with open(args.out, "w") as f:
+                f.write(text + "\n")
+            print("\n-> wrote %s" % args.out)
     if m["pass_rate"]["delta_pct"] < -1.0:
         return 2
     return 0
