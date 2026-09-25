@@ -28,7 +28,7 @@ trade off against each other:
    filtering decisions.
 2. **Virality / star-worthiness.** It is the obvious next repo in the lineage of
    [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) /
-   [Laya](https://huggingface.co/convai/laya) / openclaw / omniroute — installable
+   [Laya](https://huggingface.co/convaiinnovations/laya) — installable
    in one command, instantly legible, and with **one shareable number** on the
    README hero image.
 
@@ -65,6 +65,41 @@ file, per tool, per context chunk, effort tier) harvested from real traffic. Tha
 corpus is the supervision signal for the LoRA fine-tune that closes Laya's
 zero-shot accuracy gap — and nobody else has it. Every design choice below serves
 *harvesting and trusting that dataset*.
+
+### 1.3 The landscape, and why this is not a clone (deconfliction)
+
+The "make coding agents cheaper" idea is live right now (as of Sept 2026), so the
+first thing a reviewer types into search is *"isn't this just Jev / RTK / a router?"*
+The spec has to answer that on paper, honestly, before the README does it in code.
+
+| Category | Representative(s) | Mechanism | What it does **not** do that subproto does |
+|---|---|---|---|
+| Closed **System One service** | [Jev (TypeSafe)](https://typesafe.ai/blog/introducing-system-one-models-and-jev) | Cloud API + console; proprietary; you call it to inject decision nodes into apps **you** write | Open weights; on-device; a transparent proxy in front of agents you **didn't** write; per-turn agent-context triage |
+| Open **System One models** | [Laya](https://huggingface.co/convaiinnovations/laya), OpenJev / djev / SemIf (~300–420M) | Small "state in → typed decision out" classifiers | No wiring: not a multi-dialect proxy, no observation-first telemetry, no label→fine-tune loop, no dataset. subproto **is** the wiring + the moat |
+| Deterministic **token killers** | [RTK "Rust Token Killer"](https://github.com/rtk-ai/rtk) (60–90% bash-output claim) | Hooks **bash stdout**, 4 static regex rules (strip noise, dedupe, aggregate) | Only terminal output; no learned/adaptive decisions; not a `base_url` proxy; no tool-schema / history / file-selection / model-routing; **no pass-rate metric, no dataset harvesting** |
+| Model **routers / gateways** | [OmniRoute](https://github.com/diegosouzapw/OmniRoute) (MIT), LiteLLM, OpenRouter, RouteLLM | Pick **which model/provider** answers a whole request | Don't decide **what goes inside** the prompt each turn; not a local sub-100ms classifier |
+| Manual **config hygiene** | `CLAUDE.md` / output styles, `/compact`, disabling MCP tools | Human-maintained, per-tool, static settings | Not automatic, not measured, not vendor-portable, doesn't compound into anything |
+| General **prompt compressors** | LLMLingua-family | Token-squeeze arbitrary prose | Agent-unaware and prompt-cache-hostile (violates our I2) |
+
+**The open gap subproto occupies:** a *local, transparent, multi-dialect proxy* that
+treats the **whole turn** — tool schemas + replayed context + which files + how much
+model — as tiny **learned** System One classifications, is **observation-first and
+measures pass-rate held**, and turns every decision into a **labelled dataset** that
+fine-tunes the very model making the calls. No listed project ships that set together.
+RTK is the closest neighbour and **explicitly omits** success-rate measurement and
+adaptive learning; the routers and manual techniques live at a different layer; the
+open models are raw material with no harness.
+
+### 1.4 How we win against this field (positioning, not volume)
+
+- **We don't out-shout RTK's "90% of bash output."** That's a self-warned, partial
+  number over one stream. We publish a **whole-request input-token reduction at a held
+  pass-rate with a confidence interval** — the honest, harder number (I6), and the one
+  the token-killer wave has to answer to.
+- **We don't compete with Jev on the model.** We're the open, local, agent-facing
+  *harness* Jev isn't, with Laya as a swappable base we specialise on our own data.
+- **We don't compete with routers on provider choice.** We work one level *down*, on
+  what the chosen model is forced to read every turn.
 
 ---
 
@@ -332,5 +367,63 @@ stays fully reproducible:
 Exit (met): every README claim is either (a) shipped + tested, or (b) explicitly
 labelled a projection with a one-command repro. The wiring docs, FR-8 dialect hardening,
 `bench/live.py` scaffold, and latency plumbing all shipped; no regressions on 3.9/3.11.
+
+---
+
+## 13. v2 — from mock-measured to the billed hero number (execution spec)
+
+v1 (M1) is shipped and mock-verified. **Everything that remains is gated on a
+resource §11.3 or the offline sandbox locked out** — non-zero API spend, a public task
+suite, real HF weights, and human launch actions. This section pre-specifies that work
+so each item is *wiring, not design*, the moment its gate opens. **Every item below
+carries an explicit `gate:` — it may never be marked done until a human opens that
+gate** (invariant I6). No v2 item is silently assumed complete.
+
+### V2-A — Real-traffic validation · `gate: user runs their own agents` (no incremental $)
+- **V2-A1** Wire subproto into ≥3 real sessions across ≥2 vendors with `--store-bodies`.
+- **V2-A2** `subproto audit` + `report` on real corpora; reconcile projected vs
+  delivered reduction; fix the provider-quirk usage-parse gaps only real traffic
+  exposes (the mock cannot).
+- **V2-A3** Confirm I2 against **real** Anthropic/OpenAI caching: wiring the proxy must
+  not regress cache-hit rate. Acceptance: a **measured** (not mock) input-token
+  reduction with no correctness regression, self-assessed by the user.
+
+### V2-B — The billed hero number · `gate: approved API budget + a public task suite`
+- **V2-B1** Port `bench/tasks.sample.jsonl` to a curated 20-task SWE-bench-style set with
+  real graders (or import a public subset).
+- **V2-B2** `bench/live.py` runs observe-vs-enforce against the **real provider**, model
+  held constant: emits input-token Δ, **billed $ Δ**, p50 TTFB Δ, pass-rate Δ, each with
+  bootstrap 95% CI.
+- **V2-B3** README hero image becomes that measured bill. North-Star (§1): **≥30% input
+  tokens at ≤1% pass-rate delta**, reproducible. If the real number lands lower, the
+  claim is narrowed to what was measured — never the reverse.
+
+### V2-C — Real Laya on-device · `gate: quantized weight download + Apple MLX runtime` (no $)
+- **V2-C1** `laya_server` MLX backend loads quantized `convaiinnovations/laya`; `/score`
+  returns real probabilities instead of the lexical stand-in.
+- **V2-C2** Re-run `bench/ablation.py` on the **real** scorer vs heuristic — this is what
+  makes the currently-zero precision delta non-zero and meaningful (T15).
+- **V2-C3** Publish the per-decision CPU/MLX latency curve (target ≤150 ms p50, ≤350 ms
+  p95 on Apple silicon). Acceptance: FR-4 target + **T16** check with a real scorer.
+
+### V2-D — Close the data flywheel · `gate: V2-A labels + a training run`
+- **V2-D1** Run `train/finetune_mlx.py` LoRA on `subproto split` output (real labels).
+- **V2-D2** Ship a v0 routing model; re-run V2-B with it; show **learned > heuristic**
+  precision at equal-or-better pass-rate — the moat earning its keep.
+- **V2-D3** Publish a versioned slice of the dataset; open a `good first issue` that is a
+  real label batch (the contributor loop from §7.5).
+
+### V2-E — The viral surface · `gate: human launch actions`
+- **V2-E1** Tagged PyPI release (`pipx install subproto`).
+- **V2-E2** Demo GIF (agent `grep`-ing its way around vs `subproto where` jumping to the
+  file, token counter visibly lower) + a `subproto live` screenshot.
+- **V2-E3** HN / Product-Hunt post anchored on the measured hero number, positioned
+  against RTK / Jev / routers exactly as framed in §1.3. **T19** checks here.
+
+### v2 Definition of Done
+All seven of §10, with items (2)–(5) flipped from mock/external to **measured · billed ·
+learned · published**, and every public number carrying a real confidence interval.
+Until a V2 item's `gate` is opened by the user, it stays `[~] BLOCKED(gate)` — never a
+false `[x]`.
 
 

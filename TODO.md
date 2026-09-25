@@ -52,3 +52,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 - [x] **T26** Full suite green on 3.11 **and** 3.9; `python3 -m compileall` 0 warnings; `bench/ab.py --mock` + `bench/live.py --mock` both run end-to-end with no key.
 - [x] **T27** `run_tests.sh` one-command gate (compileall + pytest + both benches + `subproto demo --slots`), used as the pre-commit proof for every task above.
+
+## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
+
+- [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.
+- [~] **V2-B** Billed hero number: `bench/live.py` vs the real provider over a public 20-task SWE-bench set, model held constant, with CI — gate: approved API budget + public task suite.
+- [~] **V2-C** Real quantized MLX Laya on-device + non-zero ablation precision delta + CPU latency curve — gate: weight download + Apple MLX runtime (no $). (Closes **T16**.)
+- [~] **V2-D** LoRA fine-tune on the split + ship v0 routing model + publish a dataset slice — gate: V2-A labels + a training run.
+- [~] **V2-E** Tagged PyPI release + demo GIF + HN/PH launch post positioned per SPEC §1.3 — gate: human launch actions. (Closes **T19**.)

@@ -8,7 +8,7 @@ A local, OpenAI- / Anthropic- / Gemini-compatible proxy (chat, `messages`,
 `generateContent`, and `responses`) that sits in front of Claude Code,
 Codex CLI, Gemini CLI, Cline, OpenCode, aider and anything else that honours a
 `base_url`. It measures exactly where your agent's tokens go, then — one routing
-decision at a time — removes them using a tiny [Laya](https://huggingface.co/convai/laya)-style
+decision at a time — removes them using a tiny [Laya](https://huggingface.co/convaiinnovations/laya)-style
 decision model instead of your frontier model.
 
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
@@ -50,6 +50,24 @@ models, vendors, or your editor:
 | "do I need all 40k tokens of history?" | replayed regardless | old tool results compacted |
 | "should I read these 8 files?" | agent greps → many big-model calls | offline code graph answers it |
 | "simple rename or gnarly migration?" | always frontier | routed by measured complexity |
+
+### Not another router, not a regex token-killer
+
+This space is live and crowded, so the honest comparison (full table in
+[`SPEC.md` §1.3](SPEC.md)):
+
+- **vs [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)** — Jev is
+  a *closed cloud service* you build apps **with**. subproto is the open, local
+  **harness that sits in front of agents you didn't write**, with a swappable open base.
+- **vs [RTK](https://github.com/rtk-ai/rtk) and other "token killers"** — they compress
+  *bash stdout* with fixed rules and don't report task success. subproto triages the
+  **whole turn** (tools, history, files, model tier), learns from your labels, and
+  publishes a **pass-rate–held** number, not a partial one.
+- **vs LiteLLM / OpenRouter / OmniRoute / RouteLLM** — routers pick *which model*
+  answers; subproto decides *what that model is forced to read*, one layer lower.
+- **vs [Laya](https://huggingface.co/convaiinnovations/laya)** — Laya is the ~400M base
+  *model*; subproto is the proxy + telemetry + label→fine-tune loop that turns it into a
+  routing model trained on **your** traffic. That dataset is the moat.
 
 ## How it works
 
