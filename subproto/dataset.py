@@ -6,6 +6,7 @@ the Laya fine-tune possible, so it is deliberately the boring, stable part.
 import gzip
 import json
 import os
+import random
 import time
 
 from . import protocol
@@ -139,3 +140,104 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
     return {"path": target, "rows": len(lines),
             "labelled": sum(1 for r in lines if r["label"]),
             "slots": dict((s, sum(1 for r in lines if r["slot"] == s)) for s in slots)}
+
+
+def _state_for(row, bodies):
+    """The model's conditioning text: the request's own words when we recorded the
+    body, else a stable stand-in derived from the stored features."""
+    entry = bodies.get(row.get("body_sha"))
+    if entry:
+        path, _dialect = entry
+        try:
+            body = protocol.load_body(read_body(path), "gzip" if path.endswith(".gz") else "")
+            a = analyze_request(body)
+            q = a.get("query") or ""
+            if q:
+                return q[-512:]
+        except Exception:
+            pass
+    names = json.loads(row.get("tool_names") or "[]") if row.get("tool_names") else []
+    return " ".join(names[:8]) or (row.get("api") or "") + " turn"
+
+
+def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True):
+    """Deterministic, de-duplicated train/val split in Laya supervision format.
+
+    Each example is a single narrow keep/drop question — `{state, question,
+    options, answer}` — which is exactly the shape `laya.py` asks at inference
+    time, so train and serve match. De-duplicated by (body_sha, slot, candidate);
+    human-labelled-"bad" decisions are excluded rather than taught. Seeded shuffle
+    makes the split reproducible and leak-free (index split of one shuffled list).
+    """
+    val_frac = max(0.0, min(1.0, float(val_frac)))
+    bodies = {}
+    for p in record_bodies(config):
+        stem = os.path.basename(p)
+        for suffix in (".json.gz", ".json"):
+            if stem.endswith(suffix):
+                stem = stem[:-len(suffix)]
+                break
+        dialect, _, sha = stem.partition("_")
+        if sha:
+            bodies[sha] = (p, dialect)
+
+    rows = telemetry.query(
+        "SELECT id, body_sha, decisions, tool_names, api FROM requests "
+        "WHERE decisions IS NOT NULL ORDER BY id")
+    labels = load_labels(config)
+
+    seen = set()
+    examples = []
+    for r in rows:
+        try:
+            decisions = json.loads(r["decisions"] or "[]")
+        except ValueError:
+            continue
+        state = _state_for(r, bodies)
+        hum = labels.get(str(r["id"]), {})
+        for d in decisions:
+            slot = d.get("slot")
+            if slot not in ALL_SLOTS:
+                continue
+            hl = hum.get(slot)
+            if hl == "bad":          # a decision a human rejected is not supervision
+                continue
+            for cand in d.get("candidates") or []:
+                tgt = cand.get("target")
+                if tgt is None:
+                    continue
+                key = (r["body_sha"], slot, tgt)
+                if key in seen:
+                    continue
+                seen.add(key)
+                keep = bool(cand.get("keep"))
+                examples.append({
+                    "state": state,
+                    "question": "keep",
+                    "slot": slot,
+                    "options": [tgt],
+                    "answer": "keep" if keep else "drop",
+                    "label_source": "human" if hl == "good" else "heuristic",
+                    "backend": d.get("backend"),
+                    "body_sha": r["body_sha"],
+                })
+
+    rng = random.Random(seed)
+    rng.shuffle(examples)
+    cut = int(round(len(examples) * (1.0 - val_frac)))
+    train, val = examples[:cut], examples[cut:]
+
+    out = {"n_examples": len(examples), "n_train": len(train), "n_val": len(val),
+           "val_frac": val_frac, "seed": seed, "dedup": True}
+    if write:
+        d = os.path.join(config.data_dir, "training")
+        os.makedirs(d, exist_ok=True)
+        for name, part in (("train.jsonl", train), ("val.jsonl", val)):
+            with open(os.path.join(d, name), "w") as f:
+                for ex in part:
+                    f.write(json.dumps(ex, separators=(",", ":")) + "\n")
+        out["train_path"] = os.path.join(d, "train.jsonl")
+        out["val_path"] = os.path.join(d, "val.jsonl")
+    else:
+        out["train"], out["val"] = train, val
+    return out

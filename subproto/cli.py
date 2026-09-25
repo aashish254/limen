@@ -173,6 +173,18 @@ def cmd_export(args):
     telemetry.close()
 
 
+def cmd_split(args):
+    from . import dataset
+
+    config = Config.load(args.config, data_dir=args.home)
+    telemetry = _open_telemetry(config)
+    res = dataset.build_training_split(config, telemetry, val_frac=args.val_frac,
+                                       seed=args.seed)
+    print(json.dumps(res, indent=1))
+    telemetry.close()
+    return 0
+
+
 def cmd_label(args):
     from . import dataset
     from .engine import ALL_SLOTS
@@ -283,6 +295,11 @@ def build_parser():
     ex.add_argument("--slots")
     ex.add_argument("--slim", action="store_true", help="omit per-candidate scores")
 
+    sp = sub.add_parser("split", parents=[common],
+                        help="build a deterministic train/val Laya supervision split")
+    sp.add_argument("--val-frac", type=float, default=0.2, dest="val_frac")
+    sp.add_argument("--seed", type=int, default=1337)
+
     lb = sub.add_parser("label", parents=[common], help="supervise a decision (good/bad/uncertain)")
     lb.add_argument("request_id", type=int)
     lb.add_argument("slot", choices=list(ALL_SLOTS) + ["all"])
@@ -307,6 +324,6 @@ def main(argv=None):
         return 0
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
           "where": cmd_where,
-          "audit": cmd_audit, "export": cmd_export, "label": cmd_label,
+          "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
           "inject": cmd_inject, "demo": cmd_demo}[args.cmd]
     return fn(args) or 0

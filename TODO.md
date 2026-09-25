@@ -38,9 +38,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 ## FR-5 / M4 — dataset moat (pipeline testable; actual training = external)
 
-- [ ] **T20** `dataset.py`: `build_training_split(cfg, val_frac)` → deterministic, seeded train/val split; export to a Laya-compatible supervision format (`{"state","question","options","answer"}`) with de-dup by body_sha.
-- [ ] **T21** tests: split is stable across runs, no leakage (val∩train empty), de-dup works, format validated.
-- [ ] **T22** `train/finetune_mlx.py`: documented LoRA script that consumes the exported split; import-guarded so it is honest about needing MLX + weights to run (not executed here).
+- [x] **T20** `dataset.py`: `build_training_split(cfg, val_frac)` → deterministic, seeded train/val split; export to a Laya-compatible supervision format (`{"state","question","options","answer"}`) with de-dup by body_sha.
+- [x] **T21** tests: split is stable across runs, no leakage (val∩train empty), de-dup works, format validated.
+- [x] **T22** `train/finetune_mlx.py`: documented LoRA script that consumes the exported split; import-guarded so it is honest about needing MLX + weights to run (not executed here).
 
 ## Report completeness (SPEC §6) + docs sync
 
