@@ -13,8 +13,16 @@ from .telemetry import CATEGORIES
 HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailer", "transfer-encoding", "upgrade", "content-length",
-    "content-encoding", "host",
+    "host",
 }
+# `content-encoding` is deliberately NOT here: it is an end-to-end header, so the
+# label must travel with the bytes in both directions or the far side decodes
+# garbage. The one exception is the engine path, which re-serialises the body as
+# plain JSON and so has to drop the claim itself (see `_passthrough`).
+RESPONSE_STRIP = HOP_BY_HOP - {"content-length"}
+# We relay response bytes untouched, so the upstream's own length still describes
+# them; dropping it would leave an HTTP/1.1 body with no framing but `connection:
+# close`, which the SDK reads as a broken stream.
 
 CA_CANDIDATES = (
     os.environ.get("SSL_CERT_FILE"),
@@ -118,16 +126,19 @@ def _connect(target, timeout):
     return http.client.HTTPSConnection(u.netloc, timeout=timeout, context=SSL_CONTEXT)
 
 
-def relay(dialect, path, req_headers, raw_body, config, timeout=600.0, tries=2):
+def relay(dialect, path, req_headers, raw_body, config, timeout=600.0, tries=2,
+          reencoded_body=False):
     """Forward the request untouched, streaming the response as it arrives.
 
     Yields ("head", status, headers), then ("ttfb", ms) on the first body read,
-    then ("chunk", bytes) per network read.
+    then ("chunk", bytes) per network read. `reencoded_body` says these bytes came
+    back out of `dump_body`, i.e. they are no longer what the agent sent.
     """
     base = _upstream_for(dialect, config)
     target = base + path
     parts = urllib.parse.urlparse(target)
-    hdrs = dict((k, v) for k, v in req_headers.items() if k.lower() not in HOP_BY_HOP)
+    strip = HOP_BY_HOP | {"content-encoding"} if reencoded_body else HOP_BY_HOP
+    hdrs = dict((k, v) for k, v in req_headers.items() if k.lower() not in strip)
     if not any(k.lower() in ("authorization", "x-api-key", "api-key", "x-goog-api-key")
                for k in hdrs):
         env_key = {"openai": "OPENAI_API_KEY", "responses": "OPENAI_API_KEY",
@@ -265,6 +276,7 @@ def make_handler(config, telemetry, engine):
                 with gzip.open(os.path.join(config.bodies_dir, name), "wb") as f:
                     f.write(raw)
             sent = raw
+            reencoded = False
             if engine is not None and isinstance(body, dict):
                 try:
                     new_body, decisions = engine.decide(dialect, body, analysis, config)
@@ -274,6 +286,7 @@ def make_handler(config, telemetry, engine):
                             sum(d.get("decision_ms", 0) for d in decisions), 3)
                         if new_body is not None:
                             sent = protocol.dump_body(new_body)
+                            reencoded = True
                             rec["interventions"] = [d["slot"] for d in decisions
                                                    if d.get("applied")]
                 except Exception as exc:
@@ -283,13 +296,14 @@ def make_handler(config, telemetry, engine):
             headers = {}
             body_tail = bytearray()
             try:
-                for item in relay(dialect, self.path, self.headers, sent, config):
+                for item in relay(dialect, self.path, self.headers, sent, config,
+                                  reencoded_body=reencoded):
                     if item[0] == "head":
                         status, headers = item[1], item[2]
                         feeder.content_type = headers.get("content-type", "")
                         self.send_response(status)
                         for k, v in headers.items():
-                            if k.lower() not in HOP_BY_HOP:
+                            if k.lower() not in RESPONSE_STRIP:
                                 self.send_header(k, v)
                         self.send_header("x-subproto", "0.1")
                         if "event-stream" in (headers.get("content-type") or ""):

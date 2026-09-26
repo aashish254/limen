@@ -15,6 +15,9 @@ from . import systemone
 
 ALL_SLOTS = ("tool_gate", "compact", "context", "effort")
 DEFAULT_APPLY = ("tool_gate", "compact")
+# Slots that only ever record a recommendation. Naming one in SUBPROTO_APPLY changes
+# no bytes, so the CLI says so instead of letting the meter imply an intervention.
+ADVISORY_SLOTS = ("effort",)
 
 
 def _now_ms():
@@ -26,6 +29,46 @@ def _apply_set():
     if raw is None:
         return set(DEFAULT_APPLY) if os.environ.get("SUBPROTO_ENFORCE") else set()
     return set(x.strip() for x in raw.split(",") if x.strip() in ALL_SLOTS)
+
+
+def _append_after_prefix(body, note):
+    """Put *note* at the very end of the conversation — never inside the cached prefix.
+
+    I2: writing into the top-level `system` string rewrites the prefix itself, which
+    busts the provider cache and bills a fresh read on every turn. So the note is
+    attached after the last turn, and that turn is cloned rather than mutated: the
+    bytes ahead of it — system, tools, all earlier turns — stay identical.
+    Returns (body_or_clone, injected).
+    """
+    out = dict(body)
+    msgs = out.get("messages")
+    if isinstance(msgs, list) and msgs and isinstance(msgs[-1], dict):
+        last = msgs[-1]
+        if last.get("role") == "assistant":
+            # ...assistant, user is the alternation both dialects expect.
+            tail = {"role": "user",
+                    "content": [{"type": "text", "text": note}]
+                    if isinstance(last.get("content"), list) else note}
+            out["messages"] = list(msgs) + [tail]
+            return out, True
+        clone = dict(last)
+        content = last.get("content")
+        if isinstance(content, list):
+            clone["content"] = list(content) + [{"type": "text", "text": note}]
+        elif isinstance(content, str):
+            clone["content"] = content + "\n\n" + note
+        else:
+            return body, False
+        out["messages"] = list(msgs[:-1]) + [clone]
+        return out, True
+    contents = out.get("contents")  # Gemini shape
+    if isinstance(contents, list) and contents and isinstance(contents[-1], dict):
+        last = contents[-1]
+        if isinstance(last.get("parts"), list):
+            out["contents"] = list(contents[:-1]) + [
+                dict(last, parts=list(last["parts"]) + [{"text": note}])]
+            return out, True
+    return body, False
 
 
 def _ask_backend(client, state, options, key_fn, threshold=0.5):
@@ -118,6 +161,9 @@ class Engine:
     def decide(self, dialect, body, analysis, config):
         apply_set = _apply_set()
         decisions = []
+        # A slot is `applied` only if it actually rewrote the body we forward; the
+        # flag is set once, from this set, at the end of the turn.
+        mutated = set()
         new_body = None
         est_in = analysis.get("est_in_tok") or 0
         idx, last_user = _last_user(body, dialect)
@@ -155,6 +201,7 @@ class Engine:
                 keep = set(d["target"] for d in hs if d["keep"])
                 new_body = dict(new_body or body)
                 new_body["tools"] = _filter_tools(tools, keep)
+                mutated.add("tool_gate")
 
         if est_in > 4000 and len(msgs_norm) > 8:
             _t0 = _now_ms()
@@ -192,6 +239,7 @@ class Engine:
                 new_body = dict(new_body or body)
                 new_body["messages"] = [
                     m for i, m in enumerate(body.get("messages") or []) if i not in drop]
+                mutated.add("compact")
 
         if self.graph is not None:
             _t0 = _now_ms()
@@ -211,15 +259,14 @@ class Engine:
                 if "context" in apply_set:
                     add = ("Relevant files in this repo, ranked by a local code graph "
                            "(not read yet):\n" + "\n".join("- " + d["target"] for d in ds[:6]))
-                    new_body = dict(new_body or body)
-                    sys_ = new_body.get("system")
-                    if isinstance(sys_, str):
-                        new_body["system"] = sys_ + "\n\n" + add
-                    elif isinstance(new_body.get("messages"), list) and new_body["messages"]:
-                        first = new_body["messages"][0]
-                        if isinstance(first.get("content"), list):
-                            new_body["messages"] = [dict(first, content=first["content"] + [
-                                {"type": "text", "text": add}])] + new_body["messages"][1:]
+                    # I2: the note must land *after* the cached prefix. Writing into
+                    # the top-level `system` string rewrites the prefix itself, which
+                    # busts the provider cache and bills a fresh read every turn — so
+                    # it is appended to the end of the conversation instead.
+                    candidate, injected = _append_after_prefix(new_body or body, add)
+                    if injected:
+                        new_body = candidate
+                        mutated.add("context")
 
         if analysis:
             _t0 = _now_ms()
@@ -231,4 +278,10 @@ class Engine:
                 "decision_ms": round(_now_ms() - _t0, 3),
             })
 
+        # One source of truth for `applied`: the slot rewrote the body we forward.
+        # A slot named in SUBPROTO_APPLY that found nothing to do — or that this
+        # dialect makes impossible — is not an intervention, and the meter must not
+        # claim it was (I6).
+        for d in decisions:
+            d["applied"] = d["slot"] in mutated
         return new_body, decisions

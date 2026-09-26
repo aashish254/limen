@@ -109,3 +109,24 @@ def test_export_slots_none_defaults_to_all_slots(tmp_path):
     assert res["slots"]["tool_gate"] == 1 and res["slots"]["compact"] == 1
     assert res["slots"]["context"] == 0
     tel.close()
+
+
+def test_export_is_a_stable_superset_projection(tmp_path):
+    """FR-5, honestly stated: the JSONL is re-derived from the telemetry DB in id
+    order, so exporting again after new traffic keeps every earlier row identical and
+    appends the rest. The DB is the append-only store, not the file."""
+    cfg, tel = _tel(tmp_path)
+    cfg.ensure_dirs()
+    _seed(tel, [_row(1, "s1"), _row(2, "s2")])
+    dataset.export(cfg, tel, path=str(tmp_path / "d.jsonl"))
+    with open(str(tmp_path / "d.jsonl")) as f:
+        first = [json.loads(l) for l in f]
+    _seed(tel, [_row(3, "s3")])
+    dataset.export(cfg, tel, path=str(tmp_path / "d.jsonl"))
+    with open(str(tmp_path / "d.jsonl")) as f:
+        again = [json.loads(l) for l in f]
+    assert len(first) == 2 and len(again) == 3
+    assert again[:2] == first, "a re-export rewrote history"
+    assert set(r["schema"] for r in again) == {"subproto/1"}
+    assert [r["request_id"] for r in again] == [1, 2, 3]
+    tel.close()

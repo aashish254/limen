@@ -139,8 +139,11 @@ things whose claims survive a one-command check.
   it. Enforcement is opt-in (`SUBPROTO_APPLY`). Telemetry is honest from day zero.
 - **I2 — Prompt-cache safety.** Never rewrite the cached prompt prefix mid-stream.
   Anthropic/OpenAI cache reads are ~10× cheaper than fresh; breaking a stable prefix
-  costs more than we save. Context injection appends *after* the prefix; compaction
-  fires only past a size threshold where a fresh cache already beats a replay.
+  costs more than we save. Context injection appends *after* the prefix — concretely,
+  at the end of the last turn (or a new trailing turn after an assistant one), never
+  into the top-level `system` string or the tools block, which *are* the prefix;
+  compaction fires only past a size threshold where a fresh cache already beats a
+  replay.
 - **I3 — Correctness floor.** The last N turns of a conversation are sacred.
   A slot may never drop recent user intent, open errors, or the current tool-result
   the agent is reacting to. Every drop is logged and individually reversible.
@@ -164,8 +167,12 @@ Requirement IDs map to the shipped modules so progress is auditable.
   Gemini (`generateContent`/`streamGenerateContent`) all relay correctly, streamed
   (SSE) and non-streamed.
 - **AC:** SSE usage reconstructed for cache-read / cache-write / reasoning tokens on
-  every dialect.
-- **AC:** Byte-for-byte passthrough in observation mode verified by e2e test.
+  every dialect. (Each field is read wherever that provider actually emits it; a
+  dialect with no cache-write concept records 0 rather than an invented number.)
+- **AC:** Byte-for-byte passthrough in observation mode verified by e2e test — including
+  *end-to-end headers*: a `content-encoding: gzip` request body arrives at the upstream
+  still compressed and still labelled, and a gzipped response keeps its header and its
+  `content-length` on the way back (I5; `test_I5_gzip_*`).
 
 ### FR-2 Telemetry & waste report — ✅ shipped
 `telemetry.py`, `pricing.py`, `report.py`
@@ -184,8 +191,11 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **FR-3c context (graph-scoped retrieval):** rank files a task touches via offline graph.
   **AC:** `subproto graph` indexes imports+symbols in seconds; `subproto where "<task>"`
   returns the right file with a `why` trace; over the wire it appends (never rewrites) context.
-- **FR-3d effort:** route trivial turns to low tier / small model. **AC:** complex vs
-  trivial requests classify correctly on the heuristic; observational only by default.
+- **FR-3d effort:** classify trivial vs complex turns and record the tier + a
+  `small_model_ok` flag. **AC:** the heuristic classifies correctly on both shapes.
+  Effort is **advisory-only**: it never rewrites a request (no model swap yet), so a
+  decision reports `applied: false` and `subproto up` says so when the slot is named
+  in `SUBPROTO_APPLY`. Enforcement over the wire is v3 work, not shipped.
 
 ### FR-4 Pluggable System One backend — ✅ SPI shipped; **not** Laya-fixed
 `systemone/base.py` + `systemone/registry.py`, `laya.py` (thin adapter), `laya_server.py`, `bench/ablation.py`
@@ -214,7 +224,10 @@ Requirement IDs map to the shipped modules so progress is auditable.
 `dataset.py`, `subproto export`, `subproto label`, `subproto split`, `train/finetune_mlx.py`
 - **AC:** JSONL `subproto/1` records per-decision: features, candidates+scores, backend,
   applied flag, token/cost outcome, and any human label.
-- **AC:** export is stable and append-only across releases (it's a training asset).
+- **AC:** the export is a stable, schema-versioned (`subproto/1`) projection of the
+  telemetry DB, re-derived in `request_id` order — so a later export keeps every
+  earlier row byte-identical and only appends (tested). The DB, not the day-stamped
+  JSONL, is the append-only training asset.
 - **AC:** `subproto split` emits a deterministic, seeded, body_sha-de-duplicated
   train/val split in the `{state,question,options,answer}` supervision format; no
   train/val leakage (tested). `train/finetune_mlx.py` is a guarded LoRA script that

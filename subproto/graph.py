@@ -204,6 +204,8 @@ def index_path(root):
 
 
 def save(graph, path):
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(graph, f, separators=(",", ":"))

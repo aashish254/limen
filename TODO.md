@@ -90,6 +90,29 @@ correctly stays on heuristics rather than fabricating an edge. Opt-in via
 > consume it the day `bench/ablation.py` is re-run against the `subproto label` corpus —
 > only the number changes, not this module.
 
+## v2 hardening — running the documented paths, then auditing the check-offs. Code-only, no gate.
+
+Two passes, both driven by I6 ("measured, not claimed") rather than by new features:
+first *run* every documented command as a fresh user would, then *re-verify* each
+`SPEC.md` ✅ against the code that supposedly satisfies it. Every item below was
+reproduced failing first, fixed, and **mutation-checked** (the fix was reverted and
+the new test was confirmed to fail again).
+
+- [x] **S15** CLI defaults that crash: `subproto export` with no `--slots` reached `dataset.export(slots=None)` and raised `TypeError` (`dataset.py`); `subproto demo` ignored `SUBPROTO_HOME`, so `demo` → `report` showed 0 requests; `subproto graph <typo>` died with a raw `FileNotFoundError` traceback and `--out` into a fresh directory did the same. Fixed at each boundary + regression tests (`test_dataset_split`, `test_cli_demo_home`, `test_graph`).
+- [x] **S16** `subproto live` overclaimed the hero number: the savings numerator was whole-prompt while the denominator was cache-*excluded* billed input, so a cache-heavy session printed "save 454%". Now both sides use `est_in_tok`, the same basis `report.opportunity_gaps` uses; `test_saved_pct_never_exceeds_100_when_most_input_is_cached` pins it (reverting the denominator gives ~300% against an expected 30.0).
+- [x] **S17** **I5 was false**: `content-encoding` sat in `HOP_BY_HOP`, so the proxy stripped the label while relaying the bytes — a gzipped request reached the upstream as unlabelled gzip (400) and a gzipped response reached the SDK as unlabelled gzip (undecodable). Response `content-length` was dropped too, leaving an HTTP/1.1 body with no framing. Both fixed (`proxy.py`), with a recording sink upstream proving bytes + headers survive both ways. The engine's re-serialised body is the one case that legitimately drops `content-encoding`, and it now says so via `relay(reencoded_body=…)`.
+- [x] **S18** **I2 / FR-3c were false**: the context slot injected the graph note *into the top-level `system` string*, which for Anthropic **is** the cached prefix — the exact cost regression I2 exists to prevent (and the old test only checked that the string still started with the old text, which a tail-append trivially satisfies). `_append_after_prefix()` now writes after the last turn (a trailing block, or a new user turn after an assistant one) and handles the Gemini `contents/parts` shape; `system` and every earlier turn are byte-identical. Four tests, incl. the no-where-to-append and per-dialect cases.
+- [x] **S19** **Applied-flag honesty**: `applied` was set from *membership of `SUBPROTO_APPLY`*, so a slot that dropped nothing — or whose shape the injector could not write — still counted as an intervention in `report`/`live`/`dataset`. Now every decision's `applied` is derived from the slots that actually rewrote the body (`engine.decide` → `mutated`), `effort` is declared `ADVISORY_SLOTS` and `subproto up` prints that it never rewrites a request, and SPEC FR-3d / FR-5 / I2 / I5 wording matches what the code does.
+
+**Audited and found genuinely true (no change):** FR-2/I4 privacy (only numeric features
+persisted; the single egress path is the configured upstream), FR-4 SPI per-decision
+backend labels, FR-6 `bench/live.py` −30.2% reproduces verbatim with a computed CI and a
+mock label, FR-7/FR-8/FR-9, T07 telemetry migration idempotency, and `usage.py`'s
+per-dialect fields (a 0 for `cache_write`/`reasoning` on a dialect that has no such
+concept is provider-faithful, not a missing parser).
+
+Suite 120 → 128, green on 3.9 & 3.11; `bash run_tests.sh` exits 0 (verified unmasked).
+
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 
 - [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.

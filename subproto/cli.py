@@ -59,6 +59,12 @@ def cmd_up(args):
     print("  bodies       %s" % ("recording (gzip)" if config.store_bodies else "metadata only"))
     print("  slots        %s" % (args.slots or "off (pure passthrough)"))
     print("  enforcing    %s" % (applied or "nothing — observation mode"))
+    if applied:
+        from .engine import ADVISORY_SLOTS
+        advisory = [s.strip() for s in applied.split(",") if s.strip() in ADVISORY_SLOTS]
+        if advisory:
+            print("               %s is advisory-only: it records a tier, it never "
+                  "rewrites the request" % ",".join(advisory))
     print("  graph        %s" % (engine.graph_path if engine else "n/a"))
     if engine and engine.backend:
         print("  model        %s" % json.dumps(engine.model_status()))
@@ -151,6 +157,9 @@ def cmd_graph(args):
     from . import graph as graph_mod
 
     root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        print("no such directory: %s" % root)
+        return 1
     started = time.time()
     g = graph_mod.build(root)
     target = args.out or os.path.join(root, ".subproto-graph.json")

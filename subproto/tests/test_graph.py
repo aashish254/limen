@@ -44,3 +44,33 @@ def test_graph_roundtrips_through_save_load(tmp_path):
     graph.save(g, p)
     loaded = graph.load(p)
     assert loaded["file_count"] == g["file_count"]
+
+
+def test_save_creates_missing_parent_dirs(tmp_path):
+    # `subproto graph <repo> --out some/fresh/path.json` is how the docs tell people
+    # to park a graph; it must not die on the directory that isn't there yet.
+    g = _g()
+    p = str(tmp_path / "deep" / "nested" / "graph.json")
+    graph.save(g, p)
+    assert os.path.exists(p)
+    assert graph.load(p)["file_count"] == g["file_count"]
+
+
+def test_cli_graph_missing_root_exits_cleanly(tmp_path, capsys):
+    from subproto import cli
+
+    rc = cli.main(["graph", str(tmp_path / "nope")])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "no such directory" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_cli_graph_writes_to_a_fresh_out_dir(tmp_path, capsys):
+    from subproto import cli
+
+    target = str(tmp_path / "state" / "g.json")
+    rc = cli.main(["graph", ROOT, "--out", target])
+    assert rc == 0
+    assert os.path.exists(target)
+    assert "import edges" in capsys.readouterr().out
