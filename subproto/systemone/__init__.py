@@ -8,7 +8,8 @@ configuration choice rather than an architectural bet.
 """
 
 from .base import HTTPScoreAdapter, ModelAdapter
-from .registry import ADAPTERS, REGISTRY, configured_url, resolve, status
+from .registry import (ADAPTERS, MODEL_SLOTS, REGISTRY, configured_url, resolve,
+                       resolve_all, slot_env, status)
 
-__all__ = ["ModelAdapter", "HTTPScoreAdapter", "REGISTRY", "ADAPTERS",
-           "resolve", "status", "configured_url"]
+__all__ = ["ModelAdapter", "HTTPScoreAdapter", "REGISTRY", "ADAPTERS", "MODEL_SLOTS",
+           "resolve", "resolve_all", "status", "configured_url", "slot_env"]

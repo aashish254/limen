@@ -84,14 +84,20 @@ class Engine:
             if os.path.exists(cand):
                 self.graph = graph_mod.load(cand)
                 self.graph_path = cand
+        self.backends = systemone.resolve_all(config)
         self.backend, self.backend_label = systemone.resolve(config)
+
+    def slot_backend(self, slot):
+        """The adapter (and its label) that answers for one slot."""
+        return self.backends.get(slot, (None, "heuristic"))
 
     def model_status(self):
         """Health of the active System One backend, labelled with its own name."""
+        slots = dict((s, lbl) for s, (a, lbl) in self.backends.items())
         if self.backend is None or not self.backend.available:
             return {"configured": False, "label": self.backend_label,
-                    "graph": bool(self.graph)}
-        return dict(self.backend.health(), graph=bool(self.graph))
+                    "slots": slots, "graph": bool(self.graph)}
+        return dict(self.backend.health(), slots=slots, graph=bool(self.graph))
 
     def decide(self, dialect, body, analysis, config):
         apply_set = _apply_set()
@@ -105,10 +111,11 @@ class Engine:
         flat_tools = protocol.flatten_tools(tools)
         if flat_tools:
             _t0 = _now_ms()
+            tg_adapter, tg_label = self.slot_backend("tool_gate")
             hs = heuristics.tool_gate(flat_tools, last_user or analysis.get("query", ""))
-            probs = _ask_backend(self.backend, last_user[:512], flat_tools,
+            probs = _ask_backend(tg_adapter, last_user[:512], flat_tools,
                                  lambda t: protocol.tool_name(t).lower())
-            backend = self.backend_label if probs else "heuristic"
+            backend = tg_label if probs else "heuristic"
             if probs:
                 for d in hs:
                     if d["target"] in probs:
@@ -136,14 +143,15 @@ class Engine:
             budget = max(1500, int(est_in * 0.45))
             flags = heuristics.compact_messages(msgs_norm, budget)
             backend = "heuristic"
-            if self.backend and self.backend.available:
-                probs = self.backend.score(
+            cp_adapter, cp_label = self.slot_backend("compact")
+            if cp_adapter and cp_adapter.available:
+                probs = cp_adapter.score(
                     last_user[:512],
                     "keep",
                     [f["target"] for f in flags if not f["keep"] or f["index"] < len(flags) - 4],
                     cache_key=None)
                 if probs:
-                    backend = self.backend_label
+                    backend = cp_label
                     for f in flags:
                         if f["target"] in probs:
                             f["score"] = round(probs[f["target"]], 3)

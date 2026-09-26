@@ -23,10 +23,14 @@ run_suite() {
   "$py" bench/ab.py --mock 20 >/dev/null && echo "ab.py ok"
   echo "----- [$label] bench/live.py (pass-rate-held, mock) -----"
   "$py" bench/live.py --mock >/dev/null && echo "live.py ok"
-  echo "----- [$label] bench/ablation.py (laya-vs-heuristic) -----"
+  echo "----- [$label] bench/ablation.py (adapter-vs-heuristic) -----"
   "$py" bench/ablation.py >/dev/null && echo "ablation.py ok"
+  "$py" bench/ablation.py --adapters laya,openjev,djev >/dev/null && echo "ablation --adapters ok"
   echo "----- [$label] subproto demo (no key) -----"
   "$py" -m subproto demo --port "$(port)" --slots >/dev/null && echo "demo ok"
+  echo "----- [$label] subproto models (SPI registry) -----"
+  "$py" -m subproto models --home "$(mktemp -d)" >/dev/null && echo "models ok"
+  "$py" -m subproto models --home "$(mktemp -d)" --json >/dev/null && echo "models --json ok"
 }
 
 echo "== PRIMARY INTERPRETER: $PY ($("$PY" --version 2>&1)) =="

@@ -198,11 +198,14 @@ Requirement IDs map to the shipped modules so progress is auditable.
   in a config line*, never a threat. See [`ROADMAP.md`](ROADMAP.md) §1 & §4.
 - **AC today:** the adapter asks per-candidate keep/drop; falls back to heuristics if the
   server is unreachable **or unconfigured**; backend label recorded per decision;
-  `subproto models` lists selectable backends and the active one; `--model` selects it on
-  `up`/`demo`. A local `/health`+`/score` server (deterministic lexical scorer, MLX path
-  behind an import guard) runs on an ephemeral port; `bench/ablation.py` reports
-  laya-vs-heuristic precision on labelled ground truth (both lexical today → they agree,
-  and the report says so).
+  `subproto models` lists selectable backends, the active one and the per-slot
+  assignment; `--model` selects it on `up`/`demo`; `SUBPROTO_MODEL_<SLOT>` /
+  `model_by_slot` override per slot (only `tool_gate`/`compact` ask a model, so only
+  those are overridable). A local `/health`+`/score` server (deterministic lexical
+  scorer, MLX path behind an import guard) runs on an ephemeral port;
+  `bench/ablation.py` scores **any registry label** through the adapter interface and
+  reports precision vs the heuristic, listing an adapter with no endpoint as skipped
+  (both real columns are the lexical stand-in today → they agree, and the report says so).
 - **AC target (v2):** point the SPI at any quantized checkpoint (MLX/GGUF) and show a
   real per-slot precision/latency trade-off across **adapters**. **BLOCKED(external):**
   needs ~400–808MB HF weights + a runtime (MLX/llama.cpp).

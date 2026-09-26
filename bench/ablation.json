@@ -1,17 +1,22 @@
 {
  "n_cases": 10,
- "agreement": 1.0,
  "heuristic": {
   "precision": 0.9722,
   "recall": 0.9859,
   "f1": 0.979
  },
- "laya": {
-  "precision": 0.9722,
-  "recall": 0.9859,
-  "f1": 0.979
- },
- "precision_delta_laya_minus_heuristic": 0.0,
+ "adapters": [
+  {
+   "name": "laya",
+   "source": "bundled lexical stand-in",
+   "agreement": 1.0,
+   "delta_vs_heuristic": 0.0,
+   "precision": 0.9722,
+   "recall": 0.9859,
+   "f1": 0.979
+  }
+ ],
+ "skipped": [],
  "per_case": [
   {
    "query": "read app/config.py and run the failing tests",

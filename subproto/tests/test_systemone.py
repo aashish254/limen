@@ -176,3 +176,72 @@ def test_model_flag_threads_from_the_parser_into_the_engine(tmp_path, monkeypatc
     _, decisions = eng.decide("anthropic", body, analyze_request(body), cfg)
     gate = [d for d in decisions if d["slot"] == "tool_gate"][0]
     assert gate["backend"] == "heuristic", "an unreachable model must not fake its label"
+
+
+def test_a_slot_overrides_the_global_selection(tmp_path, monkeypatch, server):
+    monkeypatch.setenv("SUBPROTO_APPLY", "tool_gate")
+    monkeypatch.setenv("SUBPROTO_MODEL", "laya")
+    monkeypatch.setenv("LAYA_URL", server)
+    monkeypatch.setenv("SUBPROTO_MODEL_TOOL_GATE", "openjev")
+    monkeypatch.setenv("OPENJEV_URL", server)
+    cfg = Config(source={"data_dir": str(tmp_path)})
+    eng = Engine(cfg)
+    assert eng.slot_backend("tool_gate")[1] == "openjev"
+    body = synthetic_request(0)
+    _, decisions = eng.decide("anthropic", body, analyze_request(body), cfg)
+    gate = [d for d in decisions if d["slot"] == "tool_gate"][0]
+    assert gate["backend"] == "openjev"
+    # the un-overridden slot keeps answering with the global model
+    assert eng.slot_backend("compact")[1] == "laya"
+    assert eng.model_status()["slots"] == {"tool_gate": "openjev", "compact": "laya"}
+
+
+def test_a_slot_can_run_model_free_while_others_do_not(tmp_path, monkeypatch, server):
+    """`heuristic` on one slot is a real choice, not a broken global selection."""
+    monkeypatch.setenv("SUBPROTO_APPLY", "tool_gate")
+    monkeypatch.setenv("SUBPROTO_MODEL", "laya")
+    monkeypatch.setenv("LAYA_URL", server)
+    monkeypatch.setenv("SUBPROTO_MODEL_TOOL_GATE", "heuristic")
+    cfg = Config(source={"data_dir": str(tmp_path)})
+    eng = Engine(cfg)
+    body = synthetic_request(0)
+    _, decisions = eng.decide("anthropic", body, analyze_request(body), cfg)
+    gate = [d for d in decisions if d["slot"] == "tool_gate"][0]
+    assert gate["backend"] == "heuristic"
+    assert eng.slot_backend("compact")[1] == "laya"
+
+
+def test_model_by_slot_comes_from_the_config_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("SUBPROTO_MODEL_TOOL_GATE", raising=False)
+    monkeypatch.delenv("SUBPROTO_MODEL_COMPACT", raising=False)
+    monkeypatch.delenv("LAYA_URL", raising=False)
+    cfg = Config(source={
+        "data_dir": str(tmp_path),
+        "model": "laya",
+        "model_by_slot": {"compact": "semif"},
+        "laya_url": "http://127.0.0.1:8907",
+        "model_url": "http://127.0.0.1:8908",
+    })
+    adapter, label = systemone.resolve(cfg, slot="compact")
+    assert (label, adapter.base_url) == ("semif", "http://127.0.0.1:8908")
+    assert systemone.resolve(cfg, slot="tool_gate")[1] == "laya"
+
+
+def test_only_model_backed_slots_are_offered_per_slot_selection():
+    """context/effort are graph- and shape-driven; pinning a model there would lie."""
+    assert systemone.MODEL_SLOTS == ("tool_gate", "compact")
+    assert "context" not in systemone.MODEL_SLOTS
+    assert systemone.slot_env("compact") == "SUBPROTO_MODEL_COMPACT"
+
+
+def test_status_reports_which_slot_uses_which_backend(tmp_path, monkeypatch):
+    monkeypatch.setenv("SUBPROTO_MODEL", "laya")
+    monkeypatch.setenv("LAYA_URL", "http://127.0.0.1:8890")
+    monkeypatch.setenv("SUBPROTO_MODEL_COMPACT", "djev")
+    monkeypatch.setenv("DJEV_URL", "http://127.0.0.1:8891")
+    st = systemone.status(Config(source={"data_dir": str(tmp_path)}))
+    assert st["slots"] == {"tool_gate": "laya", "compact": "djev"}
+    by_name = dict((r["name"], r) for r in st["adapters"])
+    assert by_name["laya"]["slots"] == ["tool_gate"]
+    assert by_name["djev"]["slots"] == ["compact"]
+    assert by_name["semif"]["slots"] is None

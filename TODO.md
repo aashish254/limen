@@ -63,6 +63,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **S06** tests: registry resolution + configurable label + heuristic fallback + end-to-end "engine records `openjev`" + LayaClient back-compat. (13 in `test_systemone.py`; suite 77 → 90.)
 - [x] **S07** pyproject packages += `subproto.systemone`; full gate green on 3.9 & 3.11.
 
+## v2 SPI — remaining code-only items from ROADMAP §2 "v2 Ships" (no gate).
+
+- [x] **S08** Per-slot model selection: `SUBPROTO_MODEL_TOOL_GATE` / `SUBPROTO_MODEL_COMPACT` (and `model_by_slot` in config) resolve independently, falling back to the global `SUBPROTO_MODEL`; slots that never ask the model a question (`context`, `effort`) are reported as not-model-backed rather than silently pinned.
+- [x] **S09** `bench/ablation.py` compares **adapters** (any registry label, scored through the `ModelAdapter` interface) against the heuristic baseline, not just a hard-coded laya column; committed evidence stays deterministic.
+- [x] **S10** Tests + docs for S08/S09; gate green on 3.9 & 3.11. (Suite 90 → 99; gate now also runs `ablation --adapters` and `subproto models`.)
+
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 
 - [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.

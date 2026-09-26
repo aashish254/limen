@@ -10,6 +10,10 @@ Selection precedence (highest first):
    which is what happened before the registry existed
 4. anything unknown, disabled, or without a URL → ``None`` and the engine's own
    heuristics, so a missing model degrades to a working proxy instead of an error
+
+A slot may pick its own model with ``SUBPROTO_MODEL_<SLOT>`` (e.g.
+``SUBPROTO_MODEL_COMPACT=djev``) or a ``model_by_slot`` map in the config file;
+unset slots fall through to the global selection above.
 """
 
 import os
@@ -53,6 +57,24 @@ DISABLED = ("heuristic", "none", "off", "passthrough")
 # Selectable by name; a URL is selectable too, and needs no entry here.
 ADAPTERS = ("laya", "openjev", "djev", "semif", "mlx_lora")
 
+# Only these slots ask a model a question today. `context` is answered by the
+# code graph and `effort` by request-shape heuristics, so pinning a model to
+# them would record a label that never produced the decision.
+MODEL_SLOTS = ("tool_gate", "compact")
+
+
+def slot_env(slot):
+    return "SUBPROTO_MODEL_" + slot.upper()
+
+
+def _slot_name(slot, config):
+    """A per-slot override: SUBPROTO_MODEL_TOOL_GATE, then model_by_slot."""
+    raw = os.environ.get(slot_env(slot))
+    if raw and raw.strip():
+        return raw.strip()
+    by_slot = getattr(config, "model_by_slot", None) or {}
+    return (by_slot.get(slot) or "").strip()
+
 
 def configured_url(name, config):
     """Where a named registry model is being served, or None when it is not."""
@@ -67,9 +89,8 @@ def configured_url(name, config):
     return None
 
 
-def resolve(config):
-    """Return (adapter_or_None, label) — the label is what slots record."""
-    name = (getattr(config, "model", None) or "").strip()
+def _select(name, config):
+    """Resolve one selection string to (adapter_or_None, label)."""
     if not name:
         legacy = getattr(config, "laya_url", None)
         if legacy:
@@ -89,9 +110,27 @@ def resolve(config):
     return HTTPScoreAdapter(url, label=label), label
 
 
+def resolve(config, slot=None):
+    """Return (adapter_or_None, label) — the label is what slots record.
+
+    With a `slot`, that slot's override wins and the global selection is the
+    fallback, so one model may answer every slot or each slot may pick its own.
+    """
+    name = _slot_name(slot, config) if slot else ""
+    if not name:
+        name = (getattr(config, "model", None) or "").strip()
+    return _select(name, config)
+
+
+def resolve_all(config):
+    """{slot: (adapter, label)} for every slot a model can answer."""
+    return dict((slot, resolve(config, slot=slot)) for slot in MODEL_SLOTS)
+
+
 def status(config):
-    """Describe every selectable backend for `subproto models`."""
+    """Describe every selectable backend, and which slot uses which."""
     adapter, active = resolve(config)
+    per_slot = dict((slot, resolve(config, slot=slot)[1]) for slot in MODEL_SLOTS)
     rows = [{
         "name": "heuristic",
         "about": "in-process lexical heuristics; always available",
@@ -112,5 +151,7 @@ def status(config):
             "where": url or "not configured — export %s=http://host:port" % entry["env"],
             "configured": bool(url),
             "active": active == entry["label"] and adapter is not None,
+            "slots": sorted(s for s, lbl in per_slot.items()
+                            if lbl == entry["label"] and adapter is not None) or None,
         })
-    return {"active": active, "adapters": rows}
+    return {"active": active, "slots": per_slot, "adapters": rows}

@@ -64,6 +64,15 @@ class Config:
         return self._get("model_url") or os.environ.get("SUBPROTO_MODEL_URL")
 
     @property
+    def model_by_slot(self):
+        """Per-slot overrides from the config file, e.g. {"compact": "djev"}.
+
+        SUBPROTO_MODEL_<SLOT> env vars are read by the registry and win over this;
+        `systemone.MODEL_SLOTS` is the list of slots a model can answer.
+        """
+        return self._get("model_by_slot") or {}
+
+    @property
     def openai_upstream(self):
         return (self._get("openai_upstream") or OPENAI_UPSTREAM).rstrip("/")
 
@@ -122,6 +131,7 @@ class Config:
             "laya_url": self.laya_url,
             "model": self.model,
             "model_url": self.model_url,
+            "model_by_slot": self.model_by_slot,
             "openai_upstream": self.openai_upstream,
             "anthropic_upstream": self.anthropic_upstream,
             "gemini_upstream": self.gemini_upstream,

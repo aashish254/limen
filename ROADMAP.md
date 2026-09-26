@@ -28,7 +28,7 @@ so each version raises the cost of catching up.
 
 ## 1. The architectural unlock that must happen first (de-fixating from Laya)
 
-**Shipped (TODO S01–S07).** `laya.py` is no longer a single-backend adapter: it is a
+**Shipped (TODO S01–S10).** `laya.py` is no longer a single-backend adapter: it is a
 thin subclass of the generic `HTTPScoreAdapter`, and the System One Model SPI below is
 a provider registry where Laya is one entry, not the load-bearing bet.
 
@@ -39,14 +39,17 @@ a provider registry where Laya is one entry, not the load-bearing bet.
 | `ModelAdapter` | `health() -> dict`, `score(state, question, options) -> {option: prob}` | Done — the surface `laya.py` already spoke, promoted to an interface in `systemone/base.py`. |
 | `HTTPScoreAdapter` | the same, over `/health` + POST `/score`, with any `label` | Done — one implementation serves every HTTP-served model, so a new one needs no code. |
 | Adapters | `laya`, `openjev`, `djev`, `semif`, `mlx_lora` named; `http://…` for anything else; `heuristic` as the always-available fallback | Named entries done (`systemone/registry.py`). `gguf` / `jev_api` are URL entries today: point `SUBPROTO_MODEL=http://…` at them and they work unmodified. |
-| `Registry.resolve(config)` | config/env → `(adapter, label)`; the label is what every decision records | Done, with explicit precedence and clean degradation (unknown / disabled / no URL → heuristics). |
-| `subproto models` | list backends + which is active + how to point at one | Done. |
-| `Router` | picks an adapter per slot per turn from measured precision + latency budget | **Not done — this is the v3+ work.** Today one backend answers every slot; slots already store per-decision `backend` + `decision_ms`, which is the data the router needs. |
+| `Registry.resolve(config, slot)` | config/env → `(adapter, label)`; the label is what every decision records | Done, with explicit precedence and clean degradation (unknown / disabled / no URL → heuristics). |
+| Per-slot selection | `SUBPROTO_MODEL_<SLOT>` / `model_by_slot` let one slot use a different model, falling back to the global choice | Done for the slots that actually ask a model a question (`tool_gate`, `compact`). `context` is graph-answered and `effort` shape-answered, so `subproto models` reports them as model-free rather than pinning a label that decided nothing. |
+| `subproto models` | list backends, which is active, and which slot uses which | Done. |
+| `bench/ablation.py` | compare **adapters** through the `ModelAdapter` interface, not a hard-coded laya column | Done — every label with an endpoint gets its own precision/recall/f1/Δ row; a label without one is listed as skipped instead of borrowing the stand-in's number. |
+| `Router` | *automatically* picks an adapter per slot per turn from measured precision + latency budget; can ensemble two tiny models | **Not done — this is the v3+ work.** Selection is manual per slot today; the per-decision `backend` + `decision_ms` the router needs to stop being manual are already recorded. |
 
 **Config (implemented, backward-compatible):**
 ```
 SUBPROTO_MODEL=laya|openjev|djev|semif|mlx_lora|heuristic|http://host:port
-SUBPROTO_MODEL_URL=http://host:port   # where the named model is served
+SUBPROTO_MODEL_URL=http://host:port    # where the named model is served
+SUBPROTO_MODEL_COMPACT=djev            # per-slot override (also _TOOL_GATE)
 LAYA_URL=…                     # still works; it is the laya entry's URL (and the
                                # default when SUBPROTO_MODEL is unset)
 ```
@@ -70,10 +73,10 @@ months) → the gate** (external resource required, if any). `gate:` items stay
 `[~]`-blocked until a human opens them (per SPEC §13 / locked decision #3).
 
 ### v2 — Pluggable System One backend + real on-device inference
-- **Ships:** the SPI above + at least three working adapters (`heuristic`, `http` for
-  any quantised local server, `mlx_lora` when weights exist); a model registry; per-slot
-  model selection; `bench/ablation.py` upgraded to compare **adapters**, not just
-  laya-vs-heuristic; a published CPU/MLX latency curve.
+- **Ships:** ✅ the SPI above; ✅ a model registry; ✅ per-slot model selection;
+  ✅ `bench/ablation.py` upgraded to compare **adapters**, not just laya-vs-heuristic;
+  ⏳ three *real* adapters (`heuristic` ships, `http`/`mlx_lora` need an endpoint —
+  the interface is done, the weights are the gate); ⏳ a published CPU/MLX latency curve.
 - **Unfair:** a clone wired to one model must rewrite its core to add a second; we ship
   five. Riding OpenJev/djev/SemIf the day they trend *is* the marketing.
 - `gate:` quantised weight download + MLX/llama.cpp runtime for the ML path (no $).

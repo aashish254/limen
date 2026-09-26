@@ -89,11 +89,18 @@ def cmd_models(args):
     print("active System One backend: %s" % st["active"])
     print("")
     for row in st["adapters"]:
-        print("  %s %-10s %-58s %s" % ("*" if row["active"] else " ",
-                                       row["name"], row["about"], row["where"]))
+        mark = "*" if row["active"] else " "
+        extra = ("  -> %s" % ",".join(row["slots"])) if row.get("slots") else ""
+        print("  %s %-10s %-58s %s%s" % (mark, row["name"], row["about"],
+                                         row["where"], extra))
+    print("")
+    print("  per slot:  %s" % "  ".join("%s=%s" % kv for kv in sorted(st["slots"].items())))
+    print("  context/effort are answered by the code graph and request shape, "
+          "not by a model")
     print("")
     print("select one: subproto up --model laya")
     print('           (SUBPROTO_MODEL=http://host:port works for any /health + /score server)')
+    print(' per slot:  SUBPROTO_MODEL_COMPACT=djev subproto up --slots')
     return 0
 
 

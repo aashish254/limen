@@ -223,8 +223,23 @@ unreachable or absent backend degrades to the heuristics instead of breaking the
 proxy. `LAYA_URL` still works — it is now the legacy default for the `laya`
 entry.
 
-`bench/ablation.py` reports laya-vs-heuristic agreement on labelled ground truth
-— today both are lexical, so they agree and we say so; the delta becomes
+A slot can also pick its own model, so the cheap classifier answers tool gating
+while a stronger one decides what to compact:
+
+```bash
+SUBPROTO_MODEL=laya SUBPROTO_MODEL_COMPACT=djev subproto up --slots
+# or in .subproto.json: {"model": "laya", "model_by_slot": {"compact": "djev"}}
+```
+
+Only `tool_gate` and `compact` ask a model anything — `context` is answered by the
+code graph and `effort` by request shape, so `subproto models` refuses to list a
+model for them rather than recording a label that decided nothing.
+
+`bench/ablation.py` scores **any registry label** through that same adapter
+interface against the heuristic baseline on labelled ground truth. Today the only
+endpoint in the repo is our deterministic lexical stand-in, so the columns agree
+and the report says exactly that — an adapter with no configured endpoint is
+reported as skipped instead of borrowing the stand-in's number. The delta becomes
 meaningful when a quantized checkpoint replaces the scorer. The full loop from
 usage to a specialised model is:
 
@@ -260,8 +275,8 @@ integrations compound into an ~8-month lead — is its own spec:
 - [x] Deterministic, de-duplicated train/val split (`subproto split`)
 - [x] Guarded MLX LoRA fine-tune script (`train/finetune_mlx.py`)
 - [x] Local Laya scoring server behind the adapter (`python -m subproto.laya_server`)
-- [x] Pluggable System One SPI: swap Laya for any `/health`+`/score` model by config
-      (`subproto/systemone/`, `subproto models`, `--model`)
+- [x] Pluggable System One SPI: swap Laya for any `/health`+`/score` model by config,
+      globally or per slot (`subproto/systemone/`, `subproto models`, `--model`)
 - [x] Pass-rate–held A/B harness on SWE-bench-shaped tasks (mock; `bench/live.py`)
 - [x] TUI overlay: live "you just saved 38% this session" meter (`subproto live`)
 - [ ] Real quantized MLX Laya checkpoint on-device + published latency curve

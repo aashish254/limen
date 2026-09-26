@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""laya-vs-heuristic slot ablation on a labelled synthetic corpus (SPEC §6, M2).
+"""Adapter-vs-heuristic slot ablation on a labelled synthetic corpus (SPEC §6, M2).
 
-`tool_gate` has two candidate backends: the lexical heuristic and the scoring
-server behind the laya adapter. This measures both against a small hand-labelled
-ground-truth set of (turn, tools, tools-a-human-would-keep) so the *precision
-delta* is visible before any real fine-tuned model arrives. The same numbers feed
-the report's "slot precision" line.
+`tool_gate` can be answered by the in-process heuristic or by any System One
+adapter in the registry, so this measures each one against a small hand-labelled
+ground-truth set of (turn, tools, tools-a-human-would-keep) and reports the
+*precision delta per adapter*. The same numbers feed the report's
+"slot precision" line.
+
+Every adapter column is scored through the `ModelAdapter` interface (a real
+`POST /score`), never by calling a scorer directly — so what this harness
+measures is the thing the engine actually uses, and dropping a quantized
+checkpoint behind one of these labels changes only the number, not this file.
 
 Honesty note (invariant I6): the ground truth here is synthetic and authored by
-us, so this validates the measurement pipeline and the two estimators' behaviour,
-not laya's real-world accuracy. The labelled-by-users corpus (subproto label)
-replaces it at M4.
+us, so this validates the measurement pipeline and the estimators' behaviour, not
+any model's real-world accuracy. An adapter with no configured URL is reported as
+skipped rather than silently falling back to the stand-in. The labelled-by-users
+corpus (subproto label) replaces the ground truth at M4.
 """
 
 import argparse
@@ -20,8 +26,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from subproto import heuristics
-from subproto.laya_server import lexical_probabilities
+from subproto import heuristics, systemone
+from subproto.config import Config
+from subproto.laya_server import LayaServer
 from subproto.report import precision_metrics
 
 # (turn text, candidate tools, gold keep set). Core file/shell tools are kept by
@@ -64,7 +71,7 @@ GROUND_TRUTH = [
 
 def _as_specs(names):
     # heuristics.tool_gate reads description/params; keep them empty so relevance
-    # is decided by the tool name + query, matching what the laya scorer sees.
+    # is decided by the tool name + query, matching what an adapter is asked.
     return [{"name": n, "description": ""} for n in names]
 
 
@@ -74,71 +81,134 @@ def heuristic_keeps(query, names):
     return set(d["target"] for d in decs if d["keep"])
 
 
-def laya_keeps(query, names, threshold=0.5):
-    # lexical_probabilities keys output by the exact option strings passed in,
-    # so lowercase here to line up with heuristic_keeps' lowercased targets.
-    probs = lexical_probabilities(query, "keep", names)
-    return set(n.lower() for n in names if probs.get(n, 0.0) >= threshold)
+def adapter_keeps(adapter, query, names, threshold=0.5):
+    """Keep-set from a real ModelAdapter call, comparable to heuristic_keeps.
+
+    The scoring server keys its vector by the option strings it received, so we
+    lowercase to line up with heuristic_keeps' lowercased targets.
+    """
+    probs = adapter.score(query, "keep", list(names)) or {}
+    return set(n.lower() for n in names if probs.get(n, probs.get(n.lower(), 0.0)) >= threshold)
 
 
-def run_ablation(threshold=0.5):
+def _agg(tp, fp, fn):
+    p = tp / float(tp + fp) if (tp + fp) else 1.0
+    r = tp / float(tp + fn) if (tp + fn) else 1.0
+    f1 = 2 * p * r / (p + r) if (p + r) else 0.0
+    return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(f1, 4)}
+
+
+def build_adapters(labels, config=None):
+    """Resolve each requested label to a live adapter, or why it was skipped.
+
+    `laya` with no `LAYA_URL` gets the bundled lexical stand-in (that is what the
+    committed evidence was measured against); every other label must point at a
+    real endpoint, because inventing a stand-in for a model we do not have would
+    put a fake number in a comparison table.
+    """
+    config = config or Config(source={})
+    out, skipped = [], []
+    stand_in = None
+    for label in labels:
+        key = label.lower()
+        if key not in systemone.REGISTRY:
+            skipped.append({"name": label, "why": "not a registry adapter"})
+            continue
+        url = systemone.configured_url(key, config)
+        source = "configured"
+        if not url and key == "laya":
+            if stand_in is None:
+                srv = LayaServer(port=0, backend="lexical").start()
+                stand_in = (srv, "http://127.0.0.1:%d" % srv.server_address[1])
+            url, source = stand_in[1], "bundled lexical stand-in"
+        if not url:
+            skipped.append({"name": label,
+                            "why": "no endpoint — export %s=http://host:port"
+                                   % systemone.REGISTRY[key]["env"]})
+            continue
+        out.append({"label": key,
+                    "adapter": systemone.HTTPScoreAdapter(url, label=key),
+                    "url": url, "source": source})
+    return out, skipped, (stand_in[0] if stand_in else None)
+
+
+def run_ablation(labels=("laya",), threshold=0.5):
+    adapters, skipped, _stand_in = build_adapters(list(labels))
     per_case = []
-    agree_n = total_n = 0
-    heur_tp = heur_fp = heur_fn = 0
-    laya_tp = laya_fp = laya_fn = 0
+    agree = dict((a["label"], 0) for a in adapters)
+    scored = dict((a["label"], 0) for a in adapters)
+    tpfpfn = dict((a["label"], [0, 0, 0]) for a in adapters)
+    heur = [0, 0, 0]
     for case in GROUND_TRUTH:
         gold = set(c.lower() for c in case["keep"])
         names = case["tools"]
-        lower_names = [n.lower() for n in names]
         hk = heuristic_keeps(case["query"], names)
-        lk = laya_keeps(case["query"], names, threshold)
-        for n in lower_names:
-            total_n += 1
-            if (n in hk) == (n in lk):
-                agree_n += 1
         hm = precision_metrics(gold, hk)
-        lm = precision_metrics(gold, lk)
-        heur_tp += hm["tp"]; heur_fp += hm["fp"]; heur_fn += hm["fn"]
-        laya_tp += lm["tp"]; laya_fp += lm["fp"]; laya_fn += lm["fn"]
-        per_case.append({"query": case["query"][:48], "gold": sorted(gold),
-                         "heuristic": sorted(hk), "laya": sorted(lk)})
+        heur[0] += hm["tp"]; heur[1] += hm["fp"]; heur[2] += hm["fn"]
+        row = {"query": case["query"][:48], "gold": sorted(gold), "heuristic": sorted(hk)}
+        for entry in adapters:
+            label = entry["label"]
+            ak = adapter_keeps(entry["adapter"], case["query"], names, threshold)
+            am = precision_metrics(gold, ak)
+            tpfpfn[label][0] += am["tp"]; tpfpfn[label][1] += am["fp"]; tpfpfn[label][2] += am["fn"]
+            for n in (x.lower() for x in names):
+                scored[label] += 1
+                if (n in hk) == (n in ak):
+                    agree[label] += 1
+            row[label] = sorted(ak)
+        per_case.append(row)
 
-    def _agg(tp, fp, fn):
-        p = tp / float(tp + fp) if (tp + fp) else 1.0
-        r = tp / float(tp + fn) if (tp + fn) else 1.0
-        f1 = 2 * p * r / (p + r) if (p + r) else 0.0
-        return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(f1, 4)}
-
-    heuristic = _agg(heur_tp, heur_fp, heur_fn)
-    laya = _agg(laya_tp, laya_fp, laya_fn)
-    return {
+    heuristic = _agg(*heur)
+    result = {
         "n_cases": len(GROUND_TRUTH),
-        "agreement": round(agree_n / float(total_n), 4),
         "heuristic": heuristic,
-        "laya": laya,
-        "precision_delta_laya_minus_heuristic": round(laya["precision"] - heuristic["precision"], 4),
+        # No URLs here on purpose: the committed artifact must not churn when a
+        # stand-in's ephemeral port or someone's host changes (I6 hygiene).
+        "adapters": [dict({"name": e["label"], "source": e["source"],
+                           "agreement": round(agree[e["label"]] / float(scored[e["label"]]), 4)
+                                         if scored[e["label"]] else None,
+                           "delta_vs_heuristic": round(
+                               _agg(*tpfpfn[e["label"]])["precision"]
+                               - heuristic["precision"], 4)},
+                          **_agg(*tpfpfn[e["label"]])) for e in adapters],
+        "skipped": skipped,
         "per_case": per_case,
     }
+    if _stand_in is not None:
+        _stand_in.stop()
+    return result
 
 
 def render(m):
     lines = ["# subproto slot ablation — tool_gate (labelled synthetic)\n"]
-    lines.append("Cases: %d · agreement(heuristic vs laya): %.0f%%\n"
-                 % (m["n_cases"], 100 * m["agreement"]))
-    lines.append("| backend | precision | recall | f1 |")
-    lines.append("|---|--:|--:|--:|")
-    for k in ("heuristic", "laya"):
-        b = m[k]
-        lines.append("| %s | %.3f | %.3f | %.3f |" % (k, b["precision"], b["recall"], b["f1"]))
-    lines.append("\nlaya − heuristic precision delta: **%+.3f**"
-                 % m["precision_delta_laya_minus_heuristic"])
-    lines.append("\n*Note: `laya` here is the deterministic lexical scorer behind the "
-                 "adapter interface, so it shares the heuristic's core-tool logic and the "
-                 "two agree closely on this lexical ground truth — that agreement is "
-                 "expected, not a claim of parity with a real model. The delta becomes "
-                 "meaningful when the quantized MLX checkpoint (T16/M4) replaces the "
-                 "lexical scorer; this harness is the machinery that will report it. "
-                 "Ground truth is author-labelled and replaced by the `subproto label` "
+    lines.append("Cases: %d · agreement with the heuristic, per adapter:\n" % m["n_cases"])
+    for a in m["adapters"]:
+        lines.append("- `%s`: %.0f%%" % (a["name"], 100 * a["agreement"]))
+    lines.append("\n| backend | precision | recall | f1 | Δprecision vs heuristic |")
+    lines.append("|---|--:|--:|--:|--:|")
+    h = m["heuristic"]
+    lines.append("| heuristic | %.3f | %.3f | %.3f | — |"
+                 % (h["precision"], h["recall"], h["f1"]))
+    for a in m["adapters"]:
+        lines.append("| %s | %.3f | %.3f | %.3f | %+.3f |"
+                     % (a["name"], a["precision"], a["recall"], a["f1"],
+                        a["delta_vs_heuristic"]))
+    for a in m["adapters"]:
+        lines.append("\n%s − heuristic precision delta: **%+.3f**"
+                     % (a["name"], a["delta_vs_heuristic"]))
+    if m["skipped"]:
+        lines.append("\nSkipped (no endpoint, so no number was invented for them):")
+        for s in m["skipped"]:
+            lines.append("- `%s` — %s" % (s["name"], s["why"]))
+    lines.append("\n*Note: every adapter column is a real `POST /score` through "
+                 "`subproto.systemone.HTTPScoreAdapter`. Today the only endpoint in "
+                 "the repo is the bundled deterministic lexical stand-in "
+                 "(`python -m subproto.laya_server`), which shares the heuristic's "
+                 "core-tool logic, so close agreement and a ~zero delta are the "
+                 "expected reading — that is a property of the stand-in, not a claim "
+                 "about any real model. Point a registry label at a quantized "
+                 "checkpoint (T16/M4) and this table measures it unchanged. Ground "
+                 "truth is author-labelled and replaced by the `subproto label` "
                  "corpus at M4 (SPEC §1.2).*")
     return "\n".join(lines)
 
@@ -147,14 +217,19 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     here = os.path.dirname(os.path.abspath(__file__))
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--adapters", default="laya",
+                    help="comma-separated registry labels to score against the "
+                         "heuristic (laya, openjev, djev, semif, mlx_lora)")
     ap.add_argument("--out", default=os.path.join(here, "ablation_results.md"))
+    ap.add_argument("--write", action="store_true",
+                    help="refresh the committed results files (default: print only)")
     args = ap.parse_args()
-    m = run_ablation()
+    m = run_ablation(labels=[x.strip() for x in args.adapters.split(",") if x.strip()])
+    text = render(m)
+    print(text)
     if args.json:
         print(json.dumps(m, indent=1))
-    else:
-        text = render(m)
-        print(text)
+    if args.write:
         with open(args.out, "w") as f:
             f.write(text + "\n")
         with open(os.path.join(here, "ablation.json"), "w") as f:
