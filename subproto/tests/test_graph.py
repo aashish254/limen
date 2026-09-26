@@ -80,6 +80,110 @@ def test_a_schema_question_finds_the_migration_not_the_legacy_module(tmp_path):
     assert score >= 3.0
 
 
+def _data_repo(tmp_path):
+    root = tmp_path / "repo"
+    (root / "fixtures").mkdir(parents=True)
+    (root / "deploy").mkdir()
+    (root / "app").mkdir()
+    (root / "fixtures" / "refunds.json").write_text(
+        '{"refunds": [{"amount_cents": 1200, "gateway_error": "APIConnectionError", '
+        '"state": "pending"}], "meta": {"generated_by": "seed_refunds"}}\n')
+    (root / "fixtures" / "ledger.csv").write_text(
+        "refund_id,amount_cents,captured_at\nr_1,1200,2026-05-01\n")
+    (root / "fixtures" / "rates.tsv").write_text("currency\tbasis\nUSD\t1.0\n")
+    (root / "deploy" / "gateway.yaml").write_text(
+        "service:\n  gateway:\n    retry_policy:\n      max_attempts: 3\n"
+        "    health_url: http://127.0.0.1:9/health  # a value with colons\n")
+    (root / "app" / "legacy.py").write_text("def old_thing():\n    return 1\n")
+    return str(root)
+
+
+def test_a_data_files_keys_and_columns_are_its_symbols(tmp_path):
+    """S31: FR-10 documented that `.json`/`.csv`/`.yaml` had no graph signal at all."""
+    g = graph.build(_data_repo(tmp_path))
+    assert g["nodes"]["fixtures/refunds.json"]["lang"] == "json"
+    syms = g["nodes"]["fixtures/refunds.json"]["symbols"]
+    assert "amount" in syms and "cents" in syms, syms
+    assert "gateway" in syms and "error" in syms, "a nested key is still a symbol"
+    assert "amount" in g["nodes"]["fixtures/ledger.csv"]["symbols"], "a header column"
+    assert "basis" in g["nodes"]["fixtures/rates.tsv"]["symbols"], "a tab-separated header"
+    assert "retry" in g["nodes"]["deploy/gateway.yaml"]["symbols"], "a nested YAML key"
+    doc = g["nodes"]["fixtures/refunds.json"]["doc"]
+    assert "refunds[].amount_cents" in doc, "the *path* into the shape survives, not a word soup"
+
+
+def test_a_data_files_values_are_never_its_symbols(tmp_path):
+    """Values are what the agent opens the file to find — indexing them would make
+    every fixture rank for every word it happens to contain."""
+    g = graph.build(_data_repo(tmp_path))
+    node = g["nodes"]["fixtures/refunds.json"]
+    assert "pending" not in node["hints"] and "apiconnectionerror" not in node["hints"]
+    assert "apiconnectionerror" not in node["symbols"]
+    assert "1200" not in node["symbols"]
+
+
+def test_a_yaml_value_that_contains_a_colon_does_not_become_a_key(tmp_path):
+    g = graph.build(_data_repo(tmp_path))
+    names = g["nodes"]["deploy/gateway.yaml"]["doc"]
+    assert "service.gateway.retry_policy" in names, names
+    assert "service.gateway.health_url" in names, names
+    assert "service.gateway.retry_policy.health_url" not in names, \
+        "a sibling must not nest under the key before it"
+    assert "127.0.0.1" not in names and "http" not in names.split("keys:")[-1].split(","), names
+
+
+def test_a_fixture_question_finds_the_data_file_not_the_legacy_module(tmp_path):
+    g = graph.build(_data_repo(tmp_path))
+    hits = graph.search(g, "the refund fixture amount_cents disagrees with the "
+                           "gateway_error state, which writer is wrong", top_k=5)
+    ranked = [rel for rel, _, _ in hits]
+    assert ranked[0] == "fixtures/refunds.json", ranked
+    assert "app/legacy.py" not in ranked
+    _, score, why = hits[0]
+    assert "sym:amount" in why and "sym:cents" in why, \
+        "a key must earn the 3.0 symbol tier, not 0.6 hints"
+    assert score >= 3.0
+
+
+def test_a_column_question_finds_the_csv_by_its_header(tmp_path):
+    g = graph.build(_data_repo(tmp_path))
+    hits = graph.search(g, "which captured_at values are in the ledger", top_k=5)
+    assert hits[0][0] == "fixtures/ledger.csv", hits
+    assert "sym:captured" in hits[0][2] or "sym:at" in hits[0][2], hits[0]
+
+
+def test_malformed_json_still_yields_its_keys(tmp_path):
+    """A truncated or streamed fixture is half-useful: the keys already written are
+    still the file's shape, so the index must not lose the whole file to one brace."""
+    src = '{"refunds": [{"amount_cents": 12, "gateway_error": "x"'
+    syms, doc, keys = graph.parse_data(src, "json")
+    assert "amount" in syms and "gateway" in syms, syms
+    assert keys == ["refunds", "amount_cents", "gateway_error"], keys
+
+
+def test_an_empty_or_binary_data_file_costs_nothing(tmp_path):
+    assert graph.parse_data("", "json") == ([], "keys: ", [])
+    syms, _doc, keys = graph.parse_data("\x00\x01not json at all", "json")
+    assert keys == [] and syms == []
+    assert graph.parse_data("\x00\x01", "csv") == ([], "columns: ", [])
+
+
+def test_a_data_extension_is_never_truncated_into_another_one():
+    """PATH_RE once matched `js` inside `.json`, so `fixtures/refunds.json` was found as
+    `fixtures/refunds.js` — no index node ever has that name, so the read could not
+    couple to it. The bug was invisible until data files became indexable."""
+    from subproto import protocol
+
+    got = protocol.extract_paths("read fixtures/refunds.json, web/src/app.jsx, "
+                                 "ui/Button.tsx, config/settings.yaml, "
+                                 "fixtures/ledger.csv, notes.tsv, x.py, y.md")
+    assert got == ["fixtures/refunds.json", "web/src/app.jsx", "ui/button.tsx",
+                   "config/settings.yaml", "fixtures/ledger.csv", "notes.tsv",
+                   "x.py", "y.md"], got
+    assert protocol.extract_paths("x.pyx y.pyz nothing.json5") == [], \
+        "a near-miss extension is not a path either"""
+
+
 def test_graph_roundtrips_through_save_load(tmp_path):
     g = _g()
     p = str(tmp_path / "graph.json")

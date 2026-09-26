@@ -312,10 +312,12 @@ scoring logic forks.
   materialised repo tree and a content-substring grader — no frontier model judged
   anything, so "accuracy" here means *the evidence the model needs is still in the prompt*.
   The billed, real-model version is **V2-B** and stays `BLOCKED(external)`. Latency is a
-  request-shape proxy. The index covers code **and** `.md`/`.rst`/`.txt`/`.sql` (S27:
-  headings and DDL objects are those files' symbols); a data file like `.json`/`.csv` still
-  has no signal, so a needed read of that kind is saved only when the human typed its path
-  (`EVIDENCE_NAMED`).
+  request-shape proxy. The index covers code, `.md`/`.rst`/`.txt`/`.sql` (S27: headings
+  and DDL objects are those files' symbols) **and** `.json`/`.csv`/`.tsv`/`.yaml`/`.yml`
+  (S31: a nested key path or a header column is that file's symbol, and its *values* are
+  deliberately not indexed). What still has no signal is a file type the indexer does not
+  know at all — one needed read of an unknown extension is saved only when the human typed
+  its path (`EVIDENCE_NAMED`).
 
 ---
 

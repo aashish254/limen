@@ -346,6 +346,39 @@ def test_the_index_now_reaches_a_migration_the_task_never_names(schema_graph):
         "no index, no signal: the greedy trades the migration away"
 
 
+@pytest.fixture(scope="module")
+def data_graph(tmp_path_factory):
+    """S31: an index whose only signal for the read the task needs is a *data file's*
+    keys — the case FR-10 documented as unreachable without a human typing the path."""
+    root = tmp_path_factory.mktemp("data-repo")
+    (root / "fixtures").mkdir()
+    (root / "app" / "other").mkdir(parents=True)
+    (root / "fixtures" / "refunds.json").write_text(
+        '{"refunds": [{"amount_cents": 1200, "gateway_error": "APIConnectionError"}], '
+        '"meta": {"generated_by": "seed"}}\n')
+    (root / "app" / "other" / "decoy.py").write_text("def unrelated():\n    return 1\n")
+    return graph_mod.build(str(root))
+
+
+def test_the_index_now_reaches_a_fixture_the_task_never_names(data_graph):
+    FIXTURE = "fixtures/refunds.json"
+    task = ("the refund fixture's amount_cents disagrees with the gateway_error the "
+            "ledger row carries, which writer is wrong?")
+    assert data_graph["nodes"][FIXTURE]["lang"] == "json"
+    assert "amount" in data_graph["nodes"][FIXTURE]["symbols"]
+    assert not protocol.extract_paths(task), "the task must name no path, or R2 does the work"
+    body = _starved_session(task, FIXTURE)
+    c = next(x for x in compiler.build_candidates(body, analyze_request(body),
+                                                  data_graph, task)[0]
+             if x.kind == "message" and x.index == 3)
+    assert "graph" in c.why and c.protected, "a JSON key is the file's symbol now"
+    _, with_g = _compile(body, data_graph, query=task)
+    _, without = _compile(body, None, query=task)
+    assert "tool_result#3" in _kept_msgs(with_g)
+    assert "tool_result#3" not in _kept_msgs(without), \
+        "no index, no signal: the greedy trades the fixture away"
+
+
 def test_a_file_the_tail_already_quotes_is_not_paid_for_twice(repo_graph):
     """The note competes with the prose that repeats it — that is the double toll."""
     body = _body()

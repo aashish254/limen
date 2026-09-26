@@ -7,6 +7,7 @@ the cached index.
 """
 
 import ast
+import io
 import json
 import os
 import re
@@ -21,7 +22,13 @@ LANG_BY_EXT = {
     # index that skips them leaves the compiler with no evidence about them at all.
     ".md": "markdown", ".markdown": "markdown", ".rst": "text", ".txt": "text",
     ".sql": "sql",
+    # S31 — FR-10's documented hole, closed. A task names a *fixture* ("the refund
+    # fixture", `amount_cents`) as often as it names a module, and a data file's keys
+    # are exactly its symbols: the shape of what is in there, without reading it.
+    ".json": "json", ".csv": "csv", ".tsv": "tsv", ".yaml": "yaml", ".yml": "yaml",
 }
+
+DATA_LANGS = ("json", "yaml", "csv", "tsv")
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
              ".next", ".pytest_cache", "target", "vendor", ".mypy_cache", ".ruff_cache",
@@ -90,6 +97,110 @@ def parse_doc(src, lang):
     else:
         doc = " ".join(heads[:4]) or " ".join(src.split()[:40])
     return syms, doc
+
+
+# S31 — a data file's API is its *shape*: nested keys for JSON/YAML, header columns
+# for CSV/TSV. The values are deliberately not indexed — they are what the agent is
+# reading the file to find, and putting them in the index would rank every fixture
+# that happens to contain the word "error".
+JSON_KEY_RE = re.compile(r'"([^"\n]{1,80})"\s*:')
+YAML_KEY_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[^:#\-][^:]*?):(?P<rest>.*)$")
+# A column name is a name, not a value: this rejects a binary or JSON blob whose
+# first line csv.reader would otherwise hand back as a single "header" cell.
+COLUMN_RE = re.compile(r"^[A-Za-z_][\w. ()-]{0,60}$")
+
+
+def _json_key_paths(obj, prefix="", out=None, limit=400):
+    """Nested key paths of a parsed JSON document: `refunds[].amount_cents`, `meta.version`.
+
+    A list contributes one `[]`-marked path (its items share a schema) and is walked
+    through its first dict item, which is where a fixture's column names live.
+    """
+    if out is None:
+        out = []
+    if len(out) >= limit:
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            path = "%s.%s" % (prefix, k) if prefix else str(k)
+            out.append(path)
+            _json_key_paths(v, path, out, limit)
+    elif isinstance(obj, list):
+        for item in obj[:1]:
+            _json_key_paths(item, prefix + "[]" if prefix else "[]", out, limit)
+    return out
+
+
+def _yaml_key_paths(src, limit=400):
+    """Nested key paths from indentation, with no YAML library.
+
+    Only `key:` lines are read, so a value that happens to contain a colon cannot
+    become a symbol; the indent stack is what makes `refund_ledger: -> amount_cents`
+    a two-level path.
+    """
+    out = []
+    stack = []
+    for line in src.splitlines():
+        raw = line.rstrip()
+        if not raw or raw.lstrip().startswith("#"):
+            continue
+        m = YAML_KEY_RE.match(raw)
+        if not m:
+            continue
+        indent = len(m.group("indent").expandtabs(2))
+        key = m.group("key").strip().strip("'\"")
+        if not key or key in ("true", "false", "null"):
+            continue
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        paths = [k for _i, k in stack] + [key]
+        out.append(".".join(paths))
+        rest = (m.group("rest") or "").strip()
+        if not rest:
+            stack.append((indent, key))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _csv_columns(src, delim):
+    """Header columns of a delimited file — the whole symbol surface a CSV has."""
+    import csv as _csv
+
+    try:
+        rows = list(_csv.reader(io.StringIO(src), delimiter=delim))[:1]
+    except Exception:
+        return []
+    return [c.strip() for c in (rows[0] if rows else [])
+            if COLUMN_RE.match(c.strip())][:200]
+
+
+def parse_data(src, lang, delim=None):
+    """(symbols, doc, key_names) for a json / yaml / csv file. See S31 in TODO.md."""
+    if lang == "json":
+        try:
+            paths = _json_key_paths(json.loads(src))
+        except ValueError:
+            paths = [m.group(1) for m in JSON_KEY_RE.finditer(src)]
+    elif lang == "yaml":
+        paths = _yaml_key_paths(src)
+    else:
+        cols = _csv_columns(src, delim or ("\t" if lang == "tsv" else ","))
+        syms = []
+        for name in cols:
+            for w in _title_words(name):
+                if w not in syms:
+                    syms.append(w)
+        doc = "columns: " + ", ".join(cols[:12])
+        return syms, doc, [c.lower() for c in cols]
+    names = list(dict.fromkeys(paths))
+    syms = []
+    for name in names:
+        for w in _title_words(name):
+            if w not in syms:
+                syms.append(w)
+    doc = "keys: " + ", ".join(names[:12])
+    return syms, doc, names
 
 
 def walk(root, max_files=20000):
@@ -216,13 +327,18 @@ def build(root):
             # No imports to follow: a doc's whole value is which words it is about.
             syms, doc = parse_doc(src, lang)
             imports = []
+        elif lang in DATA_LANGS:
+            # No imports either, and the *values* stay out of the hints: a fixture of
+            # error strings would otherwise rank every unrelated "error" query.
+            syms, doc, keys = parse_data(src, lang)
+            imports = []
         else:
             syms, imports = parse_js(src)
             doc = " ".join(m.group(1) for m in list(COMMENT_RE.finditer(src))[:4])
-        hints = sorted(set(
-            [x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9_]{3,}", src)]
-            + [os.path.basename(rel).lower()] + [s.lower() for s in syms]
-        ))[:400]
+        words = ([k.lower() for k in keys] if lang in DATA_LANGS else
+                 [x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9_]{3,}", src)])
+        hints = sorted(set(words + [os.path.basename(rel).lower()]
+                           + [s.lower() for s in syms]))[:400]
         nodes[rel] = {
             "lang": lang,
             "lines": lines,

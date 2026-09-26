@@ -76,7 +76,7 @@ def _cache_hit_rate(totals):
     }
 
 
-def summarize(telemetry, since=None, until=None, labels=None):
+def summarize(telemetry, since=None, until=None, labels=None, implicit=None):
     where, args = [], []
     if since:
         where.append("day >= ?")
@@ -129,7 +129,125 @@ def summarize(telemetry, since=None, until=None, labels=None):
     summary["cache_hit_rate"] = _cache_hit_rate(summary["totals"] or {})
     if labels:
         summary["slot_precision"] = slot_precision(telemetry, labels)
+    if implicit is not None:
+        summary["eviction_regret"] = eviction_regret(implicit)
+        summary["implicit_coverage"] = implicit_coverage(summary, implicit, labels or {})
     return summary
+
+
+def eviction_regret(harvest):
+    """What the harvested traffic said about the drops this telemetry recorded.
+
+    Every number is the harvest's own `summary`, printed with the enforced/shadow
+    split kept apart: a shadow-mode drop never reached the wire, so it cannot have
+    cost a re-read. `regrettable_per_1k_requests` is the honest rate — it uses every
+    request with a recorded decision, not only the ones whose body was spooled.
+    """
+    h = (harvest or {}).get("summary") or {}
+    scanned = int(h.get("requests_scanned") or 0)
+    enforced = int(h.get("wrong_drops_enforced") or 0)
+    shadow = int(h.get("wrong_drops_shadow") or 0)
+    regret = enforced + shadow
+    return {
+        "requests_with_decisions": scanned,
+        "bodies_readable": int(h.get("bodies_available") or 0),
+        "bodies_never_stored": int(h.get("skipped_no_body") or 0),
+        "evicted_reads_seen": int(h.get("evicted_reads_seen") or 0),
+        "regrettable_drops": regret,
+        "enforced": enforced,
+        "shadow": shadow,
+        "refetch_tok_paid": int(h.get("refetch_tok_paid") or 0),
+        "regrettable_per_1k_requests": round(regret * 1000.0 / scanned, 1) if scanned else None,
+        "by_source": h.get("by_source") or {},
+        "window_turns": h.get("window_turns"),
+        "window_s": h.get("window_s"),
+        "harvested_at": h.get("harvested_at"),
+    }
+
+
+def implicit_coverage(summary, harvest, labels):
+    """How many of the *recorded* requests the harvest could speak about at all."""
+    implicit = (harvest or {}).get("labels") or {}
+    rows = summary["requests"]
+    by_id = dict((str(r["id"]), r) for r in rows)
+    covered = [rid for rid in by_id
+               if (implicit.get(rid) or {}).get("targets")
+               or (implicit.get(rid) or {}).get("slots")]
+    human = [rid for rid in by_id if (labels or {}).get(rid)]
+    from . import dataset
+    verdicts = {}
+    for rid in covered:
+        label = dataset._merge_verdicts((labels or {}).get(rid), implicit.get(rid))[2]
+        verdicts[label or "none"] = verdicts.get(label or "none", 0) + 1
+    return {
+        "requests_in_window": len(rows),
+        "covered_by_harvest": len(covered),
+        "coverage": round(len(covered) / float(len(rows)), 4) if rows else None,
+        "covered_by_human": len(human),
+        "human_only": len(set(human) - set(covered)),
+        "harvest_only": len(set(covered) - set(human)),
+        "disagreements": len([rid for rid in covered
+                              if _verdict_of(labels, implicit, rid) == "mixed"]),
+        "verdicts": verdicts,
+    }
+
+
+def _verdict_of(labels, implicit, rid):
+    from . import dataset
+    return dataset._merge_verdicts((labels or {}).get(rid), implicit.get(rid))[0]
+
+
+def regret_section(er, cov=None):
+    """The eviction-regret block, as lines — shared by `report` and `learn` so the
+    two commands cannot print different versions of the same measurement.
+
+    `er` is `eviction_regret(harvest)`; `cov` (report only) adds how many of the
+    requests in the window the harvest could speak about at all.
+    """
+    if not er:
+        return []
+    cov = cov or {}
+    verdicts = cov.get("verdicts") or {}
+    out = ["", "  eviction regret  (what the recorded traffic said about the drops)"]
+    if cov:
+        out.append("    %d requests scanned: %d bodies readable, %d never stored; "
+                   "%d carry an implicit verdict" % (
+                       er["requests_with_decisions"], er["bodies_readable"],
+                       er["bodies_never_stored"], cov.get("covered_by_harvest", 0)))
+    out.append("    evicted reads seen %d" % er["evicted_reads_seen"])
+    out.append("    regrettable drops %d (enforced %d, shadow %d)" % (
+        er["regrettable_drops"], er["enforced"], er["shadow"]))
+    if er["regrettable_drops"]:
+        back = ""
+        if er["shadow"]:
+            back = ", while the %d shadow drop%s cost nothing because nothing was cut" % (
+                er["shadow"], "" if er["shadow"] == 1 else "s")
+        out.append("      %d tokens were paid back for re-reads of the %d drop%s "
+                   "that reached the wire%s" % (
+                       er["refetch_tok_paid"], er["enforced"],
+                       "" if er["enforced"] == 1 else "s", back))
+    else:
+        out.append("      nothing was re-read after it was cut, so nothing is owed "
+                   "back — that is a real 0, not a missing measurement")
+    out.append("    window: %d turns / %ds of recorded traffic, read at %s" % (
+        er["window_turns"], er["window_s"], er["harvested_at"]))
+    actions = dict((src, row) for src, row in (er["by_source"] or {}).items())
+    if actions:
+        out.append("    verdicts by signal: " + ", ".join(
+            "%s: %d label%s, %d tok" % (a, row["labels"], "" if row["labels"] == 1 else "s",
+                                        row["regret_tok"])
+            for a, row in sorted(actions.items())))
+    else:
+        out.append("    verdicts by signal: none — no drop was contradicted")
+    if verdicts:
+        out.append("    implicit verdicts: " + ", ".join(
+            "%s %d" % (v, n) for v, n in sorted(verdicts.items())))
+        if cov.get("disagreements"):
+            out.append("    %d request%s where a human verdict and the traffic "
+                       "disagree (human wins)" % (
+                           cov["disagreements"],
+                           "" if cov["disagreements"] == 1 else "s"))
+    return out
 
 
 def cache_opportunity(by_model):
@@ -261,9 +379,12 @@ def render_text(summary, since=None, until=None):
             lines.append("    %-10s labelled %3d   good %3d  bad %3d  uncertain %3d   approval %s" % (
                 slot, m["labelled"], m["good"], m["bad"], m["uncertain"],
                 ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
+    lines.extend(regret_section(summary.get("eviction_regret"),
+                           summary.get("implicit_coverage")))
     lines.append("")
     lines.append("  run `subproto audit` to see what the slots would drop, "
-                 "and `subproto export` to build the fine-tuning set.")
+                 "`subproto learn` to let the traffic judge them, and "
+                 "`subproto export` to build the fine-tuning set.")
     return "\n".join(lines)
 
 

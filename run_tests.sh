@@ -13,6 +13,16 @@ pkg_compile() { "$1" -W error -m compileall -q subproto fakeup bench train; }
 
 port() { echo $(( (RANDOM % 500) + 8500 )); }
 
+# expect <needle> <cmd...> — the command must print `needle`, or the gate fails loudly.
+expect() {
+  local needle="$1"; shift
+  if ! "$@" | grep -q "$needle"; then
+    echo "GATE FAILED: expected \"$needle\" from: $*" >&2
+    exit 1
+  fi
+  echo "ok: $* :: \"$needle\""
+}
+
 run_suite() {
   local py="$1" label="$2"
   echo "----- [$label] byte-compile (all packages) -----"
@@ -31,6 +41,22 @@ run_suite() {
   "$py" bench/ablation.py --adapters laya,openjev,djev >/dev/null && echo "ablation --adapters ok"
   echo "----- [$label] subproto demo (no key) -----"
   "$py" -m subproto demo --port "$(port)" --slots >/dev/null && echo "demo ok"
+  echo "----- [$label] the label flywheel over the demo's own traffic (S30) -----"
+  DH="$(mktemp -d)"
+  SUBPROTO_HOME="$DH" SUBPROTO_COMPILE=on "$py" -m subproto demo --port "$(port)" --slots >/dev/null
+  expect "eviction regret" "$py" -m subproto learn --home "$DH"
+  "$py" -m subproto learn --home "$DH" --json >/dev/null && echo "ok: learn --json"
+  expect "nothing written" "$py" -m subproto learn --home "$DH" --dry-run
+  expect "left as it is" "$py" -m subproto learn --home "$DH"
+  expect "eviction regret" "$py" -m subproto report --home "$DH"
+  if "$py" -m subproto report --home "$DH" --no-learn | grep -q "eviction regret"; then
+    echo "GATE FAILED: report --no-learn still harvested" >&2; exit 1
+  fi
+  echo "ok: report --no-learn skips the harvest"
+  expect "labelled_by_traffic" "$py" -m subproto export --home "$DH"
+  "$py" -m subproto split --home "$DH" >/dev/null && echo "ok: split"
+  echo "----- [$label] mutation gate: every label-flywheel rule must be tested -----"
+  expect "MUTATION GATE: OK" "$py" bench/mutation_gate.py
   echo "----- [$label] subproto models (SPI registry) -----"
   "$py" -m subproto models --home "$(mktemp -d)" >/dev/null && echo "models ok"
   "$py" -m subproto models --home "$(mktemp -d)" --json >/dev/null && echo "models --json ok"

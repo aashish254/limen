@@ -136,9 +136,13 @@ def cmd_models(args):
 def cmd_report(args):
     config = Config.load(args.config, data_dir=args.home)
     telemetry = _open_telemetry(config)
-    from . import dataset, report
+    from . import dataset, implicit, report
+    labels = dataset.load_labels(config)
+    # the regret section re-derives the harvest from local bodies rather than reading
+    # the last stored one, so what prints here is what the traffic says *now*
+    harvest = None if args.no_learn else implicit.harvest(config, telemetry)
     summary = report.summarize(telemetry, since=args.since, until=args.until,
-                               labels=dataset.load_labels(config))
+                               labels=labels, implicit=harvest)
     if args.json:
         print(json.dumps(report.render_json(summary), indent=1, default=str))
     else:
@@ -360,6 +364,47 @@ def cmd_label(args):
     print("labelled request %s -> %s (%s) in %s" % (key, args.slot, args.value, path))
 
 
+def cmd_learn(args):
+    """Label the drops that the recorded traffic itself contradicted."""
+    from . import implicit
+
+    config = Config.load(args.config, data_dir=args.home)
+    telemetry = _open_telemetry(config)
+    out = implicit.run(config, telemetry, limit=args.limit, write=not args.dry_run)
+    telemetry.close()
+    if args.json:
+        print(json.dumps({"summary": out["summary"], "labels": out["labels"]},
+                         indent=1, default=str))
+        return 0
+    s = out["summary"]
+    print("subproto learn  ·  %d requests with decisions, %d bodies readable"
+          " (%d never stored)" % (s["requests_scanned"], s["bodies_available"],
+                                  s["skipped_no_body"]))
+    if not s["bodies_available"]:
+        print("")
+        print("Nothing to judge. A re-read is only visible in the recorded body, so")
+        print("start the proxy with --store-bodies and re-run some agent traffic.")
+        return 0
+    from .report import eviction_regret, regret_section
+    for line in regret_section(eviction_regret(out)):
+        print(line)
+    print("")
+    if args.dry_run:
+        print("  --dry-run: nothing written. %s already holds %d request%s." % (
+            implicit.IMPLICIT_FILE, s.get("already_stored", 0),
+            "" if s.get("already_stored", 0) == 1 else "s"))
+    elif out.get("unchanged"):
+        print("  nothing new to store; %s already holds %d request%s and was left as it is"
+              % (implicit.IMPLICIT_FILE, s["stored"], "" if s["stored"] == 1 else "s"))
+    elif out.get("path"):
+        print("  wrote %d request%s to %s (human `subproto label` verdicts live in a"
+              " separate store and were not touched)" % (
+                  s["stored"], "" if s["stored"] == 1 else "s", out["path"]))
+    else:
+        print("  nothing new to store; %s is unchanged" % implicit.IMPLICIT_FILE)
+    return 0
+
+
 def cmd_inject(args):
     config = Config.load(args.config, data_dir=args.home)
     for line in INJECT.get(args.tool, INJECT["generic"]):
@@ -427,6 +472,8 @@ def build_parser():
                     help="print the env vars to point a tool at the proxy")
 
     rp = sub.add_parser("report", parents=[common], help="token, latency and waste report")
+    rp.add_argument("--no-learn", action="store_true", dest="no_learn",
+                    help="skip the eviction-regret harvest (no bodies read)")
     rp.add_argument("--since")
     rp.add_argument("--until")
     rp.add_argument("--json", action="store_true")
@@ -473,6 +520,13 @@ def build_parser():
     sp.add_argument("--val-frac", type=float, default=0.2, dest="val_frac")
     sp.add_argument("--seed", type=int, default=1337)
 
+    ln = sub.add_parser("learn", parents=[common],
+                        help="label the drops that recorded traffic contradicted (no key, no upload)")
+    ln.add_argument("--limit", type=int, default=200)
+    ln.add_argument("--json", action="store_true")
+    ln.add_argument("--dry-run", action="store_true", dest="dry_run",
+                    help="print the harvest without writing implicit_labels.json")
+
     lb = sub.add_parser("label", parents=[common], help="supervise a decision (good/bad/uncertain)")
     lb.add_argument("request_id", type=int)
     lb.add_argument("slot", choices=list(ALL_SLOTS) + ["all"])
@@ -506,5 +560,6 @@ def main(argv=None):
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
           "where": cmd_where, "compile": cmd_compile,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
+          "learn": cmd_learn,
           "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]
     return fn(args) or 0

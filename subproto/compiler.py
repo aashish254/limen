@@ -47,12 +47,6 @@ EVIDENCE_NAMED = 0.9
 PROTECTED_MAX = 0.6
 
 
-def _same_path(a, b):
-    """Path equality under either direction of truncation: `retry.py` vs `app/x/retry.py`."""
-    a, b = (a or "").lower(), (b or "").lower()
-    return bool(a) and bool(b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
-
-
 def default_budget(analysis):
     """The joint budget: the same split the compact slot uses, so the joint plan is no
     looser than the per-slot spend it replaces."""
@@ -201,10 +195,11 @@ def build_candidates(body, analysis, graph=None, query="", budget=None):
                     best = max(best, min(1.0, raw / 6.0))
                     if "graph" not in why:
                         why.append("graph")
-            # And the same for a path the user named in the task itself: the index only
-            # covers code extensions, so a .sql/.md/.txt read has no graph signal to
-            # save it, while "the human typed this path" is evidence on its own.
-            if any(_same_path(p, q) for q in query_paths):
+            # And the same for a path the user named in the task itself. The graph can
+            # already rank a code, doc, SQL or data read (S31), but a typed path is
+            # *direct* evidence rather than a lexical guess, so it floors the value at
+            # EVIDENCE_NAMED instead of waiting for the index to agree.
+            if any(protocol.same_path(p, q) for q in query_paths):
                 if best < EVIDENCE_NAMED:
                     best = EVIDENCE_NAMED
                     if "names-task-file" not in why:
@@ -229,8 +224,8 @@ def build_candidates(body, analysis, graph=None, query="", budget=None):
 
     for rel, (raw, why) in sorted(file_scores.items(), key=lambda kv: -kv[1][0]):
         line = "- " + rel
-        named = any(_same_path(rel, p) for p in query_paths)
-        already = any(_same_path(rel, p) for p in named_in_tail)
+        named = any(protocol.same_path(rel, p) for p in query_paths)
+        already = any(protocol.same_path(rel, p) for p in named_in_tail)
         value = min(1.0, raw / 6.0)
         w = list(why or []) + (["named-in-task"] if named else [])
         if already:

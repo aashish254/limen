@@ -168,7 +168,12 @@ subproto where "fix the payment retry refund"
 The agent stops paying a frontier model to `grep` its way around the repo. Docs count
 too: a markdown/rst heading or a SQL `CREATE TABLE` name is that file's symbol, so a
 "where does the refund ledger get written" question can rank the migration, not just the
-module. `--graph` takes your repo *or* a saved index, for both `where` and `compile`.
+module. **So do data files** — `fixtures/refunds.json` is indexed by its nested key paths
+(`refunds[].amount_cents`) and a `.csv`/`.tsv` by its header columns, which is what a task
+actually names ("the refund fixture", `amount_cents`). A file's *values* stay out of the
+index on purpose: they are what the agent opens the file to find, and indexing them would
+rank every fixture for every word it happens to contain. `--graph` takes your repo *or* a
+saved index, for both `where` and `compile`.
 
 ## One budget, not four — the Context Compiler
 

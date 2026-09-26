@@ -56,6 +56,50 @@ def read_body(path):
     return raw
 
 
+def _merge_verdicts(human, implicit, slot="compact"):
+    """(verdict, source, implicit_label) for one request's slot. The human wins.
+
+    `verdict` is the answer the row teaches: `good`/`bad` from a human, `keep` for a
+    drop the traffic contradicted, `exclude` when the traffic only complained about the
+    turn (a correction names the turn, not a candidate, so it removes supervision
+    rather than inventing the opposite answer), and `mixed` where a human and the
+    traffic disagree - kept visible instead of silently resolved. `implicit_label` is
+    what the traffic said on its own, reported even where a human already answered.
+    """
+    human = dict(human or {})
+    verdict = human.get(slot)
+    source = "human" if verdict in ("good", "bad") else None
+    targets = (implicit or {}).get("targets") or {}
+    turn = (implicit or {}).get("slots") or {}
+    kinds = sorted({(v.get("source") or "").split(":")[-1]
+                    for v in list(targets.values()) + list(turn.values())} - {""})
+    if not kinds:
+        return verdict, source, None
+    # a re-read names the file a `compact` drop cut, so it speaks about that slot only;
+    # a turn-level complaint covers every slot of the turn it landed on
+    if slot == "compact":
+        flips = [v for v in targets.values() if v.get("verdict") == "keep"]
+        implicit_label = "keep" if flips else "exclude"
+    else:
+        flips, implicit_label = [], ("exclude" if turn else None)
+    if implicit_label is None:
+        return verdict, source, None
+    if verdict == "good":
+        return "good", ("human+implicit" if flips else "human"), implicit_label
+    if verdict == "bad":
+        return "mixed", "mixed", implicit_label
+    return implicit_label, "implicit:" + "+".join(kinds), implicit_label
+
+
+def label_view(config, slot="compact"):
+    """{request_id: (verdict, source, implicit_label)} over *both* label stores."""
+    from . import implicit          # implicit imports dataset, so this is lazy
+
+    human = load_labels(config)
+    merged = implicit.load_implicit(config)
+    return dict((rid, _merge_verdicts(human.get(rid), merged.get(rid), slot))
+                for rid in set(human) | set(merged))
+
 def audit(config, telemetry, engine=None, limit=200, verbose=False):
     """Re-derive every slot over recorded requests without touching the wire."""
     engine = engine or Engine(config)
@@ -98,6 +142,7 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
     if slots is None:
         slots = ALL_SLOTS
     labels = load_labels(config)
+    views = {}                      # slot -> {request_id: (verdict, source, implicit_label)}
     rows = telemetry.query(
         "SELECT id, ts, api, client, model, in_tok, cw_tok, cr_tok, out_tok, cost_usd, "
         "est_in_tok, tool_spec_chars, tool_names, decisions, features, body_sha "
@@ -113,6 +158,9 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
             if d.get("slot") not in slots:
                 continue
             cand = d.get("candidates") or []
+            if d["slot"] not in views:
+                views[d["slot"]] = label_view(config, d["slot"])
+            verdict, source, ilabel = views[d["slot"]].get(label_key, (None, None, None))
             rec = {
                 "schema": "subproto/1",
                 "request_id": r["id"],
@@ -133,7 +181,10 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
                 "outcome": {k: v for k, v in d.items()
                             if k not in ("candidates", "proof")},
                 "candidates": cand if include_candidates else None,
-                "label": labels.get(label_key, {}).get(d["slot"]),
+                "label": verdict,
+                "label_source": source,
+                "implicit_label": ilabel,
+                "human_label": labels.get(label_key, {}).get(d["slot"]),
             }
             lines.append(rec)
     target = path or os.path.join(
@@ -144,6 +195,11 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
             f.write(json.dumps(rec, separators=(",", ":")) + "\n")
     return {"path": target, "rows": len(lines),
             "labelled": sum(1 for r in lines if r["label"]),
+            "labelled_by_human": sum(1 for r in lines if r["human_label"]),
+            "labelled_by_traffic": sum(1 for r in lines
+                                       if not r["human_label"] and r["label_source"]),
+            "sources": dict((v, sum(1 for r in lines if r["label_source"] == v))
+                             for v in sorted({r["label_source"] for r in lines} - {None})),
             "slots": dict((s, sum(1 for r in lines if r["slot"] == s)) for s in slots)}
 
 
@@ -165,13 +221,21 @@ def _state_for(row, bodies):
     return " ".join(names[:8]) or (row.get("api") or "") + " turn"
 
 
+def _contradicted(entry):
+    """Candidate ids the traffic contradicted (a re-read proved the content was in use)."""
+    targets = (entry or {}).get("targets") or {}
+    return set(k for k, v in targets.items() if v.get("verdict") == "keep")
+
+
 def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True):
     """Deterministic, de-duplicated train/val split in Laya supervision format.
 
     Each example is a single narrow keep/drop question — `{state, question,
     options, answer}` — which is exactly the shape `laya.py` asks at inference
     time, so train and serve match. De-duplicated by (body_sha, slot, candidate);
-    human-labelled-"bad" decisions are excluded rather than taught. Seeded shuffle
+    a decision a human rejected (`bad`), a disagreement between the two stores
+    (`mixed`), or a turn the traffic only complained about (`exclude`) is dropped
+    rather than taught; a drop the traffic re-read is taught as `keep`. Seeded shuffle
     makes the split reproducible and leak-free (index split of one shuffled list).
     """
     val_frac = max(0.0, min(1.0, float(val_frac)))
@@ -190,6 +254,8 @@ def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True)
         "SELECT id, body_sha, decisions, tool_names, api FROM requests "
         "WHERE decisions IS NOT NULL ORDER BY id")
     labels = load_labels(config)
+    from . import implicit
+    implied = implicit.load_implicit(config)
 
     seen = set()
     examples = []
@@ -199,14 +265,19 @@ def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True)
         except ValueError:
             continue
         state = _state_for(r, bodies)
-        hum = labels.get(str(r["id"]), {})
+        rid = str(r["id"])
+        hum, imp = labels.get(rid, {}), implied.get(rid)
+        contradicted = _contradicted(imp)
         for d in decisions:
             slot = d.get("slot")
             if slot not in ALL_SLOTS:
                 continue
-            hl = hum.get(slot)
-            if hl == "bad":          # a decision a human rejected is not supervision
+            verdict, source, _il = _merge_verdicts(hum, imp, slot)
+            # `bad`/`mixed` are a rejected decision; `exclude` is a complaint that
+            # names the turn and no candidate, so it can only remove supervision
+            if verdict in ("bad", "mixed", "exclude"):
                 continue
+            taught = verdict is not None
             for cand in d.get("candidates") or []:
                 tgt = cand.get("target")
                 if tgt is None:
@@ -215,14 +286,14 @@ def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True)
                 if key in seen:
                     continue
                 seen.add(key)
-                keep = bool(cand.get("keep"))
+                keep = bool(cand.get("keep")) or (slot == "compact" and tgt in contradicted)
                 examples.append({
                     "state": state,
                     "question": "keep",
                     "slot": slot,
                     "options": [tgt],
                     "answer": "keep" if keep else "drop",
-                    "label_source": "human" if hl == "good" else "heuristic",
+                    "label_source": source or ("human" if taught else "heuristic"),
                     "backend": d.get("backend"),
                     "body_sha": r["body_sha"],
                 })
@@ -232,7 +303,16 @@ def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True)
     cut = int(round(len(examples) * (1.0 - val_frac)))
     train, val = examples[:cut], examples[cut:]
 
+    def _count(pred):
+        return sum(1 for e in examples if pred(e))
+    def from_src(e):
+        return (e["label_source"] or "").startswith("implicit:")
     out = {"n_examples": len(examples), "n_train": len(train), "n_val": len(val),
+           "n_supervised": _count(lambda e: e["label_source"] != "heuristic"),
+           "n_from_traffic": _count(from_src),
+           "n_traffic_keeps": _count(lambda e: from_src(e) and e["answer"] == "keep"),
+           "n_traffic_drops_taught": _count(lambda e: from_src(e) and e["answer"] == "drop"),
+           "n_heuristic": _count(lambda e: e["label_source"] == "heuristic"),
            "val_frac": val_frac, "seed": seed, "dedup": True}
     if write:
         d = os.path.join(config.data_dir, "training")

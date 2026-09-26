@@ -252,7 +252,10 @@ def normalize_messages(body):
 
 
 IDENT_RE = re.compile(r"[A-Za-z0-9_.$/-]{3,}")
-PATH_RE = re.compile(r"[\w./-]+\.(?:py|js|jsx|ts|tsx|mjs|cjs|go|rs|java|rb|php|c|h|cpp|cs|swift|kt|sql|json|ya?ml|toml|md|html|css|sh|vue|svelte)")
+# The extension must be the *whole* extension: an unordered alternation matched `js`
+# inside ".json" (and `ts` inside ".tsx"), silently truncating the path — which is
+# how a data-file read stayed uncoupleable for the whole of v5.
+PATH_RE = re.compile(r"[\w./-]+\.(?:py|js|jsx|ts|tsx|mjs|cjs|go|rs|java|rb|php|c|h|cpp|cs|swift|kt|sql|json|jsonl|csv|tsv|ya?ml|toml|md|html|css|sh|vue|svelte)(?![A-Za-z0-9_])")
 TOKEN_STOP = {
     "the", "and", "for", "with", "you", "are", "was", "that", "this", "from",
     "have", "has", "not", "but", "can", "will", "should", "would", "into",
@@ -279,3 +282,14 @@ def lexical_tokens(text, limit=200):
 
 def extract_paths(text):
     return [p.lower() for p in PATH_RE.findall(text or "")]
+
+
+def same_path(a, b):
+    """Path equality under either direction of truncation: `retry.py` vs `app/x/retry.py`.
+
+    Recorded traffic names the same file three ways — a call argument (`app/x/retry.py`),
+    a result header (`/Users/me/repo/app/x/retry.py`) and a graph key (`app/x/retry.py`) —
+    so any comparison across those sources has to tolerate a shared suffix.
+    """
+    a, b = (a or "").lower(), (b or "").lower()
+    return bool(a) and bool(b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
