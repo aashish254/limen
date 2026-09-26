@@ -16,6 +16,11 @@ LANG_BY_EXT = {
     ".py": "python", ".js": "javascript", ".jsx": "javascript",
     ".mjs": "javascript", ".cjs": "javascript", ".ts": "typescript",
     ".tsx": "typescript",
+    # S27: the files an agent reads that have no parser. A schema note and a design doc
+    # are as load-bearing as a module for a "why is this migration failing" turn, and an
+    # index that skips them leaves the compiler with no evidence about them at all.
+    ".md": "markdown", ".markdown": "markdown", ".rst": "text", ".txt": "text",
+    ".sql": "sql",
 }
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
@@ -39,6 +44,52 @@ JS_EXPORT_RE = re.compile(
 )
 JS_IDENT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{2,}")
 COMMENT_RE = re.compile(r"(?:^|\n)[ \t]*(?:#|//)[ \t]*(.{4,160})")
+
+# S27 — a "symbol" for a file with no AST. In a heading or a DDL statement, the words
+# *are* the API a task refers to ("the refunds migration"), so they get the same 3.0
+# match `parse_python` symbols get; the prose body only ever reaches 0.6 via hints.
+MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}[ \t]+(.{2,120})$", re.M)
+RST_TITLE_RE = re.compile(r"^([A-Za-z0-9 ._:'-]{2,120})\n[=\-~^]{3,}[ \t]*$", re.M)
+SQL_OBJECT_RE = re.compile(
+    r"\b(?:CREATE|ALTER|DROP|FROM|JOIN|INTO|UPDATE)\s+"
+    r"(?:TABLE\s+|VIEW\s+|INDEX\s+|MATERIALIZED\s+|EXISTS\s+|IF\s+NOT\s+)*"
+    r"([A-Za-z_][\w.]*)", re.I)
+SQL_COMMENT_RE = re.compile(r"--[ \t]*(.{4,160})")
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}")
+
+
+def _title_words(text):
+    """Tokens of a heading / DDL object name, split the way `lexical_tokens` splits a
+    query — otherwise `refund_ledger` in the file can never match `refund` in the task."""
+    out = []
+    for raw in _WORD_RE.findall(text or ""):
+        for part in re.split(r"[_$-]+", raw):
+            part = part.lower()
+            if len(part) >= 3 and part not in out:
+                out.append(part)
+    return out
+
+
+def parse_doc(src, lang):
+    """Return (symbols, doc) for markdown / rst-txt / sql. See S27 in TODO.md."""
+    if lang == "markdown":
+        heads = [m.group(1) for m in MD_HEADING_RE.finditer(src)]
+    elif lang == "sql":
+        heads = [m.group(1) for m in SQL_OBJECT_RE.finditer(src)]
+    else:
+        heads = [m.group(1) for m in RST_TITLE_RE.finditer(src)]
+        if not heads:
+            heads = [ln.strip() for ln in src.splitlines() if ln.strip()][:2]
+    syms = []
+    for h in heads:
+        for w in _title_words(h):
+            if w not in syms:
+                syms.append(w)
+    if lang == "sql":
+        doc = " ".join(m.group(1) for m in list(SQL_COMMENT_RE.finditer(src))[:4])
+    else:
+        doc = " ".join(heads[:4]) or " ".join(src.split()[:40])
+    return syms, doc
 
 
 def walk(root, max_files=20000):
@@ -161,6 +212,10 @@ def build(root):
             parsed = parse_python(src)
             syms, imports = parsed[0], parsed[1]
             doc = parsed[2] if len(parsed) > 2 else ""
+        elif lang in ("markdown", "text", "sql"):
+            # No imports to follow: a doc's whole value is which words it is about.
+            syms, doc = parse_doc(src, lang)
+            imports = []
         else:
             syms, imports = parse_js(src)
             doc = " ".join(m.group(1) for m in list(COMMENT_RE.finditer(src))[:4])

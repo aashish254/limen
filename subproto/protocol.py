@@ -159,6 +159,68 @@ def tool_name(t):
     return (t.get("name") or (t.get("function") or {}).get("name") or "?")
 
 
+def filter_tools(tools, keep):
+    """Rebuild a request's tools list keeping only names in `keep` (lowercased).
+
+    Preserves each dialect's shape: OpenAI/Anthropic tools are flat entries, while
+    Gemini packs declarations under one wrapper — so the inner list is filtered and
+    the wrapper is dropped entirely once it empties.
+    """
+    out = []
+    for t in tools or []:
+        if isinstance(t, dict) and isinstance(t.get("functionDeclarations"), list):
+            kept = [
+                d for d in t["functionDeclarations"]
+                if tool_name(d).lower() in keep
+            ]
+            if kept:
+                out.append(dict(t, functionDeclarations=kept))
+            continue
+        if tool_name(t).lower() in keep:
+            out.append(t)
+    return out
+
+
+def append_after_prefix(body, note):
+    """Put *note* at the very end of the conversation — never inside the cached prefix.
+
+    I2: writing into the top-level `system` string rewrites the prefix itself, which
+    busts the provider cache and bills a fresh read on every turn. So the note is
+    attached after the last turn, and that turn is cloned rather than mutated: the
+    bytes ahead of it — system, tools, all earlier turns — stay identical.
+    Returns (body_or_clone, injected).
+    """
+    out = dict(body)
+    msgs = out.get("messages")
+    if isinstance(msgs, list) and msgs and isinstance(msgs[-1], dict):
+        last = msgs[-1]
+        if last.get("role") == "assistant":
+            # ...assistant, user is the alternation both dialects expect.
+            tail = {"role": "user",
+                    "content": [{"type": "text", "text": note}]
+                    if isinstance(last.get("content"), list) else note}
+            out["messages"] = list(msgs) + [tail]
+            return out, True
+        clone = dict(last)
+        content = last.get("content")
+        if isinstance(content, list):
+            clone["content"] = list(content) + [{"type": "text", "text": note}]
+        elif isinstance(content, str):
+            clone["content"] = content + "\n\n" + note
+        else:
+            return body, False
+        out["messages"] = list(msgs[:-1]) + [clone]
+        return out, True
+    contents = out.get("contents")  # Gemini shape
+    if isinstance(contents, list) and contents and isinstance(contents[-1], dict):
+        last = contents[-1]
+        if isinstance(last.get("parts"), list):
+            out["contents"] = list(contents[:-1]) + [
+                dict(last, parts=list(last["parts"]) + [{"text": note}])]
+            return out, True
+    return body, False
+
+
 def normalize_messages(body):
     """Return [(role, text, kind)] for either dialect, in request order."""
     out = []

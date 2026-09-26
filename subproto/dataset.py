@@ -130,7 +130,8 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
                 "tool_spec_chars": r["tool_spec_chars"],
                 "features": json.loads(r["features"] or "{}").get("features") if r["features"] else None,
                 "body_sha": r["body_sha"],
-                "outcome": {k: v for k, v in d.items() if k != "candidates"},
+                "outcome": {k: v for k, v in d.items()
+                            if k not in ("candidates", "proof")},
                 "candidates": cand if include_candidates else None,
                 "label": labels.get(label_key, {}).get(d["slot"]),
             }

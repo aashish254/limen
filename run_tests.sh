@@ -23,6 +23,9 @@ run_suite() {
   "$py" bench/ab.py --mock 20 >/dev/null && echo "ab.py ok"
   echo "----- [$label] bench/live.py (pass-rate-held, mock) -----"
   "$py" bench/live.py --mock >/dev/null && echo "live.py ok"
+  echo "----- [$label] bench/live.py --require-better (S23 accuracy gate, hard set) -----"
+  "$py" bench/live.py --mock --tasks bench/tasks.hard.jsonl --require-better >/dev/null \
+    && echo "live.py hard set: BETTER"
   echo "----- [$label] bench/ablation.py (adapter-vs-heuristic) -----"
   "$py" bench/ablation.py >/dev/null && echo "ablation.py ok"
   "$py" bench/ablation.py --adapters laya,openjev,djev >/dev/null && echo "ablation --adapters ok"

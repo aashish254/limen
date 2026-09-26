@@ -9,7 +9,7 @@ proxy (OpenAI chat + `responses`, Anthropic `messages`, Gemini `generateContent`
 telemetry + waste/slot-precision report, 4 decision slots (observation + opt-in
 enforce), code graph, dataset export + label loop + deterministic train/val split, a
 guarded MLX LoRA script, a local Laya scoring server + ablation harness, a live
-terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−30.2%
+terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−29.9%
 input tokens, pass-rate held, bootstrap CI, no key). The remaining gaps are gated on
 external resources — a real quantized checkpoint, non-zero API spend, and a public
 task suite — and stay labelled **BLOCKED(external)**, never falsely checked.
@@ -239,7 +239,10 @@ Requirement IDs map to the shipped modules so progress is auditable.
   table with no key.
 - **AC:** `python bench/live.py --mock` runs the **pass-rate-held** A/B (observe vs
   enforce) against `fakeup` with a SWE-bench-shaped task set + mock grader, and emits
-  the delivered input-token Δ with bootstrap 95% CI: −30.2% tokens, pass-rate +0.0 pp.
+  the delivered input-token Δ with bootstrap 95% CI: −29.9% tokens, pass-rate +0.0 pp.
+  (Was published as −30.2%; the number moved to **−29.9% `[28.2, 31.3]`** when v5 gave
+  both enforced arms the same code graph, which changes what the per-slot `context` slot
+  does. The current figure is what `bench/live_results.md` prints today.)
   The enforced body is echoed by the mock so the token number is *delivered*, not
   estimated. Latency there is a request-shape proxy, labelled as such.
 - **AC target:** run the same harness over a **public** task suite with a real grader
@@ -266,6 +269,54 @@ Requirement IDs map to the shipped modules so progress is auditable.
   tailing telemetry; `subproto live --once` emits a deterministic snapshot for CI and
   screenshots. Pure `render(snapshot) -> str`, ANSI-tested.
 
+### FR-10 The Context Compiler — ✅ shipped (opt-in, `SUBPROTO_COMPILE=on`; accuracy measured on the mock)
+`subproto/compiler.py`, `engine.decide`, `subproto compile`, `bench/live.py` (third arm)
+The four slots stop spending independent budgets. `tool_gate` / `compact` / `context`
+resolve from **one value-per-token knapsack over one budget**, over `Candidate`s of three
+kinds — `{message, tool spec, file note}` — harvested from the *existing* heuristics so no
+scoring logic forks.
+- **AC (I1):** off by default; with `SUBPROTO_COMPILE=on` and empty `SUBPROTO_APPLY` the
+  plan is recorded and no bytes are written (`test_observation_mode_compiles_but_writes_nothing`).
+- **AC (I2):** the system + tools block are never candidates; the injected file note lands
+  after the last turn (`test_compiled_context_note_lands_after_the_prefix`).
+- **AC (I3):** the protected set — last `PROTECTED_TAIL=4` turns, `core` tools, and at most
+  `EVIDENCE_MAX=3` graph-evidence reads under a `PROTECTED_MAX=60%` cap — is booked before
+  the optimiser runs, and a budget that cannot fit it reports `over_budget` instead of
+  truncating: `subproto compile … --budget 1500` → *"over budget: protected set needs 4983
+  tok, budget is 1500 — the tail is sacred (I3), so nothing was cut"*.
+- **AC (I6) — retention proof:** every drop names the joint decision that beat it
+  (`value/token 0.002700 < kept floor 0.002988 (floor set by tool_result#9)`) and carries a
+  reversible address `{request_id, body_sha, pointer, index}` into telemetry — six decimals
+  and a real sha, because a proof that prints "0.0030 < 0.0030" or points at `body_sha: null`
+  is not checkable. *Address, not reconstruction:* the body is never deleted, so recovery is
+  `subproto show <request_id>` + the message index; `compiler` deliberately has no `restore()`.
+- **AC (never bet the request on one component):** a raising plan degrades to the per-slot
+  path and the reason surfaces as `model_status()["compile_error"]`.
+- **AC — the accuracy gate (this is what makes it a contribution, not a savings pitch).**
+  `bench/live.py` runs a third arm and reports token-weighted **recall of required files**
+  and **precision of what survived**, content-measured via `@@dump <path>@@` markers —
+  mention-testing would score 100% recall for a prompt whose evidence was evicted, because
+  a `tool_use` still names the file after its `tool_result` is gone.
+  `--require-better` exits 3 unless recall holds at 100% *and* precision improves; it is a
+  gate in `run_tests.sh`, and it printed **CHEAPER-BUT-NOT-BETTER twice** before the
+  mechanism was fixed.
+  - `bench/tasks.sample.jsonl` (n=20), compiled vs per-slot: **−19.3% input tokens**
+    `[17.9, 20.9]`, recall **100% → 100%**, precision **2.6% → 19.6%** (+17.0 pp
+    `[+2.8, +35.8]`), p50 5.6 → 6.7 ms (**slower**, reported rather than hidden), verdict
+    **BETTER**.
+  - `bench/tasks.hard.jsonl` (n=8; one needed 2.6k-token read as the *oldest* turn + 6
+    stale decoys): per-slot **pass-rate 0.0% / recall 2.7% → I3 VIOLATED**, compiled
+    **100% / 100%** at **18.2% fewer tokens** than per-slot `[16.2, 20.2]`, precision
+    0.5% → 25.1%, verdict **BETTER**. Per-slot spends *more* and keeps *less*.
+- **Known limits (mock-measured, not billed):** both tables are the local mock with a
+  materialised repo tree and a content-substring grader — no frontier model judged
+  anything, so "accuracy" here means *the evidence the model needs is still in the prompt*.
+  The billed, real-model version is **V2-B** and stays `BLOCKED(external)`. Latency is a
+  request-shape proxy. The index covers code **and** `.md`/`.rst`/`.txt`/`.sql` (S27:
+  headings and DDL objects are those files' symbols); a data file like `.json`/`.csv` still
+  has no signal, so a needed read of that kind is saved only when the human typed its path
+  (`EVIDENCE_NAMED`).
+
 ---
 
 ## 6. Metrics & instrumentation (what we must always be able to report)
@@ -284,7 +335,7 @@ Requirement IDs map to the shipped modules so progress is auditable.
 1. **One-command truth.** `subproto demo` + `bench/ab.py --mock` work with no key,
    no signup, on a fresh clone. (Done.)
 2. **The hero image is a bill.** README's first visual is `$A → $B, same tasks,
-   same pass rate`. **Mock-measured today** (−30.2% tokens, pass-rate held, CI);
+   same pass rate`. **Mock-measured today** (−29.9% tokens, pass-rate held, CI);
    the *billed* bill drop needs FR-6-real + M3 (non-zero API spend) — kept labelled a
    projection until then, per I6.
 3. **A killer demo gif.** Terminal side-by-side: agent reading 8 files vs `subproto
@@ -312,7 +363,7 @@ Requirement IDs map to the shipped modules so progress is auditable.
   harness shipped and tested (lexical backend). The **real quantized MLX checkpoint**
   and published CPU latency curve need ~808MB HF weights + MLX runtime.
 - **M3 (harness shipped — billed number BLOCKED external)** — `bench/live.py` runs the
-  pass-rate-held A/B with bootstrap CI and reports a mock-delivered −30.2% token
+  pass-rate-held A/B with bootstrap CI and reports a mock-delivered −29.9% token
   reduction. The **public task suite + real grader + billed provider savings** need API
   spend.
 - **M4 (pipeline shipped — training BLOCKED external)** — export + label loop +
@@ -321,6 +372,11 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **M5 (TUI shipped — release/post/GIF BLOCKED external)** — `subproto live` meter is
   screenshot-ready. The tagged PyPI release, demo GIF, and launch posts are human
   actions + spend.
+- **M6 (done)** — **FR-10, the Context Compiler**: one joint budget over messages / tool
+  specs / file notes behind `SUBPROTO_COMPILE=on`, a machine-readable retention proof on
+  every turn, and a third `compiled` arm in `bench/live.py` whose accuracy gate
+  (`--require-better`, recall + precision) runs in `run_tests.sh` under both interpreters.
+  Mock-measured; the billed, real-model version stays **V2-B**.
 
 ---
 
@@ -346,7 +402,7 @@ subproto is "perfect" when:
    no task regressions. **(BLOCKED external: real sessions + API spend; mock-measured
    held-pass-rate harness is in place)**
 3. The README hero number is **measured**, not projected, with a public reproducible
-   harness and confidence intervals. **(mock-delivered −30.2% w/ CI is measured today;
+   harness and confidence intervals. **(mock-delivered −29.9% w/ CI is measured today;
    the billed/provider number is M3)**
 4. Laya (on-device) beats the heuristic baseline on slot precision in an ablation.
    **(ablation harness + local scorer shipped; needs the quantized checkpoint — M2)**

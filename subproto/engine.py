@@ -8,6 +8,7 @@ a slot explicitly with SUBPROTO_APPLY=tool_gate,compact,context.
 import os
 import time
 
+from . import compiler
 from . import graph as graph_mod
 from . import heuristics
 from . import protocol
@@ -18,10 +19,17 @@ DEFAULT_APPLY = ("tool_gate", "compact")
 # Slots that only ever record a recommendation. Naming one in SUBPROTO_APPLY changes
 # no bytes, so the CLI says so instead of letting the meter imply an intervention.
 ADVISORY_SLOTS = ("effort",)
+SLOTS_THAT_EDIT = ("tool_gate", "compact", "context")
 
 
 def _now_ms():
     return time.time() * 1000.0
+
+
+def compile_enabled():
+    """v5's joint optimizer is opt-in (I1): SUBPROTO_COMPILE=on|1|true|yes."""
+    return (os.environ.get("SUBPROTO_COMPILE") or "").strip().lower() in (
+        "1", "on", "true", "yes")
 
 
 def _apply_set():
@@ -29,46 +37,6 @@ def _apply_set():
     if raw is None:
         return set(DEFAULT_APPLY) if os.environ.get("SUBPROTO_ENFORCE") else set()
     return set(x.strip() for x in raw.split(",") if x.strip() in ALL_SLOTS)
-
-
-def _append_after_prefix(body, note):
-    """Put *note* at the very end of the conversation — never inside the cached prefix.
-
-    I2: writing into the top-level `system` string rewrites the prefix itself, which
-    busts the provider cache and bills a fresh read on every turn. So the note is
-    attached after the last turn, and that turn is cloned rather than mutated: the
-    bytes ahead of it — system, tools, all earlier turns — stay identical.
-    Returns (body_or_clone, injected).
-    """
-    out = dict(body)
-    msgs = out.get("messages")
-    if isinstance(msgs, list) and msgs and isinstance(msgs[-1], dict):
-        last = msgs[-1]
-        if last.get("role") == "assistant":
-            # ...assistant, user is the alternation both dialects expect.
-            tail = {"role": "user",
-                    "content": [{"type": "text", "text": note}]
-                    if isinstance(last.get("content"), list) else note}
-            out["messages"] = list(msgs) + [tail]
-            return out, True
-        clone = dict(last)
-        content = last.get("content")
-        if isinstance(content, list):
-            clone["content"] = list(content) + [{"type": "text", "text": note}]
-        elif isinstance(content, str):
-            clone["content"] = content + "\n\n" + note
-        else:
-            return body, False
-        out["messages"] = list(msgs[:-1]) + [clone]
-        return out, True
-    contents = out.get("contents")  # Gemini shape
-    if isinstance(contents, list) and contents and isinstance(contents[-1], dict):
-        last = contents[-1]
-        if isinstance(last.get("parts"), list):
-            out["contents"] = list(contents[:-1]) + [
-                dict(last, parts=list(last["parts"]) + [{"text": note}])]
-            return out, True
-    return body, False
 
 
 def _ask_backend(client, state, options, key_fn, threshold=0.5):
@@ -86,28 +54,6 @@ def _last_user(body, dialect):
         if msgs[i][2] == "user":
             return i, msgs[i][1]
     return (len(msgs) - 1 if msgs else -1), (msgs[-1][1] if msgs else "")
-
-
-def _filter_tools(tools, keep):
-    """Rebuild the request's tools list keeping only names in `keep` (lowercased).
-
-    Preserves each dialect's shape: OpenAI/Anthropic tools are flat entries, while
-    Gemini packs declarations under one wrapper — so we filter the inner list and
-    drop the wrapper entirely once it empties.
-    """
-    out = []
-    for t in tools or []:
-        if isinstance(t, dict) and isinstance(t.get("functionDeclarations"), list):
-            kept = [
-                d for d in t["functionDeclarations"]
-                if protocol.tool_name(d).lower() in keep
-            ]
-            if kept:
-                out.append(dict(t, functionDeclarations=kept))
-            continue
-        if protocol.tool_name(t).lower() in keep:
-            out.append(t)
-    return out
 
 
 class Engine:
@@ -129,6 +75,8 @@ class Engine:
                 self.graph_path = cand
         self.backends = systemone.resolve_all(config)
         self.backend, self.backend_label = systemone.resolve(config)
+        # Set when a compiled plan raised and we degraded; surfaced, never hidden.
+        self.compile_error = None
         self.router = systemone.Router(config) if getattr(config, "router", False) else None
         self.router_reasons = {}
         if self.router is not None and self.router.available:
@@ -147,7 +95,10 @@ class Engine:
         """Health of the active System One backend, labelled with its own name."""
         slots = dict((s, lbl) for s, (a, lbl) in self.backends.items())
         status = {"configured": bool(self.backend and self.backend.available),
-                  "label": self.backend_label, "slots": slots, "graph": bool(self.graph)}
+                  "label": self.backend_label, "slots": slots, "graph": bool(self.graph),
+                  "compiled": compile_enabled()}
+        if self.compile_error:
+            status["compile_error"] = self.compile_error
         if self.backend is not None and self.backend.available:
             status.update(self.backend.health())
             status["slots"] = slots
@@ -158,8 +109,65 @@ class Engine:
                                 "plan": self.router.plan()}
         return status
 
-    def decide(self, dialect, body, analysis, config):
+    def decide(self, dialect, body, analysis, config, body_sha=None):
+        """One turn of System One. Returns (new_body|None, decisions)."""
         apply_set = _apply_set()
+        if compile_enabled():
+            try:
+                out = self._decide_compiled(dialect, body, analysis, apply_set, body_sha)
+                self.compile_error = None
+                if out is not None:
+                    return out
+            except Exception as exc:
+                # Never bet the request on one component: a failed plan degrades to the
+                # per-slot path, and the failure is recorded rather than swallowed.
+                self.compile_error = "%s: %s" % (type(exc).__name__, str(exc)[:160])
+        return self._decide_slots(dialect, body, analysis, config, apply_set)
+
+    def _decide_compiled(self, dialect, body, analysis, apply_set, body_sha):
+        """v5: tool_gate/compact/context resolve from one plan over one budget (S22)."""
+        _t0 = _now_ms()
+        idx, last_user = _last_user(body, dialect)
+        est_in = (analysis or {}).get("est_in_tok") or 0
+        new_body, decisions, proof = compiler.compile_turn(
+            dialect, body, analysis, graph=self.graph,
+            query=last_user or (analysis or {}).get("query", ""),
+            body_sha=body_sha, enforce=apply_set & set(SLOTS_THAT_EDIT))
+        ms = round(_now_ms() - _t0, 3)
+        if not decisions:
+            # Nothing to plan (empty pool) or the protected set alone blew the budget.
+            # Either way the turn must still be legible in the telemetry, and `applied`
+            # has to say false: no bytes changed (I6).
+            decisions = [{"slot": "compact", "backend": "compiled", "compiled": True,
+                          "applied": False, "dropped_count": 0, "savings_est_tok": 0,
+                          "over_budget": bool(proof and proof.get("over_budget")),
+                          "candidates": [], "decision_ms": ms}]
+        else:
+            decisions[0]["decision_ms"] = ms
+        if proof is not None:
+            # A turn-level artifact, and the decisions blob is the only column the
+            # telemetry already persists — so the proof rides on the first decision and
+            # `subproto show <request_id>` can resolve a drop's pointer from the DB.
+            decisions[0]["proof"] = proof
+        effort = self._effort_decision(analysis, last_user, est_in)
+        if effort:
+            decisions.append(effort)
+        return new_body, decisions
+
+    def _effort_decision(self, analysis, last_user, est_in):
+        """Advisory-only (FR-3d): records a tier, never rewrites the request."""
+        if not analysis:
+            return None
+        _t0 = _now_ms()
+        route = heuristics.route_effort(analysis, last_user, est_in)
+        return {
+            "slot": "effort", "backend": "heuristic", "applied": False,
+            "tier": route["tier"], "small_model_ok": route["small_model_ok"],
+            "reasons": route["reasons"], "savings_est_tok": 0,
+            "decision_ms": round(_now_ms() - _t0, 3),
+        }
+
+    def _decide_slots(self, dialect, body, analysis, config, apply_set):
         decisions = []
         # A slot is `applied` only if it actually rewrote the body we forward; the
         # flag is set once, from this set, at the end of the turn.
@@ -200,7 +208,7 @@ class Engine:
             if "tool_gate" in apply_set and dropped:
                 keep = set(d["target"] for d in hs if d["keep"])
                 new_body = dict(new_body or body)
-                new_body["tools"] = _filter_tools(tools, keep)
+                new_body["tools"] = protocol.filter_tools(tools, keep)
                 mutated.add("tool_gate")
 
         if est_in > 4000 and len(msgs_norm) > 8:
@@ -263,20 +271,14 @@ class Engine:
                     # the top-level `system` string rewrites the prefix itself, which
                     # busts the provider cache and bills a fresh read every turn — so
                     # it is appended to the end of the conversation instead.
-                    candidate, injected = _append_after_prefix(new_body or body, add)
+                    candidate, injected = protocol.append_after_prefix(new_body or body, add)
                     if injected:
                         new_body = candidate
                         mutated.add("context")
 
-        if analysis:
-            _t0 = _now_ms()
-            route = heuristics.route_effort(analysis, last_user, est_in)
-            decisions.append({
-                "slot": "effort", "backend": "heuristic", "applied": False,
-                "tier": route["tier"], "small_model_ok": route["small_model_ok"],
-                "reasons": route["reasons"], "savings_est_tok": 0,
-                "decision_ms": round(_now_ms() - _t0, 3),
-            })
+        effort = self._effort_decision(analysis, last_user, est_in)
+        if effort:
+            decisions.append(effort)
 
         # One source of truth for `applied`: the slot rewrote the body we forward.
         # A slot named in SUBPROTO_APPLY that found nothing to do — or that this

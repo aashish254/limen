@@ -107,8 +107,13 @@ def compact_messages(messages, budget_tokens, protected_tail=4):
         role, text, kind = messages[i]
         tok = protocol.approx_tokens(text)
         if i >= tail_start:
+            # Sacred, not scored: the tail is reported as kept with its own flag so
+            # callers get one entry per message (the per-slot path dropped the tail
+            # silently, which made the label corpus miss every recent turn).
             keep[i] = True
             spent += tok
+            out.append({"index": i, "target": "%s#%d" % (kind, i), "keep": True,
+                        "score": 1.0, "tokens": tok, "why": ["tail", "role:%s" % kind]})
             continue
         score = 0.0
         why = []

@@ -39,6 +39,10 @@ def _open_telemetry(config):
     return Telemetry(config.db_path)
 
 
+def _fmt(n):
+    return "{:,}".format(int(n))
+
+
 def cmd_up(args):
     from .proxy import serve
     from .engine import Engine
@@ -182,10 +186,22 @@ def cmd_where(args):
     from . import graph as graph_mod
 
     path = args.graph or os.path.join(os.path.abspath(args.path or "."), ".subproto-graph.json")
-    if not os.path.exists(path):
-        print("no graph at %s — run: subproto graph <repo>" % path)
-        return 1
-    g = graph_mod.load(path)
+    if os.path.isdir(path):
+        # Everyone reads `--graph` as "the repo", and `subproto compile` takes a
+        # directory, so `where` must not die with IsADirectoryError on one.
+        root = os.path.abspath(path)
+        cached = graph_mod.index_path(root)
+        if os.path.exists(cached):
+            g = graph_mod.load(cached)
+        else:
+            print("no index at %s — built one in memory (cache it: subproto graph %s)"
+                  % (cached, root), file=sys.stderr)
+            g = graph_mod.build(root)
+    else:
+        if not os.path.exists(path):
+            print("no graph at %s — run: subproto graph <repo>" % path)
+            return 1
+        g = graph_mod.load(path)
     query = " ".join(args.query) if isinstance(args.query, list) else (args.query or "")
     if args.file:
         with open(args.file) as f:
@@ -201,6 +217,89 @@ def cmd_where(args):
             print("%7.1f  %-52s %s" % (score, rel, ",".join(why)[:44]))
             print("         %d lines · %s" % (node.get("lines") or 0,
                                               (node.get("doc") or "")[:70]))
+    return 0
+
+
+def cmd_compile(args):
+    """v5 witness: compile one turn under a single budget, and show the proof."""
+    from . import compiler, demo, graph as graph_mod, protocol
+    from .proxy import analyze_request
+
+    query = " ".join(args.task) if isinstance(args.task, list) else (args.task or "")
+    if not query.strip():
+        print('nothing to compile — try: subproto compile "fix retry.py" --graph <repo>')
+        return 1
+    def say(line):
+        # stdout is reserved for the witness: with --json it must stay parseable.
+        print(line, file=sys.stderr if args.json else sys.stdout)
+
+    root = os.path.abspath(args.path or ".")
+    path = args.graph or graph_mod.index_path(root)
+    if os.path.isdir(path):
+        say("indexing %s ..." % path)
+        started = time.time()
+        g = graph_mod.build(path)
+        say("  %d files, %d import edges, %.1fs" % (
+            g["file_count"], g["edge_count"], time.time() - started))
+    elif os.path.exists(path):
+        g = graph_mod.load(path)
+    elif args.graph:
+        print("no graph at %s — run: subproto graph <repo>" % path)
+        return 1
+    else:
+        say("no index at %s — building one from %s (or pass --graph)" % (path, root))
+        g = graph_mod.build(root)
+
+    body = demo.synthetic_request(args.seed, jitter=False, turns=args.turns)
+    # The task becomes the live turn: what the compiler reads is what you typed.
+    body["messages"] = list(body["messages"]) + [{"role": "user", "content": query}]
+    analysis = analyze_request(body)
+    new_body, decisions, proof = compiler.compile_turn(
+        "anthropic", body, analysis, g, query, budget=args.budget,
+        body_sha=protocol.sha256_12(protocol.dump_body(body)),
+        enforce=("tool_gate", "compact", "context"))
+    if proof is None:
+        print("nothing to compile: the request has no droppable candidates")
+        return 1
+    if proof["over_budget"]:
+        print("over budget: %s — the tail is sacred (I3), so nothing was cut"
+              % proof["reason"])
+        return 1
+
+    by_kind = {}
+    for row in proof["kept"]:
+        by_kind.setdefault(row["kind"], [0, 0])[0] += 1
+    for row in proof["dropped"]:
+        by_kind.setdefault(row["kind"], [0, 0])[1] += 1
+    if args.json:
+        print(json.dumps({"proof": proof, "decisions": decisions,
+                          "compiled_body": new_body}, indent=1))
+        return 0
+    saved = proof["tokens_before"] - proof["tokens_after"]
+    pct = 100.0 * saved / max(1, proof["tokens_before"])
+    print("compiled turn — one budget over messages, tools and files")
+    print("  task        %s" % (query[:68] + ("..." if len(query) > 68 else "")))
+    print("  budget      %s tok  (pool was %s tok)" % (
+        _fmt(proof["budget"]), _fmt(proof["tokens_before"])))
+    print("  spent       %s tok  (-%.1f%%)" % (_fmt(proof["tokens_after"]), pct))
+    print("  protected   %s tok booked before the optimiser ran"
+          % _fmt(proof["protected_tokens"]))
+    for kind in compiler.KINDS:
+        if kind in by_kind:
+            print("  %-11s %d kept / %d dropped" % (kind, by_kind[kind][0], by_kind[kind][1]))
+    nd = proof["never_dropped"]
+    print("  tail kept   %s" % (", ".join(nd["tail_indices"]) or "-"))
+    print("  core tools  %s" % (", ".join(nd["core_tools"]) or "-"))
+    print("  files added %s" % (", ".join(proof["files_surfaced"]) or "none"))
+    if proof["dropped"]:
+        print("\n  what was cut, and what beat it:")
+        for d in proof["dropped"][:8]:
+            print("    %-8s %-26s %5d tok  %s" % (
+                d["kind"], d["id"][:26], d["tokens"], d["reason"][:60]))
+        if len(proof["dropped"]) > 8:
+            print("    ... %d more in --json" % (len(proof["dropped"]) - 8))
+        print("\n  every drop carries a reversible pointer (body_sha + index); through the")
+        print("  proxy they resolve against the telemetry row: subproto show <request_id>")
     return 0
 
 
@@ -349,6 +448,16 @@ def build_parser():
     wh.add_argument("--top", type=int, default=10)
     wh.add_argument("--json", action="store_true")
 
+    cp = sub.add_parser("compile", parents=[common],
+                        help="compile one turn: one budget over messages, tools and files")
+    cp.add_argument("task", nargs="*")
+    cp.add_argument("--graph", help="graph json or repo directory to index")
+    cp.add_argument("--path", default=".", help="repo to index when --graph is a directory")
+    cp.add_argument("--budget", type=int, help="token budget (default: 45%% of the estimate)")
+    cp.add_argument("--turns", type=int, default=6, help="simulated prior turns (demo body)")
+    cp.add_argument("--seed", type=int, default=3)
+    cp.add_argument("--json", action="store_true")
+
     au = sub.add_parser("audit", parents=[common], help="re-run the slots over recorded traffic")
     au.add_argument("--limit", type=int, default=200)
     au.add_argument("--verbose", action="store_true")
@@ -395,7 +504,7 @@ def main(argv=None):
         build_parser().print_help()
         return 0
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
-          "where": cmd_where,
+          "where": cmd_where, "compile": cmd_compile,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
           "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]
     return fn(args) or 0

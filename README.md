@@ -165,7 +165,46 @@ subproto where "fix the payment retry refund"
 #  5.0  app/services/gateway_client  path:gateway,sym:retry
 ```
 
-The agent stops paying a frontier model to `grep` its way around the repo.
+The agent stops paying a frontier model to `grep` its way around the repo. Docs count
+too: a markdown/rst heading or a SQL `CREATE TABLE` name is that file's symbol, so a
+"where does the refund ledger get written" question can rank the migration, not just the
+module. `--graph` takes your repo *or* a saved index, for both `where` and `compile`.
+
+## One budget, not four — the Context Compiler
+
+The four slots above spend *independent* budgets and cannot see each other, so
+`compact` can evict a 2.6k-token tool result that the graph ranks #1 for the current
+task while `context` pays again to name that same file in prose. `SUBPROTO_COMPILE=on`
+replaces the three editing slots with **one value-per-token knapsack over one budget**,
+over `{message, tool spec, file note}` harvested from the same heuristics:
+
+```bash
+subproto compile "refactor the retry path in app/payments/retry.py" \
+  --graph subproto/tests/fixtures/sample_repo --budget 6000
+#  budget      6,000 tok  (pool was 11,313 tok)
+#  spent       5,945 tok  (-47.4%)
+#  protected   4,959 tok booked before the optimiser ran
+#  message     11 kept / 3 dropped      tool  12 kept / 12 dropped      file  3 kept / 0
+#
+#  what was cut, and what beat it:
+#    message  tool_result#7   440 tok  value/token 0.002700 < kept floor 0.002988 (floor set by too…
+```
+
+(`--graph` takes your repo *or* a saved index; the path above is this repo's own test
+fixture, so the command is copy-pasteable from a fresh clone.)
+
+Every drop carries a reversible pointer (`body_sha` + message index) back into
+telemetry, and the last 4 turns / core tools are booked before the optimiser runs — if
+the protected set alone doesn't fit, it says so rather than truncating your tail:
+
+```
+over budget: protected set needs 4959 tok, budget is 1500 — the tail is sacred (I3), so nothing was cut
+```
+
+Why bother, measured (see [Benchmark](#benchmark) for the repro command): **+17.0 pp
+precision of surviving evidence at 19.3% fewer input tokens**, and on the hard set
+(`bench/tasks.hard.jsonl`) per-slot loses the file the task is about — **pass-rate 0%,
+recall 2.7%** — while the compiler holds **100% / 100%** at *lower* spend.
 
 ## Benchmark
 
@@ -184,18 +223,30 @@ token delta is *delivered*, not estimated):
 
 | metric | observe | enforce | delta |
 |---|--:|--:|--:|
-| input tokens / task | 19,704 | 13,728 | **−30.2%** `[−28.5, −31.7]` |
+| input tokens / task | 19,746 | 13,822 | **−29.9%** `[28.2, 31.3]` |
 | task pass-rate | 100% | 100% | **+0.0 pp** (held) |
+
+With the compiler on, a third arm is measured against the per-slot arm on the *same*
+tasks and the *same* graph (`--tasks bench/tasks.hard.jsonl` for the hard set):
+
+| metric | per-slot | compiled | delta |
+|---|--:|--:|--:|
+| input tokens / task | 13,822 | 11,136 | **−19.3%** `[17.9, 20.9]` |
+| recall of required files | 100% | 100% | held |
+| precision of what survived | 2.6% | 19.6% | **+17.0 pp** `[+2.8, +35.8]` |
+| hard set: pass-rate / recall | **0% / 2.7%** | **100% / 100%** | per-slot VIOLATES I3 |
 
 **Projected on heuristic prompt shapes** (`bench/results.md`): −32.3% if every slot
 enforces. These are prompt-shape projections, not billed savings, and latency is a
-request-shape proxy against the mock rather than a real time-to-first-token.
+request-shape proxy against the mock rather than a real time-to-first-token. The
+compiler's p50 on the mock is *slower* (5.6 → 6.7 ms: one more pass over the pool),
+which we print rather than hide; the token and accuracy numbers are the claim.
 
 The hero metric we publish once against a real SWE-bench-style suite + grader and
 real provider billing:
 
 > **same 20 tasks, same model, held pass-rate: −X% input tokens, −Y ms p50 to first
-> token, $A → $B** (billed). Until that exists, the mock-measured −30.2% and the
+> token, $A → $B** (billed). Until that exists, the mock-measured −29.9% and the
 > projected −32.3% above are exactly what they're labelled — you can reproduce both
 > locally in one command, no key.
 
@@ -294,6 +345,9 @@ integrations compound into an ~8-month lead — is its own spec:
       globally or per slot (`subproto/systemone/`, `subproto models`, `--model`)
 - [x] Pass-rate–held A/B harness on SWE-bench-shaped tasks (mock; `bench/live.py`)
 - [x] TUI overlay: live "you just saved 38% this session" meter (`subproto live`)
+- [x] The Context Compiler: one joint budget over messages/tools/files + a retention
+      proof (`subproto compile`, opt-in `SUBPROTO_COMPILE=on`; mock-measured
+      +17.0 pp precision at −19.3% tokens vs per-slot)
 - [ ] Real quantized MLX Laya checkpoint on-device + published latency curve
       (needs ~808MB HF weights + Apple MLX runtime — external)
 - [ ] Hero metric on a real SWE-bench-style suite + billed provider savings

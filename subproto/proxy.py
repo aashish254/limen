@@ -279,7 +279,8 @@ def make_handler(config, telemetry, engine):
             reencoded = False
             if engine is not None and isinstance(body, dict):
                 try:
-                    new_body, decisions = engine.decide(dialect, body, analysis, config)
+                    new_body, decisions = engine.decide(dialect, body, analysis, config,
+                                                        body_sha=rec["body_sha"])
                     if decisions:
                         rec["decisions"] = decisions
                         rec["engine_ms"] = round(

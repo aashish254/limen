@@ -43,7 +43,7 @@ a provider registry where Laya is one entry, not the load-bearing bet.
 | Per-slot selection | `SUBPROTO_MODEL_<SLOT>` / `model_by_slot` let one slot use a different model, falling back to the global choice | Done for the slots that actually ask a model a question (`tool_gate`, `compact`). `context` is graph-answered and `effort` shape-answered, so `subproto models` reports them as model-free rather than pinning a label that decided nothing. |
 | `subproto models` | list backends, which is active, and which slot uses which | Done. |
 | `bench/ablation.py` | compare **adapters** through the `ModelAdapter` interface, not a hard-coded laya column | Done — every label with an endpoint gets its own precision/recall/f1/Δ row; a label without one is listed as skipped instead of borrowing the stand-in's number. |
-| `Router` | *automatically* picks an adapter per slot per turn from measured precision + latency budget | **Shipped (opt-in, evidence-driven).** `subproto/systemone/router.py` ranks the *configured* adapters by measured slot precision (`bench/ablation.py`) under an optional `SUBPROTO_ROUTER_BUDGET_MS`, and routes each un-pinned slot to the winner. Honesty (I6): an adapter with no measured precision is never auto-picked, and precision ties route to `heuristic` — so today's synthetic evidence (laya == heuristic, Δ0) correctly stays on heuristics instead of fabricating an edge. Opt-in (`SUBPROTO_ROUTER=on`); explicit pins win. Ensembling two tiny models per slot is the v5 (Context Compiler) extension. |
+| `Router` | *automatically* picks an adapter per slot per turn from measured precision + latency budget | **Shipped (opt-in, evidence-driven).** `subproto/systemone/router.py` ranks the *configured* adapters by measured slot precision (`bench/ablation.py`) under an optional `SUBPROTO_ROUTER_BUDGET_MS`, and routes each un-pinned slot to the winner. Honesty (I6): an adapter with no measured precision is never auto-picked, and precision ties route to `heuristic` — so today's synthetic evidence (laya == heuristic, Δ0) correctly stays on heuristics instead of fabricating an edge. Opt-in (`SUBPROTO_ROUTER=on`); explicit pins win. Ensembling two tiny models per slot is a **v5.1** extension (v5 shipped the joint budget; see §v5). |
 
 **Config (implemented, backward-compatible):**
 ```
@@ -101,14 +101,36 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   The dataset now compounds faster than any single team can hand-label. This is the flywheel
   spinning — the thing the spec calls "the moat" (SPEC §1.2).
 
-### v5 — The Context Compiler (joint multi-slot optimisation)
+### v5 — The Context Compiler (joint multi-slot optimisation) — **shipped, opt-in, mock-measured**
 - **Ships:** stop deciding tool/compact/context/effort independently; a joint optimiser
-  maximises expected task success subject to a token budget, using graph + learned scores
-  together. A "compile this turn" pass that emits a minimal, cache-safe prompt + a
+  maximises measured value per token subject to one token budget, using graph + heuristic
+  scores together. A "compile this turn" pass that emits a minimal, cache-safe prompt + a
   machine-readable **retention proof** (what was dropped, why, reversible pointer).
+- **Shipped today (`subproto/compiler.py`, `SUBPROTO_COMPILE=on`, SPEC FR-10 / M6):** the
+  three *editing* slots resolve from one knapsack over `{message, tool spec, file note}`;
+  `effort` still decides on its own (it changes the route, not the prompt). The objective
+  is **value per token as the heuristics + graph score it**, not learned expected task
+  success — that needs the V2-A labels, and is listed as the open extension below.
+- **Measured (mock, `bench/live.py`, reproducible with one command):** compiled vs
+  per-slot = **−19.3% input tokens** `[17.9, 20.9]` with **recall of required files held
+  at 100%** and **precision +17.0 pp** `[+2.8, +35.8]`; on `bench/tasks.hard.jsonl` the
+  per-slot arm loses the file the task is about (**pass-rate 0%, recall 2.7%** → I3
+  violated) while the compiler keeps **100%/100% at 18.2% fewer tokens**. The gate is
+  `--require-better`, wired into `run_tests.sh`, and it printed CHEAPER-BUT-NOT-BETTER
+  twice before the mechanism earned BETTER.
+- **Still true of the mock, not of a bill:** no frontier model judged these answers —
+  "accuracy" here means the evidence the model needs survived in the prompt. Billed +
+  real-model version = **V2-B**. And the compiler's own p50 is *slower* on the mock
+  (5.6 → 6.7 ms) because it makes one more pass over the pool; the saving is tokens and
+  correctness, not local compute.
 - **Unfair:** transforms subproto from four heuristics in a trenchcoat into a single
   optimiser whose objective is *measured success per dollar* — much harder to clone than
-  four rules, and it strictly dominates per-slot tools.
+  four rules. On the two mock sets it strictly dominates per-slot (equal-or-better recall
+  at lower spend); the claim generalises only when a real grader says so.
+- **Open extension (v5.1):** swap the heuristic value function for the learned one (the
+  LoRA from v4's dataset predicts per-candidate keep/success) and ensemble two tiny models
+  per slot. (Indexing non-code files — **S27** — shipped with this round: `.md`/`.rst`/
+  `.txt`/`.sql` now carry symbols, so a migration or design-doc read earns graph evidence.)
 
 ### v6 — Team & fleet control plane (still local-first)
 - **Ships:** policy-as-code (`subproto.policy`) — budgets, enforcement flags, per-team
@@ -180,8 +202,8 @@ Aggressive but honest sequencing (~2 versions/month, minor releases between):
 
 | Months | Versions | Net effect |
 |---|---|---|
-| M1–2 | **v2, v3** | Model-agnostic core + a trusted, billed hero number. (Turns today's mock −30.2% into a real, published one.) |
-| M3–4 | **v4, v5** | Flywheel running (continuous fine-tunes) + the Context Compiler. |
+| M1–2 | **v2, v3** | Model-agnostic core + a trusted, billed hero number. (Turns today's mock −29.9% into a real, published one.) |
+| M3–4 | **v4, v5** | Flywheel running (continuous fine-tunes) + the Context Compiler. (**v5 shipped early** — mock-measured, opt-in; v4 still to come.) |
 | M5–6 | **v6, v7** | Team/fleet adoption + cache-*positive* cost wins. |
 | M7–8 | **v8, v9, v10** | Multi-agent + everywhere-installed + provably-safe. |
 | M8+ (stretch) | **v11, v12, v13** | Dataset-as-product, autopilot, and the standard. |
