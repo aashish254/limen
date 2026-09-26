@@ -54,6 +54,16 @@ class Config:
         return self._get("laya_url") or os.environ.get("LAYA_URL")
 
     @property
+    def model(self):
+        """Selected System One backend: a registry name or an http(s) URL."""
+        return self._get("model") or os.environ.get("SUBPROTO_MODEL")
+
+    @property
+    def model_url(self):
+        """Where a named backend is served (SUBPROTO_MODEL=openjev + this)."""
+        return self._get("model_url") or os.environ.get("SUBPROTO_MODEL_URL")
+
+    @property
     def openai_upstream(self):
         return (self._get("openai_upstream") or OPENAI_UPSTREAM).rstrip("/")
 
@@ -110,6 +120,8 @@ class Config:
             "store_bodies": self.store_bodies,
             "record_features": self.record_features,
             "laya_url": self.laya_url,
+            "model": self.model,
+            "model_url": self.model_url,
             "openai_upstream": self.openai_upstream,
             "anthropic_upstream": self.anthropic_upstream,
             "gemini_upstream": self.gemini_upstream,

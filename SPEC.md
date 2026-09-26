@@ -187,19 +187,22 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **FR-3d effort:** route trivial turns to low tier / small model. **AC:** complex vs
   trivial requests classify correctly on the heuristic; observational only by default.
 
-### FR-4 Pluggable System One backend — ✅ interface + mock backend shipped; **not** Laya-fixed
-`systemone/` (planned SPI), `laya.py` (first adapter), `laya_server.py`, `bench/ablation.py`
+### FR-4 Pluggable System One backend — ✅ SPI shipped; **not** Laya-fixed
+`systemone/base.py` + `systemone/registry.py`, `laya.py` (thin adapter), `laya_server.py`, `bench/ablation.py`
 - **Design principle (de-fixation):** the tiny decision model is a **swappable component,
-  not the product bet.** `laya.py` is being generalised into a `ModelAdapter` SPI
-  (`health`/`score`) with a registry of adapters — Laya, OpenJev, djev, SemIf, our own
-  `mlx_lora`, GGUF, hosted `jev_api`, an arbitrary `http://` endpoint, and the always-on
-  `heuristic` fallback — selected per slot by the v2 ablation. New small models become an
-  *upgrade we adopt in a day*, never a threat. See [`ROADMAP.md`](ROADMAP.md) §1 & §4.
+  not the product bet.** `ModelAdapter` (`health`/`score`) + a registry resolves
+  `SUBPROTO_MODEL` to an adapter — Laya, OpenJev, djev, SemIf, our own `mlx_lora`, an
+  arbitrary `http://` endpoint (which is how GGUF servers and hosted classifiers are
+  reached today), and the always-on `heuristic` fallback. Every decision records the
+  **label** of the adapter that answered it. New small models become an *upgrade we adopt
+  in a config line*, never a threat. See [`ROADMAP.md`](ROADMAP.md) §1 & §4.
 - **AC today:** the adapter asks per-candidate keep/drop; falls back to heuristics if the
-  server is unreachable; backend recorded per decision. A local `/health`+`/score` server
-  (deterministic lexical scorer, MLX path behind an import guard) runs on an ephemeral
-  port; `bench/ablation.py` reports laya-vs-heuristic precision on labelled ground truth
-  (both lexical today → they agree, and the report says so).
+  server is unreachable **or unconfigured**; backend label recorded per decision;
+  `subproto models` lists selectable backends and the active one; `--model` selects it on
+  `up`/`demo`. A local `/health`+`/score` server (deterministic lexical scorer, MLX path
+  behind an import guard) runs on an ephemeral port; `bench/ablation.py` reports
+  laya-vs-heuristic precision on labelled ground truth (both lexical today → they agree,
+  and the report says so).
 - **AC target (v2):** point the SPI at any quantized checkpoint (MLX/GGUF) and show a
   real per-slot precision/latency trade-off across **adapters**. **BLOCKED(external):**
   needs ~400–808MB HF weights + a runtime (MLX/llama.cpp).

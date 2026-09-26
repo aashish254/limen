@@ -230,7 +230,7 @@ def make_handler(config, telemetry, engine):
             if self.path in ("/healthz", "/_subproto/health"):
                 d = {"ok": True, "engine": bool(engine), "config": config.to_dict()}
                 if engine is not None:
-                    d["laya"] = engine.laya_status()
+                    d["model"] = engine.model_status()
                 return self._send_json(200, d)
             return self._send_json(404, {"error": {"message": "unknown path " + self.path}})
 

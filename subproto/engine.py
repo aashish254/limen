@@ -10,8 +10,8 @@ import time
 
 from . import graph as graph_mod
 from . import heuristics
-from . import laya as laya_mod
 from . import protocol
+from . import systemone
 
 ALL_SLOTS = ("tool_gate", "compact", "context", "effort")
 DEFAULT_APPLY = ("tool_gate", "compact")
@@ -28,8 +28,8 @@ def _apply_set():
     return set(x.strip() for x in raw.split(",") if x.strip() in ALL_SLOTS)
 
 
-def _ask_laya(client, state, options, key_fn, threshold=0.5):
-    """Score candidates with laya; returns {option: prob} or None."""
+def _ask_backend(client, state, options, key_fn, threshold=0.5):
+    """Score candidates with the active System One adapter; {option: prob} or None."""
     if client is None or not client.available:
         return None
     probs = client.score(state, "keep", [key_fn(o) for o in options],
@@ -84,12 +84,14 @@ class Engine:
             if os.path.exists(cand):
                 self.graph = graph_mod.load(cand)
                 self.graph_path = cand
-        self.laya = laya_mod.LayaClient(config.laya_url) if config.laya_url else None
+        self.backend, self.backend_label = systemone.resolve(config)
 
-    def laya_status(self):
-        if self.laya is None:
-            return {"configured": False, "graph": bool(self.graph)}
-        return dict(self.laya.health(), graph=bool(self.graph))
+    def model_status(self):
+        """Health of the active System One backend, labelled with its own name."""
+        if self.backend is None or not self.backend.available:
+            return {"configured": False, "label": self.backend_label,
+                    "graph": bool(self.graph)}
+        return dict(self.backend.health(), graph=bool(self.graph))
 
     def decide(self, dialect, body, analysis, config):
         apply_set = _apply_set()
@@ -104,9 +106,9 @@ class Engine:
         if flat_tools:
             _t0 = _now_ms()
             hs = heuristics.tool_gate(flat_tools, last_user or analysis.get("query", ""))
-            probs = _ask_laya(self.laya, last_user[:512], flat_tools,
-                              lambda t: protocol.tool_name(t).lower()) if self.laya else None
-            backend = "laya" if probs else "heuristic"
+            probs = _ask_backend(self.backend, last_user[:512], flat_tools,
+                                 lambda t: protocol.tool_name(t).lower())
+            backend = self.backend_label if probs else "heuristic"
             if probs:
                 for d in hs:
                     if d["target"] in probs:
@@ -134,14 +136,14 @@ class Engine:
             budget = max(1500, int(est_in * 0.45))
             flags = heuristics.compact_messages(msgs_norm, budget)
             backend = "heuristic"
-            if self.laya and self.laya.available:
-                probs = self.laya.score(
+            if self.backend and self.backend.available:
+                probs = self.backend.score(
                     last_user[:512],
                     "keep",
                     [f["target"] for f in flags if not f["keep"] or f["index"] < len(flags) - 4],
                     cache_key=None)
                 if probs:
-                    backend = "laya"
+                    backend = self.backend_label
                     for f in flags:
                         if f["target"] in probs:
                             f["score"] = round(probs[f["target"]], 3)

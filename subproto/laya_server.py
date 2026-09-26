@@ -1,11 +1,14 @@
-"""A local scoring server that satisfies the contract `laya.py` speaks.
+"""A local scoring server that satisfies the System One contract.
 
 It answers POST /score with a per-option keep-probability vector and GET /health
-with an ok flag. The default backend is a *deterministic lexical scorer* — the
-same signal the heuristics use, served over the wire so the engine records
-`backend == "laya"`. This is deliberately not a real Laya model: the fine-tuned
-MLX checkpoint is external (TODO T16 / SPEC §11), and until then an honest
-lexical stand-in behind the real interface beats a fake one.
+with an ok flag — the protocol `subproto.systemone.HTTPScoreAdapter` speaks, so
+anything served here can be registered under any label (`--model laya`,
+`SUBPROTO_MODEL=openjev`, ...). The default backend is a *deterministic lexical
+scorer*: the same signal the heuristics use, served over the wire so the engine
+records the selected label instead of "heuristic". This is deliberately not a
+real Laya model: the fine-tuned MLX checkpoint is external (TODO T16 / SPEC §11),
+and until then an honest lexical stand-in behind the real interface beats a fake
+one.
 
 If Apple MLX is installed *and* a checkpoint is configured, the `mlx` backend is
 selected instead; otherwise we stay on lexical. That guard is what makes T16 pure
@@ -13,7 +16,7 @@ wiring rather than a redesign.
 
 Run it:
     python -m subproto.laya_server --port 8890
-    LAYA_URL=http://127.0.0.1:8890 subproto up
+    subproto up --model laya --laya-url http://127.0.0.1:8890
 """
 
 import argparse

@@ -28,25 +28,32 @@ so each version raises the cost of catching up.
 
 ## 1. The architectural unlock that must happen first (de-fixating from Laya)
 
-Today `laya.py` is a single-backend adapter. The whole roadmap assumes we **generalise
-it into a System One Model SPI** — a provider registry where Laya is one entry, not the
-load-bearing bet.
+**Shipped (TODO S01–S07).** `laya.py` is no longer a single-backend adapter: it is a
+thin subclass of the generic `HTTPScoreAdapter`, and the System One Model SPI below is
+a provider registry where Laya is one entry, not the load-bearing bet.
 
-**`subproto/systemone/` (planned package):**
+**`subproto/systemone/` (implemented):**
 
-| Concept | Contract | Notes |
+| Concept | Contract | Status |
 |---|---|---|
-| `ModelAdapter` | `health() -> bool`, `score(state, question, options) -> {option: prob}` | The exact surface today's `laya.py` already speaks; promoted to an interface. |
-| Adapters (planned) | `laya`, `openjev`, `djev`, `semif`, `mlx_lora` (our fine-tunes), `gguf` (llama.cpp), `jev_api` (hosted, opt-in), `http` (user URL), `heuristic` (always-available fallback) | Drop-in; each is one module implementing the contract. |
-| `Registry` | name → adapter; capability flags (on-device? quantised? languages? context len?) | Lets the ablation pick per-slot best. |
-| `Router` | picks an adapter per slot per turn from measured precision + latency budget | The "model-agnostic" brain; can even ensemble two tiny models. |
+| `ModelAdapter` | `health() -> dict`, `score(state, question, options) -> {option: prob}` | Done — the surface `laya.py` already spoke, promoted to an interface in `systemone/base.py`. |
+| `HTTPScoreAdapter` | the same, over `/health` + POST `/score`, with any `label` | Done — one implementation serves every HTTP-served model, so a new one needs no code. |
+| Adapters | `laya`, `openjev`, `djev`, `semif`, `mlx_lora` named; `http://…` for anything else; `heuristic` as the always-available fallback | Named entries done (`systemone/registry.py`). `gguf` / `jev_api` are URL entries today: point `SUBPROTO_MODEL=http://…` at them and they work unmodified. |
+| `Registry.resolve(config)` | config/env → `(adapter, label)`; the label is what every decision records | Done, with explicit precedence and clean degradation (unknown / disabled / no URL → heuristics). |
+| `subproto models` | list backends + which is active + how to point at one | Done. |
+| `Router` | picks an adapter per slot per turn from measured precision + latency budget | **Not done — this is the v3+ work.** Today one backend answers every slot; slots already store per-decision `backend` + `decision_ms`, which is the data the router needs. |
 
-**Config (planned, backward-compatible):**
+**Config (implemented, backward-compatible):**
 ```
-SUBPROTO_MODEL=laya|openjev|mlx_lora|gguf|jev_api|heuristic|http://host:port
-LAYA_URL=…                     # still works, now an alias for SUBPROTO_MODEL=http://…
-SUBPROTO_MODEL_DIR=~/.subproto/models   # quantised checkpoints the SPI can load
+SUBPROTO_MODEL=laya|openjev|djev|semif|mlx_lora|heuristic|http://host:port
+SUBPROTO_MODEL_URL=http://host:port   # where the named model is served
+LAYA_URL=…                     # still works; it is the laya entry's URL (and the
+                               # default when SUBPROTO_MODEL is unset)
 ```
+
+`SUBPROTO_MODEL_DIR` (quantised checkpoints loaded in-process rather than over
+HTTP) is still planned: it needs a runtime that can load them, which is the T16 /
+V2-C gate, and pretending otherwise would be a fake adapter.
 
 **Why this is the highest-leverage change:** a competitor that hard-codes Laya is
 obsolete the week a better 300M model lands. A pluggable SPI makes every new model an

@@ -53,6 +53,16 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **T26** Full suite green on 3.11 **and** 3.9; `python3 -m compileall` 0 warnings; `bench/ab.py --mock` + `bench/live.py --mock` both run end-to-end with no key.
 - [x] **T27** `run_tests.sh` one-command gate (compileall + pytest + both benches + `subproto demo --slots`), used as the pre-commit proof for every task above.
 
+## v2 SPI — pluggable System One backend (ROADMAP §1 / SPEC FR-4). Code-only, no gate, buildable now.
+
+- [x] **S01** `subproto/systemone/` package: `ModelAdapter` base + generic `HTTPScoreAdapter` (`/health`+`/score`) + `registry.resolve(config)` with named adapters (laya/openjev/djev/semif/http/heuristic).
+- [x] **S02** `laya.LayaClient` becomes a thin `HTTPScoreAdapter` subclass (label `laya`) — full back-compat with existing tests.
+- [x] **S03** `config`: `model`/`model_url` (env `SUBPROTO_MODEL`/`SUBPROTO_MODEL_URL`) resolved, with `LAYA_URL` preserved as the default `laya` path.
+- [x] **S04** `engine`: resolve its decision backend through the registry; record the adapter's **label** per decision (default stays `laya`); unknown/None → heuristic.
+- [x] **S05** `cli`: `subproto models` lists the registry + active selection; `--model` flag on `up`/`demo`.
+- [x] **S06** tests: registry resolution + configurable label + heuristic fallback + end-to-end "engine records `openjev`" + LayaClient back-compat. (13 in `test_systemone.py`; suite 77 → 90.)
+- [x] **S07** pyproject packages += `subproto.systemone`; full gate green on 3.9 & 3.11.
+
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 
 - [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.

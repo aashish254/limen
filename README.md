@@ -146,6 +146,10 @@ subproto live                 # ANSI meter, tails telemetry; --once for a snapsh
 subproto export               # writes ~/.subproto/dataset-YYYYMMDD.jsonl
 subproto split                # -> train.jsonl / val.jsonl in the Laya supervision format
 SUBPROTO_APPLY=tool_gate subproto up --slots
+
+# 7. Choose (or swap) the small model making those decisions.
+subproto models               # every System One backend + which one is active
+subproto up --slots --model openjev
 ```
 
 `subproto inject claude|codex|gemini|aider` prints the exact env vars for each tool.
@@ -204,15 +208,25 @@ local scoring server that speaks the adapter's `/health` + `/score` contract (de
 lexical scorer, with an MLX path guarded behind an import check):
 
 ```bash
+subproto models                                   # what can I point it at, and what is active?
 python -m subproto.laya_server --port 8000        # the mock-verifiable backend
-LAYA_URL=http://localhost:8000 subproto up --slots   # any /health+/score server, Laya or not
+subproto up --slots --model laya --laya-url http://localhost:8000
 ```
 
-The `subproto/laya.py` adapter asks the model per-candidate keep/drop questions and
-falls back to heuristics if it's unreachable. `bench/ablation.py` reports laya-vs-
-heuristic agreement on labelled ground truth — today both are lexical, so they agree
-and we say so; the delta becomes meaningful when a quantized checkpoint replaces the
-scorer. The full loop from usage to a specialised model is:
+The registry in `subproto/systemone/` is the only thing that knows about model
+families: `--model laya|openjev|djev|semif|mlx_lora` picks a named adapter, and
+`--model http://host:port` (or `SUBPROTO_MODEL=…`) picks **anything** that speaks
+the `/health` + `/score` contract without us shipping an entry for it. Every
+decision records the label of whatever answered it (`"openjev"`, `"model"`, …),
+so the dataset says which model produced each supervision signal, and an
+unreachable or absent backend degrades to the heuristics instead of breaking the
+proxy. `LAYA_URL` still works — it is now the legacy default for the `laya`
+entry.
+
+`bench/ablation.py` reports laya-vs-heuristic agreement on labelled ground truth
+— today both are lexical, so they agree and we say so; the delta becomes
+meaningful when a quantized checkpoint replaces the scorer. The full loop from
+usage to a specialised model is:
 
 ```bash
 subproto export   # telemetry -> JSONL of every decision
@@ -246,6 +260,8 @@ integrations compound into an ~8-month lead — is its own spec:
 - [x] Deterministic, de-duplicated train/val split (`subproto split`)
 - [x] Guarded MLX LoRA fine-tune script (`train/finetune_mlx.py`)
 - [x] Local Laya scoring server behind the adapter (`python -m subproto.laya_server`)
+- [x] Pluggable System One SPI: swap Laya for any `/health`+`/score` model by config
+      (`subproto/systemone/`, `subproto models`, `--model`)
 - [x] Pass-rate–held A/B harness on SWE-bench-shaped tasks (mock; `bench/live.py`)
 - [x] TUI overlay: live "you just saved 38% this session" meter (`subproto live`)
 - [ ] Real quantized MLX Laya checkpoint on-device + published latency curve

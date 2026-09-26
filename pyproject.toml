@@ -15,7 +15,7 @@ dependencies = []
 subproto = "subproto.cli:main"
 
 [tool.setuptools]
-packages = ["subproto", "fakeup"]
+packages = ["subproto", "subproto.systemone", "fakeup"]
 
 [tool.setuptools.package-data]
 subproto = ["data/*.json"]

@@ -45,7 +45,7 @@ def cmd_up(args):
 
     config = Config.load(args.config, port=args.port, data_dir=args.home,
                          store_bodies=True if args.store_bodies else None,
-                         laya_url=args.laya_url)
+                         laya_url=args.laya_url, model=args.model)
     config.ensure_dirs()
     telemetry = _open_telemetry(config)
     engine = None
@@ -59,8 +59,8 @@ def cmd_up(args):
     print("  slots        %s" % (args.slots or "off (pure passthrough)"))
     print("  enforcing    %s" % (applied or "nothing — observation mode"))
     print("  graph        %s" % (engine.graph_path if engine else "n/a"))
-    if engine and engine.laya:
-        print("  laya         %s" % json.dumps(engine.laya_status()))
+    if engine and engine.backend:
+        print("  model        %s" % json.dumps(engine.model_status()))
     print("")
     for tool in (args.for_ or ["claude", "codex"]):
         for line in [l.format(port=config.port) for l in INJECT.get(tool, INJECT["generic"])]:
@@ -75,6 +75,26 @@ def cmd_up(args):
     finally:
         srv.shutdown()
         telemetry.close()
+
+
+def cmd_models(args):
+    """List every System One backend the registry can bind, and which is active."""
+    from . import systemone
+
+    config = Config.load(args.config, data_dir=args.home, model=args.model)
+    st = systemone.status(config)
+    if args.json:
+        print(json.dumps(st, indent=1))
+        return 0
+    print("active System One backend: %s" % st["active"])
+    print("")
+    for row in st["adapters"]:
+        print("  %s %-10s %-58s %s" % ("*" if row["active"] else " ",
+                                       row["name"], row["about"], row["where"]))
+    print("")
+    print("select one: subproto up --model laya")
+    print('           (SUBPROTO_MODEL=http://host:port works for any /health + /score server)')
+    return 0
 
 
 def cmd_report(args):
@@ -221,7 +241,8 @@ def cmd_demo(args):
     from .proxy import ProxyServer
 
     home = args.home or "/tmp/subproto-demo"
-    config = Config.load(args.config, data_dir=home, port=args.port, store_bodies=True)
+    config = Config.load(args.config, data_dir=home, port=args.port, store_bodies=True,
+                         model=args.model)
     config.ensure_dirs()
     for p in [config.db_path] + glob.glob(os.path.join(config.bodies_dir, "*")):
         if os.path.exists(p):
@@ -261,6 +282,8 @@ def build_parser():
     up.add_argument("--slots", action="store_true", help="compute routing decisions per request")
     up.add_argument("--graph", help="path to a .subproto-graph.json for the context slot")
     up.add_argument("--laya-url", help="http://host:port of a laya scoring server")
+    up.add_argument("--model", help="System One backend: laya, openjev, djev, semif, "
+                                    "mlx_lora, heuristic, or an http://host:port URL")
     up.add_argument("--for", dest="for_", nargs="*", choices=sorted(INJECT),
                     help="print the env vars to point a tool at the proxy")
 
@@ -315,6 +338,12 @@ def build_parser():
     dm.add_argument("--slots", action="store_true")
     dm.add_argument("--audit", action="store_true")
     dm.add_argument("--graph")
+    dm.add_argument("--model", help="System One backend to run the slots with")
+
+    md = sub.add_parser("models", parents=[common],
+                        help="list System One backends and which one is active")
+    md.add_argument("--model", help="show the selection as if this backend were chosen")
+    md.add_argument("--json", action="store_true")
     return p
 
 
@@ -326,5 +355,5 @@ def main(argv=None):
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
           "where": cmd_where,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
-          "inject": cmd_inject, "demo": cmd_demo}[args.cmd]
+          "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]
     return fn(args) or 0
