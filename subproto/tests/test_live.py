@@ -59,6 +59,26 @@ def test_snapshot_reads_potential_headroom(tmp_path):
     tel.close()
 
 
+def test_saved_pct_never_exceeds_100_when_most_input_is_cached(tmp_path):
+    """Regression: savings are measured over the whole prompt, so the meter must not
+    divide a full-prompt numerator by the tiny cache-excluded billed input and report
+    a >100% 'saving'. Here 800k of the input is cached; the honest share is 30%."""
+    cfg = Config(source={"data_dir": str(tmp_path)})
+    tel = Telemetry(cfg.db_path)
+    tel.record({"ts": 1.0, "api": "anthropic", "model": "claude-x", "status": 200,
+                "usage": {"model": "claude-x", "input_uncached": 1000, "cache_write": 0,
+                          "cache_read": 800000, "output": 50, "reasoning": 0,
+                          "source": "anthropic"},
+                "features": {"cat_chars": {}, "est_in_tok": 10000},
+                "decisions": [{"slot": "tool_gate", "savings_est_tok": 3000}]})
+    s = live.snapshot(tel)
+    assert s["saved_pct"] == pytest.approx(30.0), \
+        "must use the full estimated input, not the ~1k uncached slice"
+    assert s["saved_pct"] <= 100.0
+    assert s["after_usd"] < s["cost_usd"]  # a real, sub-total reduction
+    tel.close()
+
+
 def test_cli_live_once_exits_zero_and_prints(tmp_path, capsys):
     cfg = Config.load(None, data_dir=str(tmp_path), port=free_port())
     cfg.ensure_dirs()

@@ -93,6 +93,10 @@ def audit(config, telemetry, engine=None, limit=200, verbose=False):
 
 
 def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=True):
+    # `subproto export` with no --slots reaches here as None; that means "every slot",
+    # which is the function's own default - not an error to iterate.
+    if slots is None:
+        slots = ALL_SLOTS
     labels = load_labels(config)
     rows = telemetry.query(
         "SELECT id, ts, api, client, model, in_tok, cw_tok, cr_tok, out_tok, cost_usd, "

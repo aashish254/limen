@@ -34,7 +34,8 @@ def _savings_from_decisions(decisions_json):
 def snapshot(tel, mode="auto"):
     rows = tel.query(
         "SELECT count(*) n, sum(in_tok+cw_tok) in_tok, sum(cr_tok) cr_tok, "
-        "sum(out_tok) out_tok, sum(cost_usd) cost FROM requests")
+        "sum(out_tok) out_tok, sum(cost_usd) cost, sum(est_in_tok) est_in "
+        "FROM requests")
     t = rows[0] if rows else {}
     n = int(t.get("n") or 0)
     in_tok = int(t.get("in_tok") or 0)
@@ -44,14 +45,19 @@ def snapshot(tel, mode="auto"):
     enforced = any(r.get("interventions") for r in dec)
     if mode == "auto":
         mode = "delivered" if enforced else "potential"
+    # The savings are estimated against the whole prompt shape, so the denominator
+    # must be the whole estimated input (report.opportunity_gaps uses the same basis).
+    # Using only the cache-excluded billed input would divide a full-prompt numerator
+    # by a mostly-cached denominator and report a nonsense >100% "saving" (I6).
+    denom = int(t.get("est_in") or 0) or (in_tok + int(t.get("cr_tok") or 0))
     # value of the saved fresh-input tokens at the blended rate already observed
-    saved_usd = cost * (saved_tok / in_tok) if in_tok else 0.0
+    saved_usd = cost * (saved_tok / denom) if denom else 0.0
     return {
         "n": n,
         "in_tok": in_tok,
         "cost_usd": cost,
         "saved_tok": saved_tok,
-        "saved_pct": 100.0 * saved_tok / in_tok if in_tok else 0.0,
+        "saved_pct": 100.0 * saved_tok / denom if denom else 0.0,
         "after_usd": max(0.0, cost - saved_usd),
         "mode": mode,
     }

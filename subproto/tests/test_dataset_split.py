@@ -97,3 +97,15 @@ def test_split_writes_files(tmp_path):
         lines = [json.loads(l) for l in f if l.strip()]
     assert len(lines) == s["n_train"]
     tel.close()
+
+
+def test_export_slots_none_defaults_to_all_slots(tmp_path):
+    """Regression: `subproto export` with no --slots reaches dataset.export(slots=None)
+    through the CLI; that crashed on `slot not in None`. None must mean 'every slot'."""
+    cfg, tel = _tel(tmp_path)
+    _seed(tel, [_row(1, "s1"), _row(2, "s2", slot="compact")])
+    res = dataset.export(cfg, tel, path=str(tmp_path / "ds.jsonl"), slots=None)
+    assert res["rows"] == 2, "both slots export when slots is None"
+    assert res["slots"]["tool_gate"] == 1 and res["slots"]["compact"] == 1
+    assert res["slots"]["context"] == 0
+    tel.close()
