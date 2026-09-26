@@ -266,7 +266,9 @@ def cmd_demo(args):
     from .engine import Engine
     from .proxy import ProxyServer
 
-    home = args.home or "/tmp/subproto-demo"
+    # Honour --home, then SUBPROTO_HOME (so `demo` then `report` share a dir, as every
+    # other command does); otherwise isolate the demo in its own wiped sandbox.
+    home = args.home or os.environ.get("SUBPROTO_HOME") or "/tmp/subproto-demo"
     config = Config.load(args.config, data_dir=home, port=args.port, store_bodies=True,
                          model=args.model)
     config.ensure_dirs()
