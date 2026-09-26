@@ -141,6 +141,15 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   ANSI escapes counted as column width, a headerless `where`, a `demo` request that reshuffled
   the compiler's own kept-tool proof between identical runs, a live meter that cleared a pipe,
   and a report row (`human/traffic disagree`) whose mutant had no witness left to kill it.
+- **A pointer you cannot walk is an overclaim (S38).** The compiler's retention proof has
+  always ended in `subproto show <request_id>`, quoted from the compile page, from a comment
+  in `engine.py` and from SPEC FR-10 — and the command did not exist. It does now: the page
+  resolves each drop's address through the *same* flattened message list the proof scored,
+  and refuses a pointer whose kind disagrees with what its index holds rather than printing a
+  neighbouring turn as the item that was cut. Building it surfaced two more: message drops
+  silently quoted nothing (raw-list index vs flattened index), and `compact` printed its
+  `dropped_count` under the word `kept`. Five mutants (T38-1…5) pin all of it, and README
+  carries the real page with the fields that move between replays named.
 
 ### v5 — The Context Compiler (joint multi-slot optimisation) — **shipped, opt-in, mock-measured**
 - **Ships:** stop deciding tool/compact/context/effort independently; a joint optimiser

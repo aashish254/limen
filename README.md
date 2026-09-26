@@ -225,6 +225,58 @@ subproto compile — over budget: nothing was cut
   ! protected set needs 4959 tok, budget is 1500 — the tail is sacred (I3)
 ```
 
+That address is walkable. `subproto show <request_id>` reads one recorded request back
+out of telemetry, resolves every drop's pointer into the body the client actually sent,
+and prints the item that lost beside the reason it lost:
+
+```bash
+SUBPROTO_COMPILE=on subproto demo --slots --home /tmp/subproto-readme  # 17 mock turns
+subproto show 3 --home /tmp/subproto-readme
+```
+```
+subproto show — request 3, anthropic /v1/messages, claude-sonnet-4-5
+
+                     client   claude-code
+                   recorded  2026-09-27 02:14:51
+                     stream  yes
+                     status           200
+                       ttfb          0 ms
+                    latency          3 ms
+               billed input           120  (900 cached)
+                     output           320
+                      spend       $0.0223
+                       body  present  /tmp/subproto-readme/bodies/anthropic_8d8beac54010.json.gz
+
+  decisions  3, 5,345 tok headroom
+                  tool_gate  potential  22 kept  15 cut  4,145 tok  1.8 ms  compiled
+    message          tool_result#5                381 tok value/token 0.002932 < kept floor 0.003003
+                             raise RetryExhausted(last_error) from err INFO connecting to…
+    message          tool_result#7                410 tok value/token 0.002790 < kept floor 0.003003
+                             DEBUG serialising payload {'amount': 4210, 'currency': 'usd',…
+    …
+    tool             exitplanmode                 339 tok value/token 0.000000 < kept floor 0.003003
+                             Present the current plan for user approval. parameter 0 accepts…
+      7 more in --json
+                    compact  potential  10 kept  3 cut  1,200 tok  0.0 ms  compiled
+    message          tool_result#5                381 tok error, tool_result, names-task-file
+                             raise RetryExhausted(last_error) from err INFO connecting to…
+                     effort  potential  0 tok  0.0 ms  heuristic
+                             tier medium, advisory-only: multi-file
+```
+
+Three things on that page are deliberate. It reads `potential` rather than `delivered`
+because the demo proxy observes without editing the request — the saving is not sold as
+banked (I6). The quoted text is a *clip*, cut at the grid's own margin; `--json` carries
+each drop's text whole. And a home recorded without `--store-bodies` still prints the
+pointers and the counts, because those are measured, and says the body was never stored
+rather than inventing a quote.
+
+What moves between replays of that command, measured: the `recorded` stamp, the
+per-decision milliseconds, and the body's sha — the mock's system prefix carries
+`started=… turn=… minute=…`, so crossing a minute changes the bytes sent, and the sha is
+over exactly those. Every count and every token figure held across two back-to-back
+runs. The two kinds are named separately because only one of them measures the mechanism.
+
 Why bother, measured (see [Benchmark](#benchmark) for the repro command): **+17.0 pp
 precision of surviving evidence at 19.3% fewer input tokens**, and on the hard set
 (`bench/tasks.hard.jsonl`) per-slot loses the file the task is about — **pass-rate 0%,

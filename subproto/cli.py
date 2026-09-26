@@ -596,6 +596,235 @@ def cmd_compile(args):
     return 0
 
 
+def _first_text(obj, depth=0):
+    """The first readable text inside a recorded message of either dialect, on one line.
+
+    Short by design: the page shows *which* item a pointer names, and re-printing the
+    prompt would bury the decision the reader came to read.
+    """
+    if depth > 4:
+        return ""
+    if isinstance(obj, str):
+        return " ".join(obj.split())
+    if isinstance(obj, dict):
+        for key in ("text", "content", "description", "arguments", "input"):
+            if key in obj:
+                found = _first_text(obj[key], depth + 1)
+                if found:
+                    return found
+        return ""
+    if isinstance(obj, list):
+        for item in obj:
+            found = _first_text(item, depth + 1)
+            if found:
+                return found
+    return ""
+
+
+def _decision_drops(decision):
+    """[(kind, pointer, index, tokens, why)] for the cuts one decision actually made.
+
+    The compiled arm carries `reversible` (body_sha + index + pointer) on every drop;
+    the per-slot arm only names its candidates. Both are read here so the page says
+    the same thing about a cut whichever mechanism made it.
+    """
+    out = []
+    for d in (decision.get("proof") or {}).get("dropped") or []:
+        rev = d.get("reversible") or {}
+        out.append((d.get("kind") or "message",
+                    rev.get("pointer") or d.get("id") or "",
+                    rev.get("index"), d.get("tokens", 0), d.get("reason") or ""))
+    if out:
+        return out
+    for name in decision.get("dropped") or []:
+        out.append(("tool", "tool:%s" % name, None, 0, ""))
+    for c in decision.get("candidates") or []:
+        target = c.get("target")
+        if c.get("keep") or not target:
+            continue
+        index = c.get("index")
+        tail = str(target).rsplit("#", 1)
+        if index is None and len(tail) > 1 and tail[1].isdigit():
+            index = int(tail[1])
+        out.append(("message" if "#" in str(target) else "tool",
+                    str(target), index, c.get("tokens", 0),
+                    ", ".join(str(w) for w in c.get("why") or [])))
+    return out
+
+
+def _head_counts(decision, drops):
+    """(kept, cut) for one decision, or None when it edited no pool at all.
+
+    The three arms record their pool differently: a compiled decision carries the
+    proof's kept/dropped lists, `effort` carries neither because it changes the route
+    rather than the prompt, and the per-slot arm carries only `dropped_count` plus the
+    scored candidates. Reading one field and calling it the count is how `12 kept`
+    (tool specs) ended up beside 15 cuts (specs, messages, files).
+    """
+    proof = decision.get("proof") or {}
+    if isinstance(proof.get("kept"), list):
+        return (len(proof["kept"]),
+                len(proof.get("dropped") or []) or len(drops))
+    cands = decision.get("candidates") or []
+    if decision.get("kept") is not None or cands:
+        kept = decision.get("kept")
+        if kept is None:
+            kept = sum(1 for c in cands if c.get("keep"))
+        cut = decision.get("dropped_count")
+        return (kept, len(drops) if cut is None else cut)
+    return None
+
+
+def _excerpt(kind, pointer, index, body):
+    """Where a drop's pointer leads in the body the request really sent.
+
+    A message pointer is an index into `normalize_messages` — the same flattened list
+    the compiler scored, where one Anthropic message of three content blocks is three
+    entries. Resolving it against `body["messages"]` would point at a neighbouring turn
+    and print it as the one that was cut, so the page reads the same list and refuses
+    the text unless its kind agrees with the kind the pointer names.
+    """
+    from . import protocol
+
+    if not isinstance(body, dict):
+        return ""
+    if kind == "tool":
+        name = str(pointer).rsplit(":", 1)[-1].lower()
+        for spec in body.get("tools") or []:
+            fn = spec.get("function") or spec
+            if str(fn.get("name") or "").lower() == name:
+                return _first_text(fn.get("description") or "")
+        return ""
+    msgs = protocol.normalize_messages(body)
+    if index is None:
+        return ""
+    index = int(index)
+    if not 0 <= index < len(msgs):
+        return ""
+    _role, text, mkind = msgs[index]
+    if str(pointer).rsplit(":", 1)[-1].split("#", 1)[0] != mkind:
+        return ""
+    return " ".join(str(text).split())
+
+
+def cmd_show(args):
+    from . import dataset, protocol
+
+    color = style.enabled()
+    config = Config.load(args.config, data_dir=args.home)
+    telemetry = _open_telemetry(config)
+    rows = telemetry.query("SELECT * FROM requests WHERE id = ?", (args.request_id,))
+    telemetry.close()
+    row = rows[0] if rows else None
+    decisions = json.loads(row["decisions"] or "[]") if row else []
+    body_path = body = None
+    if row and row.get("body_sha"):
+        suffix = "_%s.json.gz" % row["body_sha"]
+        for path in dataset.record_bodies(config):
+            if path.endswith(suffix):
+                body_path = path
+                loaded = protocol.load_body(dataset.read_body(path), "gzip")
+                body = loaded if isinstance(loaded, dict) else None
+                break
+
+    if args.json:
+        payload = dict(row or {"id": args.request_id})
+        payload["decisions"] = decisions
+        payload["body_path"] = body_path
+        payload["drops"] = [{"slot": d["slot"], "kind": k, "pointer": p,
+                             "tokens": t, "why": w,
+                             "excerpt": _excerpt(k, p, i, body)}
+                            for d in decisions
+                            for (k, p, i, t, w) in _decision_drops(d)]
+        print(json.dumps(payload, indent=1, default=str))
+        return 0 if row else 1
+
+    say = lambda *a, **k: print(*a, **k)
+    say(style.header("show", "request %d" % args.request_id,
+                     "%s %s" % (row["api"], row["path"]) if row else "",
+                     row["model"] or "" if row else "", color=color))
+    say("")
+    if row is None:
+        say(style.reason("no request %d in %s — subproto report lists the ids"
+                         % (args.request_id, config.db_path),
+                         indent=style.INDENT, color=color))
+        return 1
+    say(style.detail("client", row["client"] or "unknown"))
+    say(style.detail("recorded", time.strftime("%Y-%m-%d %H:%M:%S",
+                                               time.localtime(row["ts"]))))
+    say(style.row("stream", style.state(style.YES if row["stream"] else style.OFF,
+                                        color=color),
+                  label_w=style.METRIC_W, color=color, styled=True))
+    say(style.detail("status", row["status"] if row["status"] is not None else "n/a",
+                     row["err"] if row["err"] else None))
+    say(style.detail("ttfb", "%s ms" % row["ttfb_ms"]))
+    say(style.detail("latency", "%s ms" % row["latency_ms"]))
+    say(style.detail("billed input", row["in_tok"],
+                     "%s cached" % _fmt(row["cw_tok"] or 0)))
+    say(style.detail("output", row["out_tok"]))
+    say(style.detail("spend", "$%.4f" % (row["cost_usd"] or 0.0)))
+    say(style.row("body", (style.state(style.PRESENT, color=color) + "  "
+                           + style.paint(body_path, style.DIM, color)) if body_path
+                  else style.state(style.MISSING, color=color) + "  " + style.paint(
+                      "never stored — subproto up --store-bodies records them",
+                      style.DIM, color),
+                  label_w=style.METRIC_W, color=color, styled=True))
+
+    saved = sum(d.get("savings_est_tok") or 0 for d in decisions)
+    say("")
+    say(style.section("decisions",
+                      "%d, %s tok headroom" % (len(decisions), _fmt(saved))
+                      if decisions else "none recorded for this request",
+                      indent=style.INDENT, color=color))
+    for d in decisions:
+        applied = bool(d.get("applied"))
+        drops = _decision_drops(d)
+        # Both counts, never one: a bare `12 kept` over a list of 15 cuts reads as
+        # arithmetic that does not close, and neither number alone says what the rows
+        # below are evidence for.
+        head = _head_counts(d, drops)
+        figure = "" if head is None else "%d kept  %d cut  " % head
+        value = (style.state(style.DELIVERED if applied else style.POTENTIAL,
+                             color=color)
+                 + "  " + style.paint(
+                     "%s%s tok  %s ms  %s" % (
+                         figure,
+                         _fmt(d.get("savings_est_tok") or 0),
+                         "%.1f" % (d.get("decision_ms") or 0.0),
+                         d.get("model_version") or d.get("backend") or "heuristic"),
+                     None, color))
+        say(style.row(d["slot"], value, label_w=style.METRIC_W, color=color,
+                      styled=True))
+        for (kind, pointer, index, tokens, why) in drops[:8]:
+            say(style.table(kind, (style.clip(pointer.rsplit(":", 1)[-1], 26), "", -26),
+                            (tokens or "", "tok", 5),
+                            (style.clip(why, 46), "", 0),
+                            name_w=style.METRIC_W - 9, indent=style.SUB_INDENT,
+                            color=color))
+            excerpt = _excerpt(kind, pointer, index, body)
+            if excerpt:
+                # The grid's content column, and a quote that ends inside it: a pasted
+                # page must not wrap, and this is an identifier of the item, not prose
+                # for reading. --json carries the text whole.
+                say(style.note(style.clip(excerpt, 66), indent=style.METRIC_CONTENT,
+                               color=color))
+        if len(drops) > 8:
+            say(style.note("%d more in --json" % (len(drops) - 8),
+                           indent=style.SUB_INDENT + 2, color=color))
+        if d["slot"] == "effort":
+            say(style.note("tier %s, advisory-only: %s" % (
+                d.get("tier") or "n/a",
+                ", ".join(d.get("reasons") or []) or "no reason given"),
+                indent=style.METRIC_CONTENT, color=color))
+    if body is None and row.get("body_sha"):
+        say("")
+        say(style.prose("the pointers above are real and the counts are measured, but "
+                        "this request's body was never stored, so the page cannot show "
+                        "the text they name — that is what --store-bodies is for.",
+                        indent=style.INDENT, color=color))
+    return 0
+
+
 def cmd_audit(args):
     from . import dataset
 
@@ -894,6 +1123,11 @@ def build_parser():
     cp.add_argument("--seed", type=int, default=3)
     cp.add_argument("--json", action="store_true")
 
+    sh = sub.add_parser("show", parents=[common],
+                        help="one recorded request, and what each slot cut from it")
+    sh.add_argument("request_id", type=int)
+    sh.add_argument("--json", action="store_true")
+
     au = sub.add_parser("audit", parents=[common], help="re-run the slots over recorded traffic")
     au.add_argument("--limit", type=int, default=200)
     au.add_argument("--verbose", action="store_true")
@@ -981,7 +1215,7 @@ def main(argv=None):
     # screenshotted from a pipe, `--no-color` how it gets pasted out of a terminal.
     style.override(args.color)
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
-          "where": cmd_where, "compile": cmd_compile,
+          "where": cmd_where, "compile": cmd_compile, "show": cmd_show,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
           "learn": cmd_learn, "retrain": cmd_retrain,
           "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]

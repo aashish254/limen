@@ -293,6 +293,12 @@ scoring logic forks.
   and a real sha, because a proof that prints "0.0030 < 0.0030" or points at `body_sha: null`
   is not checkable. *Address, not reconstruction:* the body is never deleted, so recovery is
   `subproto show <request_id>` + the message index; `compiler` deliberately has no `restore()`.
+  **Now walked (T38):** `show` resolves each pointer against the flattened message list the
+  proof actually indexed and prints the item beside the reason it lost — pinned by a mutant
+  that indexes the raw body instead (`bench/mutation_gate.py` T38-1), and a pointer whose
+  kind disagrees with what its index holds prints no quote rather than a neighbour's text
+  (T38-2). A home recorded without `--store-bodies` keeps the pointers and counts, which are
+  measured, and says the body was never stored (I6).
 - **AC (never bet the request on one component):** a raising plan degrades to the per-slot
   path and the reason surfaces as `model_status()["compile_error"]`.
 - **AC — the accuracy gate (this is what makes it a contribution, not a savings pitch).**

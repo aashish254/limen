@@ -65,6 +65,7 @@ PAGES = {
     "label": ("label", "1", "tool_gate", "good"),
     "where": ("where", "fix the retry backoff"),
     "compile": ("compile", "fix the retry backoff in payments"),
+    "show": ("show", "1"),
     "inject": ("inject", "claude"),
 }
 

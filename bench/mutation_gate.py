@@ -402,6 +402,41 @@ MUTANTS = [
     ("S34-18 a personal fine-tune is registered as a foundation model", "subproto/cli.py",
      '                    manifest, label, url=args.url, tier=args.tier or "personal",\n',
      '                    manifest, label, url=args.url, tier=args.tier or "foundation",\n'),
+    # --------------------------------------------------- cli.py: `show` (T38)
+    # A pointer is an address in one particular list. Resolving it in the other one
+    # prints a neighbouring turn as the item that was cut, which is the exact
+    # overclaim the retention proof exists to avoid.
+    ("T38-1 a drop's message index resolves against the raw body, not the flattened list",
+     "subproto/cli.py",
+     '    msgs = protocol.normalize_messages(body)\n',
+     '    msgs = [(m.get("role"), m.get("content"), "unknown")\n'
+     '            for m in (body.get("messages") or [])]\n'),
+    ("T38-2 a pointer whose kind disagrees with what it indexes still prints a quote",
+     "subproto/cli.py",
+     '    if str(pointer).rsplit(":", 1)[-1].split("#", 1)[0] != mkind:\n',
+     '    if False:\n'),
+    ("T38-3 a decision reports one count where the rows below it show two",
+     "subproto/cli.py",
+     '        figure = "" if head is None else "%d kept  %d cut  " % head\n',
+     '        figure = "" if head is None else "%d kept  " % (head[0],)\n'),
+    ("T38-4 a request that is not there exits 0", "subproto/cli.py",
+     '        say(style.reason("no request %d in %s — subproto report lists the ids"\n'
+     '                         % (args.request_id, config.db_path),\n'
+     '                         indent=style.INDENT, color=color))\n'
+     '        return 1\n',
+     '        say(style.reason("no request %d in %s — subproto report lists the ids"\n'
+     '                         % (args.request_id, config.db_path),\n'
+     '                         indent=style.INDENT, color=color))\n'
+     '        return 0\n'),
+    ("T38-5 a page with no stored body quotes nothing and says nothing about it",
+     "subproto/cli.py",
+     '    if body is None and row.get("body_sha"):\n'
+     '        say("")\n'
+     '        say(style.prose("the pointers above are real and the counts are measured, but "\n'
+     '                        "this request\'s body was never stored, so the page cannot show "\n'
+     '                        "the text they name — that is what --store-bodies is for.",\n'
+     '                        indent=style.INDENT, color=color))\n',
+     ''),
 ]
 
 TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
@@ -411,7 +446,10 @@ TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
          "subproto/tests/test_systemone.py", "subproto/tests/test_retrain.py",
          # The grid is a rule now: a state word printed without its meaning, or a page
          # that only renders for a tty, is the same class of defect as a wrong count.
-         "subproto/tests/test_style.py"]
+         "subproto/tests/test_style.py",
+         # `show` is the surface that turns a retention proof back into bytes, so its
+         # pointer resolution is a rule too (T38).
+         "subproto/tests/test_show.py"]
 
 
 def _run(label):
