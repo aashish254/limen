@@ -398,6 +398,100 @@ def test_a_file_the_tail_already_quotes_is_not_paid_for_twice(repo_graph):
         assert c.protected is False, "a file the tail already quotes is not booked first"
 
 
+# --- the coupling's cost (S32) -------------------------------------------------
+
+_COUPLING_NEEDLES = ("retry.py", "errors.py")
+_COUPLING_TEXTS = [
+    "fixed app/payments/retry.py and app/retry.py both",
+    "retry.py:12 raises",
+    "myretry.py is a different file entirely",
+    "try.py is not the file I meant",
+    "the note in .../retry.py, done",
+    "RETRY.PY mentioned in upper case",
+    "xetry.py",
+    "app/payments/retry.py.bak is the backup copy",
+    "two: retry.py and errors.py here",
+    "http://host/app/retry.py?x=1",
+    "no paths at all in this one",
+    "retry.pyretry.py",
+    "src/retry.py and src/errors.py plus a stray retry.txt",
+    "a long tail of prose with no file anywhere near it at all " * 4,
+]
+
+
+@pytest.mark.parametrize("text", _COUPLING_TEXTS)
+def test_the_windowed_coupling_scan_loses_no_path_a_full_scan_found(text):
+    """S32: the compiler stopped regexing whole messages, so prove it gave nothing up.
+
+    Two directions, and together they are exactly the claim that the comparisons
+    downstream cannot tell the scans apart: every path the full scan found *and* that
+    carries a needle is still found, and everything the windowed scan returns is a path
+    the full scan saw too. A coupling can only be formed by a path that carries its
+    needle's basename, so the first test alone would be enough — the second is here
+    because `paths_named` widens the candidate set on purpose, and a made-up path would
+    silently invent a graph boost.
+    """
+    low = text.lower()
+    got = set(protocol.paths_named(low, _COUPLING_NEEDLES))
+    full = set(protocol.extract_paths(low))
+    want = set(p for p in full if any(n in p for n in _COUPLING_NEEDLES))
+    assert want <= got, "lost a coupling: %s" % sorted(want - got)
+    assert got <= full, "invented a path: %s" % sorted(got - full)
+
+
+def test_a_path_that_only_ends_like_the_file_does_not_couple(symptom_graph):
+    """`ent_client.py` is a character-suffix of `app/pay/quangle_client.py`; it is not a
+    path suffix, and the coupling that saves the read must not fire on the difference."""
+    body = {"model": "m", "max_tokens": 64, "stream": False, "messages": [
+        {"role": "user", "content": SYMPTOM},
+        {"role": "user", "content": "the trace points at ent_client.py line 3"},
+        {"role": "user", "content": "the trace points at quangle_client.py line 3"},
+        {"role": "assistant", "content": "ok"}] * 3}
+    cands, _ = compiler.build_candidates(body, analyze_request(body), symptom_graph,
+                                         SYMPTOM)
+    by_index = {c.index: c for c in cands if c.kind == "message"}
+    assert QUANGLE in [r for r, _s, _w in
+                       graph_mod.search(symptom_graph, SYMPTOM, top_k=3)]
+    assert "graph" not in by_index[1].why, "a partial name is not the file"
+    assert "graph" in by_index[2].why, "the real basename must still couple"
+
+
+def test_the_coupling_hands_the_path_regex_a_run_not_a_whole_message(repo_graph):
+    """S32's claim is a cost property, so it is measured as one, not timed.
+
+    `PATH_RE` over a 10 KB tool result was the compiled arm's whole latency lead over
+    the per-slot arm (0.08 ms a message, a dozen messages a decision). The fix confines
+    the regex to the path-shaped run around a hit, which is testable without a
+    stopwatch: count the characters ever handed to `PATH_RE` for one decision and
+    require it to be a fraction of the prompt it read.
+    """
+    body = _body()
+    total = sum(len(m[1]) for m in protocol.normalize_messages(body))
+    # `analyze_request` legitimately reads the whole body once for both arms; it is not
+    # the compiler's cost, so its counting happens before the patch.
+    analysis = analyze_request(body)
+    seen = {"chars": 0}
+    real = protocol.PATH_RE
+
+    class _Counting(object):
+        def findall(self, s):
+            seen["chars"] += len(s)
+            return real.findall(s)
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+    protocol.PATH_RE = _Counting()
+    try:
+        compiler.build_candidates(body, analysis, repo_graph, TASK)
+    finally:
+        protocol.PATH_RE = real
+    assert seen["chars"] > 0, "the regex never ran — the count proves nothing"
+    assert seen["chars"] < total / 4.0, \
+        "read %d of %d prompt chars with PATH_RE: the whole-message scan is back" % (
+            seen["chars"], total)
+
+
 # --- the retention proof (S21) -------------------------------------------------
 
 def test_proof_names_what_beat_each_drop_and_how_to_restore_it(compiled):

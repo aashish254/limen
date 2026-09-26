@@ -301,13 +301,28 @@ scoring logic forks.
   gate in `run_tests.sh`, and it printed **CHEAPER-BUT-NOT-BETTER twice** before the
   mechanism was fixed.
   - `bench/tasks.sample.jsonl` (n=20), compiled vs per-slot: **−19.3% input tokens**
-    `[17.9, 20.9]`, recall **100% → 100%**, precision **2.6% → 19.6%** (+17.0 pp
-    `[+2.8, +35.8]`), p50 5.6 → 6.7 ms (**slower**, reported rather than hidden), verdict
-    **BETTER**.
+    `[18.0, 20.9]`, recall **100% → 100%**, precision **2.6% → 19.6%** (+17.0 pp
+    `[+2.8, +35.8]`), p50 6.1 → 6.3 ms (**still slower**, reported rather than hidden),
+    verdict **BETTER**.
   - `bench/tasks.hard.jsonl` (n=8; one needed 2.6k-token read as the *oldest* turn + 6
     stale decoys): per-slot **pass-rate 0.0% / recall 2.7% → I3 VIOLATED**, compiled
     **100% / 100%** at **18.2% fewer tokens** than per-slot `[16.2, 20.2]`, precision
     0.5% → 25.1%, verdict **BETTER**. Per-slot spends *more* and keeps *less*.
+- **The compiler's local cost, measured (S32).** Request latency above includes the
+  mock's own HTTP round trip, and two runs of the two arms drift 10-20 % on a laptop —
+  more than the overhead being looked for — so the witness is `bench/s32_probe.py`:
+  both arms in one process against the same payloads, alternating round by round, and
+  the **minimum** per round (interference can only add time). Profiling put the gap on
+  one line — a `PATH_RE` scan of every candidate message (1.20 ms/decision) — and that
+  scan is now needle-anchored: each ranked basename is located by a C-level `find` and
+  the regex only ever sees the path-shaped run around it. Paired best
+  **+1.242 → +0.192 ms/decision** (3.27 per-slot vs 3.76 compiled at 9 rounds; the
+  4-round count `run_tests.sh` uses prints +0.256 on 3.11 and +0.323 on 3.9, because
+  the suite itself is competing for the CPU then). The
+  gate was "compiled ≤ per-slot" and it is **NOT MET**: the residual is the
+  graph-coupling scan itself (0.22 ms of needle `find`s), the very feature that buys
+  the +17.0 pp precision. Closing it would mean deleting the reason to compile, so the
+  row is reported rather than dropped.
 - **Known limits (mock-measured, not billed):** both tables are the local mock with a
   materialised repo tree and a content-substring grader — no frontier model judged
   anything, so "accuracy" here means *the evidence the model needs is still in the prompt*.

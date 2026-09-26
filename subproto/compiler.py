@@ -175,41 +175,65 @@ def build_candidates(body, analysis, graph=None, query="", budget=None):
     cands = []
     named_in_tail = set()
     query_paths = set(protocol.extract_paths(query))
-    ev_map = {}
+    # S32 — the coupling loop is the compiler's own cost, so it *was* the latency gap
+    # over the per-slot arm. It began as a full `extract_paths` scan of every message,
+    # which on a 10 KB tool result costs ~80 µs a pop; then a substring pre-filter cut
+    # the *scans* but still regexed whole messages whenever a name appeared. What
+    # coupling actually needs is narrower than that: a message can only name a ranked
+    # file by naming it as a path, so the paths worth extracting are the ones wrapped
+    # around an occurrence of a known basename. `paths_named` expands just that run.
+    needles = []
+    ranked = []
+    for rel, (raw, _why) in file_scores.items():
+        r = rel.lower()
+        base = r.rsplit("/", 1)[-1]
+        ranked.append((r, "/" + r, base, min(1.0, raw / 6.0)))
+        needles.append(base)
+    for q in query_paths:
+        needles.append(q.rsplit("/", 1)[-1])
+    needles = tuple(dict.fromkeys(n for n in needles if n))
+    ev = []
     for f in flags:
         role, text, kind = msgs[f["index"]]
         if kind == "system":
             continue  # the cached prefix: never a candidate, never dropped
-        if f["index"] >= tail_start:
-            for p in protocol.extract_paths(text):
-                named_in_tail.add(p)
+        tail = f["index"] >= tail_start
+        paths = ()
+        if needles:
+            paths = protocol.paths_named(text.lower(), needles)
+        if tail:
+            named_in_tail.update(paths)
         value = f["score"]
         why = list(f["why"])
         # Graph coupling: a message that *mentions* a file the code graph ranks highly
         # for this task is carrying evidence, whatever its role or recency says. This
         # is the one thing the per-slot design structurally cannot do.
         best = 0.0
-        for p in protocol.extract_paths(text):
-            for rel, (raw, _) in file_scores.items():
-                if p == rel.lower() or p.endswith("/" + rel.lower()) or rel.lower().endswith(p):
-                    best = max(best, min(1.0, raw / 6.0))
+        for p in paths:
+            for r, slash, _base, raw_score in ranked:
+                # Three ways a spelled-out path names a ranked file: exactly it, a
+                # longer path ending in it, or a shorter one it ends in — the last two
+                # anchored at a `/` so `try.py` cannot couple to `app/retry.py`.
+                if p == r or p.endswith(slash) or r.endswith("/" + p):
+                    if raw_score > best:
+                        best = raw_score
                     if "graph" not in why:
                         why.append("graph")
-            # And the same for a path the user named in the task itself. The graph can
-            # already rank a code, doc, SQL or data read (S31), but a typed path is
-            # *direct* evidence rather than a lexical guess, so it floors the value at
-            # EVIDENCE_NAMED instead of waiting for the index to agree.
-            if any(protocol.same_path(p, q) for q in query_paths):
+            # And the same for a path the user named in the task itself. The graph
+            # can already rank a code, doc, SQL or data read (S31), but a typed path
+            # is *direct* evidence rather than a lexical guess, so it floors the
+            # value at EVIDENCE_NAMED instead of waiting for the index to agree.
+            if query_paths and any(protocol.same_path(p, q) for q in query_paths):
                 if best < EVIDENCE_NAMED:
                     best = EVIDENCE_NAMED
-                    if "names-task-file" not in why:
-                        why.append("names-task-file")
+                if "names-task-file" not in why:
+                    why.append("names-task-file")
         value += 0.5 * best
-        if best >= EVIDENCE_MIN:
-            ev_map[f["index"]] = max(ev_map.get(f["index"], 0.0), best)
         c = Candidate("message", f["target"], f["tokens"], value,
-                      protected=f["index"] >= tail_start, why=why, index=f["index"])
+                      protected=tail, why=why, index=f["index"])
         cands.append(c)
+        if best >= EVIDENCE_MIN:
+            ev.append((best, c))
 
     flat_tools = protocol.flatten_tools(body.get("tools") or [])
     # ONE call over the whole tool list, and `core` alone is sacred: CORE_FLOOR tops the
@@ -247,9 +271,8 @@ def build_candidates(body, analysis, graph=None, query="", budget=None):
     budget = budget or default_budget(analysis)
     booked = sum(c.tokens for c in cands if c.protected)
     cap = int(budget * PROTECTED_MAX)
-    for i in sorted(ev_map, key=lambda i: (-ev_map[i], i))[:EVIDENCE_MAX]:
-        c = next((k for k in cands if k.kind == "message" and k.index == i), None)
-        if c is None or c.protected or booked + c.tokens > cap:
+    for _v, c in sorted(ev, key=lambda t: (-t[0], t[1].index))[:EVIDENCE_MAX]:
+        if c.protected or booked + c.tokens > cap:
             continue
         booked += c.tokens
         c.protected = True

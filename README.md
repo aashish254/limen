@@ -236,7 +236,8 @@ tasks and the *same* graph (`--tasks bench/tasks.hard.jsonl` for the hard set):
 
 | metric | per-slot | compiled | delta |
 |---|--:|--:|--:|
-| input tokens / task | 13,822 | 11,136 | **−19.3%** `[17.9, 20.9]` |
+| input tokens / task | 13,822 | 11,133 | **−19.3%** `[18.0, 20.9]` |
+| p50 request latency (ms) | 6.1 | 6.3 | **+0.2** (slower; drifts +0.2 to +0.4 run to run) |
 | recall of required files | 100% | 100% | held |
 | precision of what survived | 2.6% | 19.6% | **+17.0 pp** `[+2.8, +35.8]` |
 | hard set: pass-rate / recall | **0% / 2.7%** | **100% / 100%** | per-slot VIOLATES I3 |
@@ -244,8 +245,16 @@ tasks and the *same* graph (`--tasks bench/tasks.hard.jsonl` for the hard set):
 **Projected on heuristic prompt shapes** (`bench/results.md`): −32.3% if every slot
 enforces. These are prompt-shape projections, not billed savings, and latency is a
 request-shape proxy against the mock rather than a real time-to-first-token. The
-compiler's p50 on the mock is *slower* (5.6 → 6.7 ms: one more pass over the pool),
-which we print rather than hide; the token and accuracy numbers are the claim.
+compiler's p50 on the mock is *still slower* (6.1 → 6.3 ms in the run behind
+`bench/live_results.md`; the pair drifts by ±0.4 ms between runs), which we print rather
+than hide; the token and accuracy numbers are the claim. The overhead is profiled and
+partly paid back: a full-message regex scan of every candidate was 1.20 ms/decision and
+is now needle-anchored, cutting the paired decision gap from **+1.24 ms to +0.19 ms**
+(+0.26 when `run_tests.sh` runs it at 4 rounds with the suite competing for the CPU)
+(`python3.11 bench/s32_probe.py`, both arms in one process, minimum over rounds because
+a laptop's request latency drifts more than the effect). Parity was the goal and is not
+reached — what remains is the graph-coupling scan, which is the thing buying the
++17.0 pp precision above.
 
 The hero metric we publish once against a real SWE-bench-style suite + grader and
 real provider billing:

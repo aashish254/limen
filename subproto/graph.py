@@ -389,6 +389,35 @@ def load(path):
         return json.load(f)
 
 
+# A one-entry cache, deliberately *outside* the graph payload: the view holds frozensets,
+# and anything that json.dumps a decision or the index itself cannot carry them.
+_VIEW = {"nodes": None, "built_at": None, "view": {}}
+
+
+def _scoring_view(graph):
+    """{rel: (lower_path, lower_symbol_set, hint_set)} for this index.
+
+    S32: `score_files` used to rebuild two sets per node on *every* call, which for a
+    20k-file index meant 40k allocations per decision — a cost only the compiled arm
+    pays, because the per-slot path never consults the graph. The view is keyed to the
+    node table it was derived from by identity plus build time, so a rebuilt or reloaded
+    index (either of which constructs a fresh dict) cannot reuse a stale one; only
+    mutating a live index in place can, and nothing does that.
+    """
+    nodes = graph.get("nodes") or {}
+    if nodes is _VIEW["nodes"] and graph.get("built_at") == _VIEW["built_at"]:
+        return _VIEW["view"]
+    view = {}
+    for rel, node in nodes.items():
+        view[rel] = (rel.lower(),
+                     frozenset(s.lower() for s in (node.get("symbols") or [])),
+                     frozenset(node.get("hints") or []))
+    _VIEW["nodes"] = nodes
+    _VIEW["built_at"] = graph.get("built_at")
+    _VIEW["view"] = view
+    return view
+
+
 def score_files(graph, query_terms, file_mentions, exclude=()):
     """Lexical relevance per file. Returns [(rel, score, why)]."""
     q = set(t.lower() for t in query_terms)
@@ -396,24 +425,24 @@ def score_files(graph, query_terms, file_mentions, exclude=()):
     nodes = graph.get("nodes") or {}
     deps = graph.get("deps") or {}
     dependents = graph.get("dependents") or {}
+    view = _scoring_view(graph)
     out = []
     for rel, node in nodes.items():
         if rel in exclude:
             continue
-        low = rel.lower()
+        low, syms, hints = view[rel]
         why = []
         score = 0.0
-        syms = set(s.lower() for s in node.get("symbols") or [])
-        hints = set(node.get("hints") or [])
-        for t in q:
-            if t in syms:
-                score += 3.0
-                why.append("sym:" + t)
-            elif t in low:
-                score += 2.0
-                why.append("path:" + t)
-            elif t in hints:
-                score += 0.6
+        # The same three tiers a term can earn — symbol beats path beats hint — taken as
+        # set intersections instead of a per-term membership loop.
+        sym_hits = q & syms
+        score += 3.0 * len(sym_hits)
+        why += ["sym:" + t for t in sym_hits]
+        rest = q - sym_hits
+        path_hits = set(t for t in rest if t in low)
+        score += 2.0 * len(path_hits)
+        why += ["path:" + t for t in path_hits]
+        score += 0.6 * len((rest - path_hits) & hints)
         if not q and not mention_set:
             continue
         for m in mention_set:

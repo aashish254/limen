@@ -57,6 +57,14 @@ run_suite() {
   "$py" -m subproto split --home "$DH" >/dev/null && echo "ok: split"
   echo "----- [$label] mutation gate: every label-flywheel rule must be tested -----"
   expect "MUTATION GATE: OK" "$py" bench/mutation_gate.py
+  echo "----- [$label] S32 paired decision-cost probe (both arms printed) -----"
+  # The probe exits 0 whatever it measures: a slower compiled arm is a result, not a
+  # broken build. The gate here is only that it printed its numbers.
+  S32="$("$py" bench/s32_probe.py 4)"
+  echo "$S32"
+  case "$S32" in *"gate (compiled <= per-slot):"*) ;; *)
+    echo "GATE FAILED: s32_probe printed no gate line" >&2; exit 1;;
+  esac
   echo "----- [$label] subproto models (SPI registry) -----"
   "$py" -m subproto models --home "$(mktemp -d)" >/dev/null && echo "models ok"
   "$py" -m subproto models --home "$(mktemp -d)" --json >/dev/null && echo "models --json ok"

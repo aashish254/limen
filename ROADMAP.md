@@ -112,7 +112,7 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   is **value per token as the heuristics + graph score it**, not learned expected task
   success — that needs the V2-A labels, and is listed as the open extension below.
 - **Measured (mock, `bench/live.py`, reproducible with one command):** compiled vs
-  per-slot = **−19.3% input tokens** `[17.9, 20.9]` with **recall of required files held
+  per-slot = **−19.3% input tokens** `[18.0, 20.9]` with **recall of required files held
   at 100%** and **precision +17.0 pp** `[+2.8, +35.8]`; on `bench/tasks.hard.jsonl` the
   per-slot arm loses the file the task is about (**pass-rate 0%, recall 2.7%** → I3
   violated) while the compiler keeps **100%/100% at 18.2% fewer tokens**. The gate is
@@ -120,9 +120,13 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   twice before the mechanism earned BETTER.
 - **Still true of the mock, not of a bill:** no frontier model judged these answers —
   "accuracy" here means the evidence the model needs survived in the prompt. Billed +
-  real-model version = **V2-B**. And the compiler's own p50 is *slower* on the mock
-  (5.6 → 6.7 ms) because it makes one more pass over the pool; the saving is tokens and
-  correctness, not local compute.
+  real-model version = **V2-B**. And the compiler's own p50 is *still slower* on the mock
+  (6.1 → 6.3 ms). The reason is no longer a mystery: S32 profiled it to one line — a
+  `PATH_RE` scan of every candidate message, 1.20 ms/decision — and needle-anchored it,
+  cutting the **paired** decision gap from +1.24 ms to +0.19 ms
+  (`bench/s32_probe.py`, both arms in one process, minimum over rounds). Parity was not
+  reached, and what remains is the graph coupling that buys the +17.0 pp: the saving is
+  tokens and correctness, not local compute.
 - **Unfair:** transforms subproto from four heuristics in a trenchcoat into a single
   optimiser whose objective is *measured success per dollar* — much harder to clone than
   four rules. On the two mock sets it strictly dominates per-slot (equal-or-better recall

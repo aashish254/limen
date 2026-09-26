@@ -5,7 +5,7 @@ Tasks: `tasks.sample.jsonl` · n=20 · bootstrap CI · mock upstream, $0, no key
 | metric | observe | enforce | delta | 95% CI |
 |---|--:|--:|--:|:--|
 | input tokens (mean/task) | 19746 | 13822 | **29.9%** | [28.2, 31.3] |
-| p50 request latency (ms) | 5.7 | 5.6 | 1.0% | [-0.0, 2.2] |
+| p50 request latency (ms) | 6.3 | 6.1 | 2.9% | [1.4, 4.2] |
 | task pass-rate | 100.0% | 100.0% | **+0.0 pp** | [+0.0, +0.0] |
 
 **Correctness floor (I3), per-slot arm: pass-rate delta 0.0 pp — HELD (gate: >= -1.0pp).**
@@ -18,8 +18,8 @@ budget over messages + tool specs + file notes; `enforce` spends one per slot.
 
 | metric | per-slot | compiled | delta | 95% CI |
 |---|--:|--:|--:|:--|
-| input tokens (mean/task) | 13822 | 11136 | **19.3%** | [17.9, 20.9] |
-| p50 request latency (ms) | 5.6 | 6.7 | — | [-20.9, -18.2] |
+| input tokens (mean/task) | 13822 | 11133 | **19.3%** | [18.0, 20.9] |
+| p50 request latency (ms) | 6.1 | 6.3 | — | [-5.3, -2.6] |
 | task pass-rate | 100.0% | 100.0% | — | [+0.0, +0.0] pp |
 | **recall of required files** | 100.0% | 100.0% | +0.0 pp | [+0.0, +0.0] pp |
 | **precision of what survived** | 2.6% | 19.6% | +17.0 pp | [+2.8, +35.8] pp |

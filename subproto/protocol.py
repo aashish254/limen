@@ -284,6 +284,53 @@ def extract_paths(text):
     return [p.lower() for p in PATH_RE.findall(text or "")]
 
 
+PATH_RUN_RE = re.compile(r"[\w./-]+")
+PATH_PUNCT = "._-/"
+
+
+def paths_named(text, needles):
+    """The path tokens in `text` that name one of `needles` — without regexing all of `text`.
+
+    S32: the compiler couples a message to a file only through a path the message
+    actually spells out, and a message spells out a handful of the index's files at
+    most. `extract_paths` over a 10 KB tool result costs ~80 µs and a decision has a
+    dozen of them — that scan was most of the latency gap over the per-slot arm. So each
+    needle is located by a C-level `find`, and the regex only ever sees the path-shaped
+    run around the hit: `PATH_RE` can never match across a character outside its class,
+    so confining it to the run loses no path that the full scan would have found.
+
+    The result is a superset in one direction — a hit inside `xetry.py` returns
+    `xetry.py`, which is not the needle — and the caller's own comparisons are what
+    reject it. A needle with no extension (`Makefile`) can never arrive here as a path,
+    because `PATH_RE` only ever extracts a dotted name.
+    """
+    if not text or not needles:
+        return []
+    found, seen, done = [], set(), set()
+    for nd in needles:
+        if not nd:
+            continue
+        at = text.find(nd)
+        while at >= 0:
+            start = at
+            while start > 0:
+                ch = text[start - 1]
+                if not (ch.isalnum() or ch in PATH_PUNCT):
+                    break
+                start -= 1
+            if start not in done:
+                done.add(start)
+                run = PATH_RUN_RE.match(text, start)
+                if run:
+                    for p in PATH_RE.findall(run.group(0)):
+                        p = p.lower()
+                        if p not in seen:
+                            seen.add(p)
+                            found.append(p)
+            at = text.find(nd, at + len(nd))
+    return found
+
+
 def same_path(a, b):
     """Path equality under either direction of truncation: `retry.py` vs `app/x/retry.py`.
 

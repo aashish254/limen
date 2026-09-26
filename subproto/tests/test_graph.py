@@ -237,3 +237,31 @@ def test_cli_where_takes_a_repo_not_just_an_index(tmp_path, capsys):
     captured = capsys.readouterr()
     import json as _json
     assert rc == 0 and isinstance(_json.loads(captured.out), list)
+
+
+def test_a_rebuilt_index_is_not_scored_with_the_previous_indexs_view():
+    """S32: `score_files` caches its lowered/symbol-set view, keyed to the node table.
+
+    The cache is only correct if it cannot outlive the index it came from — so two
+    graphs built from two trees must each be scored from their own symbols, in either
+    order, and a reload (a fresh dict) counts as a new index too.
+    """
+    a = graph.build(ROOT)
+    b = graph.build(ROOT)
+    b["nodes"] = dict(a["nodes"])
+    b["nodes"]["app/payments/retry.py"] = dict(a["nodes"]["app/payments/retry.py"],
+                                               symbols=["zebra_only_in_b"])
+    q = ["zebra_only_in_b"]
+    assert [r for r, _s, _w in graph.score_files(a, q, [])] == []
+    assert graph.score_files(b, q, [])[0][0] == "app/payments/retry.py"
+    # Back to the first index: the second one's view must not have stuck to it.
+    assert [r for r, _s, _w in graph.score_files(a, q, [])] == []
+    assert graph.score_files(b, q, [])[0][0] == "app/payments/retry.py"
+    from tempfile import TemporaryDirectory
+    import json
+    with TemporaryDirectory() as d:
+        path = graph.save(a, os.path.join(d, "g.json"))
+        reloaded = graph.load(path)
+        assert json.dumps(reloaded)[:2], "the index stays JSON-serialisable with a view live"
+        assert graph.score_files(reloaded, ["PaymentGateway"], [])[0][0] == \
+            "app/payments/retry.py"
