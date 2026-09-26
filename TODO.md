@@ -250,10 +250,130 @@ measurable when the gate opens. Four gaps survived the audit:
   - **Honest reading of the residual:** ~0.22 ms of what remains is the needle `find` loop — the graph coupling, i.e. the mechanism that produces the **+17.0 pp precision** in S23. Reaching parity would mean deleting the reason to compile, or memoising across turns, which was rejected: the mock replays byte-identical bodies, so a content-keyed cache would manufacture a flattering number rather than measure one. The row is reported with the gap in it.
   - **Gate + docs:** `bench/s32_probe.py 4` now runs in `run_tests.sh` on both interpreters as a printed leg that fails only if the probe prints no gate line — a slower compiled arm is a result, not a broken build. SPEC's "known limits", the README results table (a p50 row was added; it was previously only in prose) and ROADMAP §v5 no longer say "one more pass over the pool": they name the scan, the 1.20 ms, and both the before and after numbers. 10 new mutants (S32-1…S32-10) → **68/68 killed**, sources restored byte-identical.
   - **Behaviour preserved, verified not asserted:** the HEAD worktree prints the identical accuracy columns (`13822 / 11133`, recall 100→100, precision 2.6→19.6, verdict BETTER), and 231 tests pass on 3.11 and 3.9.
-- [ ] **S33** Model versioning + rollback (ROADMAP v4, the machinery not the compute): `$SUBPROTO_HOME/models.json` manifest (`versions: [{label, url, tier, added, note}]`, `active`, `previous`), `subproto models --use <label>` / `--rollback`, and **health-gated degradation** — an active version whose `/health` fails resolves to `previous` (then `heuristic`) with the reason surfaced, never a silent dead endpoint. Every decision stamps `model_version`, so a fine-tune's effect is *measurable* and two tiers (`foundation` / `personal`) can be routed and compared by the existing evidence-driven `Router` with no new surface.
-- [ ] **S34** `subproto retrain` — the **cadence policy**, code-only: readiness computed from local state (new examples since the last recorded run, minimum counts per slot, days elapsed), the exact `train/finetune_mlx.py` command printed, `--dry-run` by default, and a `training_history.json` record (git sha, split hash, counts, resulting version) that `subproto models --use` consumes. The run itself stays `[~]` **V2-D** (needs MLX + weights) and the command must refuse honestly without them.
-- [ ] **S35** Corroborate on running traffic the way S22 did: fresh-user `subproto demo --slots --audit` with `SUBPROTO_COMPILE=on` + `SUBPROTO_APPLY` + `--store-bodies`, then `subproto learn` and `subproto report` — verbatim prints into this file, including a regret count of 0 if that is what it says.
-- [ ] **S36** Docs + gate: SPEC **FR-11** (the capture side of the flywheel: implicit labels, versioning, cadence) with whatever S35 actually printed, README, ROADMAP §v4 marked *code-only half shipped; the training run stays V2-D*; `bash run_tests.sh` green on 3.9 & 3.11 with `learn`/`retrain`/`models --use` added to the gate.
+- [x] **S33** Model versioning + rollback (ROADMAP v4, the machinery not the compute): `$SUBPROTO_HOME/models.json` manifest (`versions: [{label, url, tier, added, note}]`, `active`, `previous`), `subproto models --use <label>` / `--rollback`, and **health-gated degradation** — an active version whose `/health` fails resolves to `previous` (then `heuristic`) with the reason surfaced, never a silent dead endpoint. Every decision stamps `model_version`, so a fine-tune's effect is *measurable* and two tiers (`foundation` / `personal`) can be routed and compared by the existing evidence-driven `Router` with no new surface.
+  - **Contract to implement against** (this is the spec; the code and the gate must satisfy it, and every rule below gets a mutant):
+    1. `subproto/systemone/versions.py` owns the manifest: `path(config)` = `$SUBPROTO_HOME/models.json`, `load` (missing or corrupt → empty manifest, never a crash), `save` (atomic: temp + `os.replace`, so a killed process cannot leave a half-written active version), `add` (upsert by `label`, preserving the original `added` date on update), `use` (sets `previous` = old `active`, `active` = label; an unknown label **fails and lists what is registered**, leaving the file untouched), `rollback` (swaps `active`/`previous`; with no `previous` it fails honestly instead of silently going to heuristic).
+    2. **Precedence stays explicit-first, and says so:** `SUBPROTO_MODEL[_<SLOT>]` / config `model` outrank the manifest (I1: nothing recorded changes behaviour a human did not ask for). When a pin is in force, `models --use` must *print* that the env var will win, because "I rolled forward and nothing moved" is the failure mode this whole feature exists to prevent.
+    3. **Health gate:** a manifest `active` whose `/health` fails is not used — resolution falls to `previous` (if it has an endpoint that answers), then `heuristic`, and `model_status()`/`subproto models` carry the *reason* (`"active <label>: <error>"`). An explicit pin is never swapped out from under the operator, but its failing `/health` is still surfaced instead of leaving each decision to silently record `heuristic`.
+    4. **`model_version` on every decision**, in both arms (per-slot and compiled), = the version of whatever *answered that decision*: the manifest entry's `version` (defaults to its `label`) for a registered backend, `"heuristic"` when the heuristics answered. A decision must never be stamped with a model that did not produce it — after degradation the stamp has to move with the answer, or the fine-tune comparison it exists for would be a lie.
+    5. **The comparison has to be readable:** `subproto export` carries `model_version` per row, and `subproto report` groups decisions by `model_version` (decisions, tokens saved, p50 decision ms, approval rate where labels exist) so `foundation` vs `personal` is one query, not a grep.
+    6. `subproto models` prints the manifest (active/previous marked, tier, url, note) and the health verdict; `--add/--use/--rollback` are the write surface. `--json` carries all of it.
+  - **Also with this change:** the `Router` gains a version key to group its evidence by (no new selection surface — it already ranks labels, and a version is a label), and `run_tests.sh` must gate the whole loop on both interpreters: `models --add` → `--use` → `--json` → `--rollback` → `learn`/`report` still green over demo traffic recorded *with* a manifest, so a stamped `model_version` is proven to survive the wire, not just the unit test.
+  - **Deliberately out of scope:** no training run and no new endpoint (V2-D, and `train/` stays as it is); the manifest records *what was used*, it cannot know whether it was good — that stays the label flywheel's job.
+  - **Shipped:** `subproto/systemone/versions.py` (manifest ownership: `path`/`load`/`save`/`add`/`use`/`rollback`, atomic temp+`os.replace` write, corrupt file → empty manifest and never a crash); `Engine.version_for(backend)` stamping every decision in **both** arms from the answer that produced it; `report`'s `by model version` rollup (decisions, requests, tokens saved, p50 decision ms, approval where labels exist); `export` carrying `model_version` per row; `models --add/--use/--rollback/--json`; the `Router` grouping its evidence by version. Precedence is unchanged and printed when it bites: an env pin outranks the manifest and `models --use` says so out loud.
+  - **The compiled arm is stamped for what answered it:** `model_version: "compiled"` on the 34 decisions the context compiler made, `"heuristic"` on the 17 the effort slot answered lexically — see S35's verbatim `by model version` table. A version is whatever produced the row, so the compiler's own savings are attributable without inventing a model.
+  - **Wire proof, not unit proof:** `run_tests.sh` registers `dead-v1` at `http://127.0.0.1:9` (nothing listens), activates it, and requires `models --json` to answer `"version": "heuristic"` — a dead endpoint must degrade with a visible reason, not quietly become the answer. The same leg then replays demo traffic, requires `report` to print `by model version`, and greps the export for `"model_version"` before `--rollback` restores the previous version.
+  - **21 mutants (S33-1…S33-21)** → each rule in the contract above has one, including two that the *first* version of this code failed: `--use` accepting an unregistered label, and the stamp following the configured wish instead of the answering backend.
+- [x] **S34** `subproto retrain` — the **cadence policy**, code-only: readiness computed from local state (new examples since the last recorded run, minimum counts per slot, days elapsed), the exact `train/finetune_mlx.py` command printed, `--dry-run` by default, and a `training_history.json` record (git sha, split hash, counts, resulting version) that `subproto models --use` consumes. The run itself stays `[~]` **V2-D** (needs MLX + weights) and the command must refuse honestly without them.
+  - **Shipped:** `subproto/retrain.py` and the `subproto retrain` command. Readiness is four independent rules over local state only — **content** (sha256 over the split with the `#train`/`#val` boundary committed, so a re-shuffle is a new run and `train=A,val=B` ≠ `train=B,val=A`), **balance** (40 rows/slot *and* 8 in each answer; 10 keeps and 1 drop is not a lesson, it is a ratio), **time** (7 days since the last *completed* run), **provenance** (`git rev-parse --short HEAD` beside every row). `--dry-run` is the posture: a plain call prints the page and writes nothing at all; `--record` appends the plan; `--run` starts the trainer *only* over a READY page.
+  - **`training_history.json` is append-only and cannot be clobbered:** a file that does not parse is *unreadable*, not empty — `load_history` returns `None`, the page says the cadence cannot be evaluated, and `append_history` raises rather than replacing a log it cannot read (verified byte-identical after the refusal). A `refused` or `planned` row never starts the cooldown clock and never becomes a selectable version; `models --use lora-vN` reads the history, registers a *finished* version into the manifest as `tier=personal`, and prints that it has no endpoint to serve it yet.
+  - **Two real defects that only running it found**, each now with a test and a mutant: (1) `--run` printed a command naming `training/train.jsonl` that nothing had written, so the trainer died on a missing file (exit 1) — the CLI now materialises the split *before* naming it and cross-checks the rows on disk against the hash the page counted (`wrote the split it measured: 493 train / 123 val on disk (same rows as the page)`); (2) `--json` stdout was not parseable, because the trainer's own progress line inherited stdout and glued itself to the front of the document — `run_command(chatter_to_stderr=True)` sends child stdout to stderr under `--json`, and the test for it spawns a real pipe (`capsys` cannot see a child's fd).
+  - **V2-D stays V2-D, and the gate says so conditionally:** the trainer is really invoked and exits 3 (`mlx / mlx-lm not installed`); `run_tests.sh` asserts a non-zero CLI exit and a recorded non-zero `exit` **only while `toolchain.mlx` is false**, so the leg remains true when the weights arrive instead of becoming a wall an operator has to delete. A run that did not finish cannot be activated: `models --use lora-v1` must answer `no version 'lora-v1' registered`, and the rejected `--use` must leave `models.json` nonexistent.
+  - **19 mutants (S34-1…S34-19)** over the cadence rules, the history writer, the version numbering, the quoted command (this project's own directory has a space in it; an unquoted command breaks on the machine that printed it) and the two CLI defects above. Two of them (S34-6 per-answer floor, S34-12 toolchain honesty) survived the first test pass and needed new tests, which is the point of running the gate rather than reading it.
+- [x] **S35** Corroborate on running traffic the way S22 did: fresh-user `subproto demo --slots --audit` with `SUBPROTO_COMPILE=on` + `SUBPROTO_APPLY` + `--store-bodies`, then `subproto learn` and `subproto report` — verbatim prints into this file, including a regret count of 0 if that is what it says.
+
+**The honest reading (this is the number that was promised, and it is not a 0):**
+
+- **The regret count is 10, not 0.** `SUBPROTO_APPLY=tool_gate,compact` puts the compiler's drops on the wire, and the wire answered: 14 evicted reads, 10 of them against drops that were *enforced*, 4088 tokens paid back for the re-reads. The identical 10 drops are what the same demo printed in shadow mode in S28's block above ("`regrettable drops 10 (enforced 0, shadow 10)`", "`0 tokens were paid back`"), so the detector is stable across the two modes and the only thing `APPLY` changed is who pays.
+- **Net of the payback the compile is still ahead on this traffic:** 75,999 tok saved by the 34 compiled decisions against 4,088 tok of re-read cost = 71,911 tok, the bill eating 5.4 per cent of the saving. On mock traffic, n=17 requests — *measured on the mock*, not at a vendor, and it is not the hero number (V2-B still owns that).
+- **The flywheel closed in the same run:** `implicit verdicts: keep 10` — those 10 regrettable drops became `keep` supervision rows in `implicit_labels.json` (10 requests written, the human-label store untouched), and the `subproto retrain` page read afterwards counts the split those rows sit in: 209 `compact` rows and 390 `tool_gate` rows, both answers over the floor, `READY`.
+- **`model_version` attributes it without inventing a model:** the rollup prints `compiled` for the 34 decisions the context compiler made and `heuristic` for the 17 the effort slot answered lexically — p50 0.7 ms and 0.0 ms respectively, and all 51 rows carry the stamp into `export`.
+- **One line of this task's own contract was wrong, and the code is right:** `subproto demo` has no `--store-bodies` flag because `cmd_demo` hardcodes `store_bodies=True` (`subproto/cli.py:608`) — hence "17 bodies readable, 0 never stored", which is the precondition the regret detector needs. The run below is the documented command minus a flag that never existed.
+
+Reproduce with: `T=$(mktemp -d); SUBPROTO_HOME=$T SUBPROTO_COMPILE=on SUBPROTO_APPLY=tool_gate,compact subproto demo --port 8791 --slots --audit; subproto learn; subproto report; subproto retrain`.
+
+Verbatim prints (Python 3.11.15, arm64, 2026-09-26 14:39 +0545, fresh home):
+
+```
+$ SUBPROTO_HOME=$(mktemp -d) SUBPROTO_COMPILE=on SUBPROTO_APPLY=tool_gate,compact subproto demo --port 8791 --slots --audit
+
+replayed 17 synthetic agent requests through the proxy
+recorded bodies: 17
+{
+ "requests_scanned": 17,
+ "bodies_available": 17,
+ "by_slot": {
+  "tool_gate": {
+   "decisions": 17,
+   "would_drop": 184,
+   "savings_est_tok": 58767
+  },
+  "compact": {
+   "decisions": 17,
+   "would_drop": 42,
+   "savings_est_tok": 17232
+  },
+  "context": {
+   "decisions": 0,
+   "would_drop": 0,
+   "savings_est_tok": 0
+  },
+  "effort": {
+   "decisions": 17,
+   "would_drop": 0,
+   "savings_est_tok": 0
+  }
+ },
+ "examples": []
+}
+
+$ subproto learn
+subproto learn  ·  17 requests with decisions, 17 bodies readable (0 never stored)
+
+  eviction regret  (what the recorded traffic said about the drops)
+    evicted reads seen 14
+    regrettable drops 10 (enforced 10, shadow 0)
+      4088 tokens were paid back for re-reads of the 10 drops that reached the wire
+    window: 20 turns / 1800s of recorded traffic, read at 2026-09-26 14:39:11
+    verdicts by signal: implicit:re-read: 10 labels, 4088 tok
+
+  wrote 10 requests to /tmp/s35.Eb1ApC/implicit_labels.json (human `subproto label` verdicts live in a separate store and were not touched)
+
+$ subproto report        ·  the two sections it added, verbatim:
+
+  by model version (which checkpoint answered; `models.json` owns the list)
+    compiled                  34 decisions    17 req  saved    75999 tok  p50 0.7 ms  approval n/a
+           slots compact=17, tool_gate=17 · backends compiled=34
+    heuristic                 17 decisions    17 req  saved        0 tok  p50 0.0 ms  approval n/a
+           slots effort=17 · backends heuristic=17
+
+  eviction regret  (what the recorded traffic said about the drops)
+    17 requests scanned: 17 bodies readable, 0 never stored; 10 carry an implicit verdict
+    evicted reads seen 14
+    regrettable drops 10 (enforced 10, shadow 0)
+      4088 tokens were paid back for re-reads of the 10 drops that reached the wire
+    window: 20 turns / 1800s of recorded traffic, read at 2026-09-26 14:39:30
+    verdicts by signal: implicit:re-read: 10 labels, 4088 tok
+    implicit verdicts: keep 10
+
+$ subproto retrain
+subproto retrain  ·  cadence policy  ·  2026-09-26
+
+  split         7e48439bd9b3…
+  examples      479 train / 120 val  (git 3e3abfa)
+  last run      none recorded
+
+  per slot      (floor 40 rows, 8 in both answers)
+    compact       209 rows   177 keep   32 drop   ok
+    tool_gate     390 rows   206 keep  184 drop   ok
+
+  toolchain     trainer present
+                mlx + mlx-lm not installed
+                base /Users/aashish/.subproto/laya-base  absent (T16)
+  note          no completed run on record, so the 7-day wait cannot apply
+
+  decision      READY
+
+  the command this would run:
+    /opt/homebrew/opt/python@3.11/bin/python3.11 '/Users/aashish/llm faster /train/finetune_mlx.py' --train /tmp/s35.Eb1ApC/training/train.jsonl --val /tmp/s35.Eb1ApC/training/val.jsonl --model /Users/aashish/.subproto/laya-base --out /Users/aashish/.subproto/laya-router-lora --epochs 3 --rank 8
+
+  nothing was run. --run starts the trainer once READY.
+```
+- [x] **S36** Docs + gate: SPEC **FR-11** (the capture side of the flywheel: implicit labels, versioning, cadence) with whatever S35 actually printed, README, ROADMAP §v4 marked *code-only half shipped; the training run stays V2-D*; `bash run_tests.sh` green on 3.9 & 3.11 with `learn`/`retrain`/`models --use` added to the gate.
+  - **Docs written against what actually prints:** SPEC **FR-11** *The capture side of the flywheel* (implicit labels + the S35 regret bill, versioning + the health gate, the cadence rules, and V2-D as an explicit non-claim), plus two new lines in SPEC §6's metrics list — **eviction regret tokens** and **per-model-version attribution** — because the report can now answer both and previously had to not say so. README gains quick-start steps 8 (`learn`/`retrain`) and a section, *When is a fine-tune worth starting?*, carrying the real prints (`regrettable drops 10 (enforced 10, shadow 0)` / `4088 tokens were paid back`, `READY` page with `209 compact / 390 tool_gate` rows, the trainer's `exit 3`). ROADMAP §v4 is headed **code-only half shipped; the training run stays V2-D**, with S33/S34/S35 bullets under it.
+  - **The gate now covers the whole capture loop on both interpreters.** `run_tests.sh` runs, per interpreter: the S33 leg (`models --add` a dead endpoint → `--use` → `--json` says `"version": "heuristic"` → demo traffic → `report` prints `by model version` → export grepped for `model_version` → `--rollback`) and the new **S34 leg**: a fresh home replayed, `retrain` refusing with `NOT READY` and writing *no* history file, `--record` appending `planned`, a lowered-floor page reaching `READY`, `--run --json` asserting the record's `exit` equals the CLI's own verdict and that `split_written.split_sha` equals the page's hash and that `training/train.jsonl` exists, `models --use lora-v1` refusing to activate the unfinished run and leaving `models.json` nonexistent, then `report` over it. Result: **314 tests pass on Python 3.11.15 and 3.9.6**, **`MUTATION GATE: OK` — all 108 mutants killed** (S29 18 / S30 28 / S31 12 / S32 10 / S33 21 / S34 19) with sources restored byte-identical, on both interpreters, `ALL GATES PASS`.
+  - **Two honesty notes about this very gate.** (1) The S32 leg still prints `gate (compiled <= per-slot): NOT MET` — that is the reported residual from S32, not a regression introduced here; the leg passes because a slower compiled arm is a result. (2) The doc edits landed *during* the run above, so strictly the run certifies the code+tests and these files are prose: verified by grep that no module under `subproto/`, `bench/` or `train/` reads `SPEC.md`/`README.md`/`ROADMAP.md`/`TODO.md` (the only hits are two doc-comment cross-references in `graph.py`), so no test could have been affected.
+  - **Nothing is pushed.** Every commit in this milestone is local-only, per the standing instruction; SPEC I4 (local, private, no egress) is unchanged — the whole gate runs against the in-repo mock with `$0` spend and no API key.
 
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 

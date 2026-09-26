@@ -150,6 +150,11 @@ SUBPROTO_APPLY=tool_gate subproto up --slots
 # 7. Choose (or swap) the small model making those decisions.
 subproto models               # every System One backend + which one is active
 subproto up --slots --model openjev
+
+# 8. Close the loop: let the recorded traffic judge the drops it saw, then ask
+#    whether a fine-tune is worth starting. Both print; neither spends anything.
+subproto learn                # eviction regret: which cuts the wire disagreed with
+subproto retrain              # the cadence verdict + the exact trainer command, runs nothing
 ```
 
 `subproto inject claude|codex|gemini|aider` prints the exact env vars for each tool.
@@ -315,6 +320,38 @@ SUBPROTO_ROUTER=on subproto up --slots       # best measured backend per un-pinn
 subproto models --router                     # what it would pick, and why
 ```
 
+### Which checkpoint answered? Versions, rollback, and a health gate
+
+Naming a *family* is not enough to evaluate a fine-tune: `laya` today and
+`mlx-lora-v2` next month are different answers to the same question, and the telemetry
+has to tell them apart. `$SUBPROTO_HOME/models.json` is where a **version** lives:
+
+```bash
+subproto models --add mlx-lora-v1 --url http://localhost:8010 --tier personal \
+                --note "LoRA on 1.2k decisions, epoch 3"
+subproto models --use mlx-lora-v1      # whatever was active becomes `previous`
+subproto models --rollback             # and one command puts it back
+subproto report                        # decisions, tokens, p50 ms, approval *per version*
+```
+
+Every decision then carries `model_version` beside its `backend` label — in both arms,
+and on the decisions the heuristics answered too (`"heuristic"`) — so `subproto report`
+can group the corpus by version and `subproto export` carries the column into the
+training set. That is the difference between "we ran a fine-tune" and "the fine-tune was
+better on `compact`, worse on `tool_gate`, here is the split". A version is also just
+another label in the Router's pool, so `foundation` and `personal` compete on measured
+precision with no new surface.
+
+Two rules keep the column worth reading:
+
+- **An active version whose `/health` refuses is not used.** Resolution falls to
+  `previous`, then to the heuristics, and the reason is printed when the proxy starts
+  (`! dead-v1: /health failed (...)`) instead of being left for each decision to imply
+  by quietly recording `heuristic`. A version stamped on a decision is the one that
+  produced it: after a fallback the stamp moves with the answer, never with the wish.
+- **A pin still wins.** `SUBPROTO_MODEL[_<slot>]` outranks the manifest (invariant I1),
+  and `models --use` prints that warning rather than letting you believe you switched.
+
 `bench/ablation.py` scores **any registry label** through that same adapter
 interface against the heuristic baseline on labelled ground truth. Today the only
 endpoint in the repo is our deterministic lexical stand-in, so the columns agree
@@ -324,10 +361,52 @@ meaningful when a quantized checkpoint replaces the scorer. The full loop from
 usage to a specialised model is:
 
 ```bash
-subproto export   # telemetry -> JSONL of every decision
+subproto learn    # the traffic judges yesterday's drops -> implicit_labels.json
+subproto export   # telemetry -> JSONL of every decision (+ its label + model_version)
 subproto split    # -> train.jsonl / val.jsonl (seeded, de-duplicated by body_sha)
-train/finetune_mlx.py   # LoRA fine-tune (guarded: exits honestly without MLX + weights)
+subproto retrain  # is a fine-tune worth starting? prints the verdict and runs nothing
+subproto retrain --run           # only if the cadence cleared: starts the trainer
+subproto models --use lora-v3    # promote a run that actually finished
 ```
+
+### When is a fine-tune worth starting? The cadence, and what the traffic charged back
+
+Two questions decide it, and neither one is answerable from memory.
+
+**Did the last decisions work?** `subproto learn` reads the recorded bodies and prices each
+drop the wire disagreed with — content that was cut and later re-read. On a fresh demo run
+with `SUBPROTO_COMPILE=on SUBPROTO_APPLY=tool_gate,compact` it printed:
+
+```
+evicted reads seen 14
+regrettable drops 10 (enforced 10, shadow 0)
+  4088 tokens were paid back for re-reads of the 10 drops that reached the wire
+```
+
+That is the accuracy side of a cut, measured rather than argued: the same 34 compiled
+decisions saved 75,999 tok, so the re-reads cost 5.4 per cent of the saving. The 10 drops are
+written to `implicit_labels.json` — a store separate from human `subproto label` verdicts,
+which always win — and `build_training_split` flips each one to `keep`, so the next dataset
+teaches the mistake away. (In shadow mode the identical traffic prints the same 10 drops with
+`enforced 0` and nothing paid: `SUBPROTO_APPLY` changes who pays, not what the detector sees.)
+
+**Is there enough new signal to train on?** `subproto retrain` answers from local state and
+refuses out loud when the answer is no — a split whose hash has not changed since the last
+finished run, a slot under 40 rows, an answer under 8 examples, fewer than 7 days on the
+clock:
+
+```
+  per slot      (floor 40 rows, 8 in both answers)
+    compact       209 rows   177 keep   32 drop   ok
+    tool_gate     390 rows   206 keep  184 drop   ok
+  decision      READY
+```
+
+It runs nothing unless `--run` says so, `training_history.json` records every attempt —
+including the refusals, with their reasons — and only a run that *finished* becomes a version
+`subproto models --use lora-vN` can activate. Today the trainer it starts exits **3** with
+`mlx / mlx-lm not installed`: the weights are the external half (roadmap V2-D), and the
+command that cannot honour the run says so instead of pretending to train.
 
 ## Design tenets
 

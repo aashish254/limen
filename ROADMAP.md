@@ -91,7 +91,7 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   exactly the artifact that spreads on HN.
 - `gate:` a small approved API budget + a public task suite.
 
-### v4 — The learning loop goes continuous (personal + foundation routing models)
+### v4 — The learning loop goes continuous (personal + foundation routing models) — **code-only half shipped; the training run stays V2-D**
 - **Ships:** automatic label capture (implicit: was the turn re-run / corrected / did the
   user toggle a drop back?), a scheduled LoRA **retraining cadence** via
   `train/finetune_mlx.py`, model versioning with rollback, and two model tiers: a shared
@@ -100,6 +100,36 @@ months) → the gate** (external resource required, if any). `gate:` items stay
 - **Unfair:** every user's usage trains *their* model and (opt-in) the foundation one.
   The dataset now compounds faster than any single team can hand-label. This is the flywheel
   spinning — the thing the spec calls "the moat" (SPEC §1.2).
+- **Shipped today (`subproto/systemone/versions.py`, S33) — the machinery, not the compute:**
+  `$SUBPROTO_HOME/models.json` holds `versions: [{label, url, tier, added, note, version}]`
+  with `active`/`previous`; `subproto models --add/--use/--rollback` drive it; an active
+  version whose `/health` refuses is *not* used (it falls to `previous`, then the
+  heuristics, with the reason printed at startup); and every decision — both arms, the
+  heuristic answers included — carries `model_version`, which `subproto report` groups by
+  and `subproto export` carries into the training set. `tier` is exactly
+  `foundation` / `personal`, so "A/B: personal vs foundation, measured" now has a key to
+  group on and a rollback if the fine-tune is worse. What is *not* here is the training run
+  and the weights — that stays **V2-D**.
+- **Shipped today (`subproto/retrain.py`, S34) — the cadence, still not the compute:**
+  `subproto retrain` answers *is a fine-tune worth starting* from local state alone and
+  prints every reason it refuses: **content** (sha256 over the split, train/val boundary
+  committed, so a re-shuffle is a new run), **balance** (≥ 40 rows/slot *and* ≥ 8 in each
+  answer), **time** (≥ 7 days since the last *completed* run), **provenance** (git sha +
+  toolchain presence in every row). It runs nothing and writes nothing unless `--run`/`--record`
+  says so; `training_history.json` is append-only, a refused row neither starts the cooldown
+  nor becomes selectable, and only a finished run can be activated with
+  `subproto models --use lora-vN`. Over the demo's own traffic it prints
+  `479 train / 120 val … decision READY`, and the trainer it invokes exits **3** with
+  `mlx / mlx-lm not installed` — the honest V2-D state, gated that way on 3.9 and 3.11.
+- **Measured on running traffic (S35, fresh home, mock, n=17, `SUBPROTO_APPLY=tool_gate,compact`):**
+  the traffic judged the compiler's drops and the verdict is not flattering — `evicted reads
+  seen 14`, `regrettable drops 10 (enforced 10, shadow 0)`, `4088 tokens were paid back for
+  re-reads`. Against the `75,999 tok` the same run's 34 compiled decisions saved, the payback
+  is 5.4 per cent of the saving; in shadow mode the identical traffic reports the *same* 10
+  drops with `enforced 0` and nothing paid, so applying only changes who pays. Those 10
+  became `keep` supervision rows the same minute (`implicit verdicts: keep 10`), which is the
+  loop the row exists to close. `learn` (S29/S30) is the capture half and SPEC **FR-11** is
+  where all three — labels, versions, cadence — are specified.
 
 ### v5 — The Context Compiler (joint multi-slot optimisation) — **shipped, opt-in, mock-measured**
 - **Ships:** stop deciding tool/compact/context/effort independently; a joint optimiser

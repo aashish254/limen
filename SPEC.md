@@ -334,6 +334,62 @@ scoring logic forks.
   know at all — one needed read of an unknown extension is saved only when the human typed
   its path (`EVIDENCE_NAMED`).
 
+### FR-11 The capture side of the flywheel — ✅ shipped (code-only; the training run stays **V2-D**)
+`subproto/implicit.py`, `subproto learn`, `subproto/systemone/versions.py`, `subproto models`,
+`subproto/retrain.py`, `report.py`, `dataset.py`
+A fine-tune is only an experiment if three separate things are on record: what the traffic said
+about the last decision, *which checkpoint* made it, and whether starting a new run was worth
+it. All three are local, key-free, and gated on two interpreters.
+
+- **AC (implicit labels, S29/S30):** `subproto learn` reads the `--store-bodies` spool and
+  verdicts each drop from the wire alone — content cut and later re-read is a **regrettable
+  drop**, and its token price is the number `learn` prints. Verdicts land in
+  `implicit_labels.json`, a store *separate* from human `subproto label` output, so a human
+  verdict always wins and is never overwritten; `--dry-run` prints and writes nothing.
+  `build_training_split` consumes them (`reread` flips the answer to `keep`, `correction`
+  excludes the candidate), so the flywheel tightens the next dataset without a labeller.
+- **AC — measured on running traffic (S35, fresh home, mock, n=17 requests, applied
+  `tool_gate,compact`):** `evicted reads seen 14`, `regrettable drops 10 (enforced 10,
+  shadow 0)`, `4088 tokens were paid back for re-reads of the 10 drops that reached the
+  wire`, `implicit verdicts: keep 10`. Against the same run's `75,999 tok` saved by its 34
+  compiled decisions the payback is **5.4 %** of the saving — and the *same 10 drops* are
+  what the identical traffic prints in shadow mode (`enforced 0`, `0 tokens paid back`), so
+  the detector is mode-stable and `SUBPROTO_APPLY` only changes who pays. The regret count is
+  reported as 10, not as a 0: applying a compiler costs re-reads, and saying otherwise would
+  be the pitch this project exists to avoid.
+- **AC (versioning + health gate, S33):** `$SUBPROTO_HOME/models.json` holds
+  `versions: [{label, url, tier, added, note, version}]` plus `active`/`previous`, written
+  atomically (temp + `os.replace`). Precedence stays explicitly documented and printed when
+  it bites: `SUBPROTO_MODEL[_<SLOT>]` / config `model` **>** manifest `active` **>**
+  `heuristic` (I1). An `active` whose `/health` fails is not used — resolution falls to
+  `previous`, then `heuristic`, **with the reason surfaced**, and `model_version` on the
+  decision follows the answer, never the wish. `subproto models --use/--rollback` are the
+  write surface; `--rollback` with no `previous` says so instead of quietly going heuristic.
+- **AC (every decision attributable):** `model_version` is stamped in both arms and carried
+  through `export`, so `subproto report` answers *foundation vs personal vs compiled vs
+  heuristic* as one table — decisions, requests, tokens saved, p50 decision ms, approval rate
+  where labels exist. S35's print is the witness: `compiled 34 decisions … saved 75999 tok
+  p50 0.7 ms` beside `heuristic 17 decisions … p50 0.0 ms`.
+- **AC (cadence, S34):** `subproto retrain` decides *whether to train* from local state —
+  **content** (sha256 over the split, with the train/val boundary committed so a re-shuffle
+  counts as a new run), **balance** (≥ 40 rows/slot *and* ≥ 8 in each answer; 10 keeps and 1
+  drop is a ratio, not a lesson), **time** (≥ 7 days since the last *completed* run),
+  **provenance** (`git_sha` + toolchain presence beside every row). It prints every reason it
+  refuses, writes nothing unless asked, and the command it prints is the absolute,
+  shell-quoted one that actually runs. `training_history.json` is append-only: an unreadable
+  file is left alone rather than replaced, a `refused`/`planned` row neither starts the
+  cooldown clock nor becomes a selectable version, and only a run that *finished* can be
+  activated with `models --use lora-vN`.
+- **AC (V2-D stays a gate, not a claim):** the trainer is really invoked by `--run`, and on
+  a machine without MLX + weights it exits 3 (`mlx / mlx-lm not installed`) with that exit
+  recorded verbatim. `run_tests.sh` asserts the non-zero exit **only while
+  `toolchain.mlx` is false**, so the leg documents today's limit without becoming a wall an
+  operator has to delete once the weights land.
+- **Known limits:** every number here is the local mock over 17 synthetic requests — the
+  regret bill at real traffic and real providers is **V2-A/V2-B**. `models.json` records
+  *what answered*, which is not the same as whether it was good; that judgement stays with
+  the label store above. No training run has completed anywhere in this repo yet.
+
 ---
 
 ## 6. Metrics & instrumentation (what we must always be able to report)
@@ -344,6 +400,11 @@ scoring logic forks.
 - **Slot precision:** for each slot, labelled-correct rate (laya vs heuristic ablation).
 - **Correctness guard:** task pass-rate delta, must stay ≥ −1%.
 - **Cost:** $ per task, before/after.
+- **Eviction regret:** drops made, regrettable drops (enforced vs shadow), and **tokens paid
+  back** — the accuracy side of a cut, priced by the traffic rather than by an opinion (FR-11).
+- **Per-model-version attribution:** decisions, tokens saved and p50 decision ms grouped by
+  the `model_version` that produced them, so a fine-tune is compared to what it replaced in
+  one query (FR-11).
 
 ---
 
