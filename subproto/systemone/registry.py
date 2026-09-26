@@ -127,6 +127,26 @@ def resolve_all(config):
     return dict((slot, resolve(config, slot=slot)) for slot in MODEL_SLOTS)
 
 
+def configured_adapters(config):
+    """{label: adapter} for every named backend that has an endpoint right now.
+
+    These are the candidates a Router may choose between. `heuristic` is not
+    included: it is always available as the floor, not a thing that needs wiring.
+    """
+    out = {}
+    for key in ADAPTERS:
+        url = configured_url(key, config)
+        if url:
+            label = REGISTRY[key]["label"]
+            out[label] = HTTPScoreAdapter(url, label=label)
+    return out
+
+
+def is_pinned(config, slot):
+    """True when a slot's backend was named explicitly, so the Router must not touch it."""
+    return bool(_slot_name(slot, config))
+
+
 def status(config):
     """Describe every selectable backend, and which slot uses which."""
     adapter, active = resolve(config)

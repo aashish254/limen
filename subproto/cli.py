@@ -45,7 +45,8 @@ def cmd_up(args):
 
     config = Config.load(args.config, port=args.port, data_dir=args.home,
                          store_bodies=True if args.store_bodies else None,
-                         laya_url=args.laya_url, model=args.model)
+                         laya_url=args.laya_url, model=args.model,
+                         router=True if args.router else None)
     config.ensure_dirs()
     telemetry = _open_telemetry(config)
     engine = None
@@ -81,9 +82,14 @@ def cmd_models(args):
     """List every System One backend the registry can bind, and which is active."""
     from . import systemone
 
-    config = Config.load(args.config, data_dir=args.home, model=args.model)
+    config = Config.load(args.config, data_dir=args.home, model=args.model,
+                         router=True if args.router else None)
     st = systemone.status(config)
+    router = systemone.Router(config)
+    plan = router.plan() if router.available else None
     if args.json:
+        st["router"] = {"enabled": router.available, "budget_ms": router.budget_ms,
+                        "evidence": sorted(router.evidence), "plan": router.plan()}
         print(json.dumps(st, indent=1))
         return 0
     print("active System One backend: %s" % st["active"])
@@ -98,6 +104,19 @@ def cmd_models(args):
     print("  context/effort are answered by the code graph and request shape, "
           "not by a model")
     print("")
+    if plan:
+        print("  router: ON (budget %s) · ranks configured backends by measured "
+              "slot precision" % (("%gms" % router.budget_ms)
+                                  if router.budget_ms else "none"))
+        for slot in sorted(plan):
+            info = plan[slot]
+            print("    %-10s %-7s %s" % (slot, info["mode"], info["reason"]))
+        print("")
+    else:
+        print("  router:  off — slots use the named model above (SUBPROTO_MODEL[_<slot>]).")
+        print("           turn on with SUBPROTO_ROUTER=on (or --router) to pick the best")
+        print("           measured backend per slot; ties and no-evidence stay on heuristics.")
+        print("")
     print("select one: subproto up --model laya")
     print('           (SUBPROTO_MODEL=http://host:port works for any /health + /score server)')
     print(' per slot:  SUBPROTO_MODEL_COMPACT=djev subproto up --slots')
@@ -291,6 +310,9 @@ def build_parser():
     up.add_argument("--laya-url", help="http://host:port of a laya scoring server")
     up.add_argument("--model", help="System One backend: laya, openjev, djev, semif, "
                                     "mlx_lora, heuristic, or an http://host:port URL")
+    up.add_argument("--router", action="store_true",
+                    help="pick the best measured backend per un-pinned slot "
+                         "(SUBPROTO_ROUTER=on) instead of one named model")
     up.add_argument("--for", dest="for_", nargs="*", choices=sorted(INJECT),
                     help="print the env vars to point a tool at the proxy")
 
@@ -350,6 +372,8 @@ def build_parser():
     md = sub.add_parser("models", parents=[common],
                         help="list System One backends and which one is active")
     md.add_argument("--model", help="show the selection as if this backend were chosen")
+    md.add_argument("--router", action="store_true",
+                    help="show the evidence-driven routing plan as if SUBPROTO_ROUTER=on")
     md.add_argument("--json", action="store_true")
     return p
 

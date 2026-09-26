@@ -73,6 +73,40 @@ class Config:
         return self._get("model_by_slot") or {}
 
     @property
+    def router(self):
+        """Route un-pinned slots by measured evidence instead of a named model.
+
+        Off by default (observation-first): manual selection stays in force until
+        SUBPROTO_ROUTER=on (or config "router": true) opts in.
+        """
+        return bool(self._get("router", "SUBPROTO_ROUTER", False))
+
+    @property
+    def router_budget_ms(self):
+        """Latency ceiling (p50 decision ms) an adapter must fit to be routed to.
+
+        Unset -> no budget: rank purely on measured precision.
+        """
+        raw = (self._get("router_budget_ms")
+               or os.environ.get("SUBPROTO_ROUTER_BUDGET_MS"))
+        if raw is None or str(raw).strip() == "":
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def router_evidence(self):
+        """Path to an ablation results file the Router ranks against.
+
+        Unset -> the committed `bench/ablation.json`. Point it at a fresh
+        `bench/ablation.py --write` output (or the labelled M4 corpus) to re-route
+        without a code change.
+        """
+        return self._get("router_evidence") or os.environ.get("SUBPROTO_ROUTER_EVIDENCE")
+
+    @property
     def openai_upstream(self):
         return (self._get("openai_upstream") or OPENAI_UPSTREAM).rstrip("/")
 
@@ -132,6 +166,8 @@ class Config:
             "model": self.model,
             "model_url": self.model_url,
             "model_by_slot": self.model_by_slot,
+            "router": self.router,
+            "router_budget_ms": self.router_budget_ms,
             "openai_upstream": self.openai_upstream,
             "anthropic_upstream": self.anthropic_upstream,
             "gemini_upstream": self.gemini_upstream,

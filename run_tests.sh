@@ -31,6 +31,11 @@ run_suite() {
   echo "----- [$label] subproto models (SPI registry) -----"
   "$py" -m subproto models --home "$(mktemp -d)" >/dev/null && echo "models ok"
   "$py" -m subproto models --home "$(mktemp -d)" --json >/dev/null && echo "models --json ok"
+  echo "----- [$label] subproto Router (evidence-driven per-slot choice) -----"
+  "$py" -m subproto models --home "$(mktemp -d)" --router >/dev/null && echo "models --router ok"
+  "$py" -m subproto models --home "$(mktemp -d)" --router --json >/dev/null && echo "models --router --json ok"
+  LAYA_URL="http://127.0.0.1:9" SUBPROTO_ROUTER=on \
+    "$py" -m subproto demo --port "$(port)" --slots >/dev/null && echo "router demo ok"
 }
 
 echo "== PRIMARY INTERPRETER: $PY ($("$PY" --version 2>&1)) =="

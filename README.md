@@ -235,6 +235,21 @@ Only `tool_gate` and `compact` ask a model anything — `context` is answered by
 code graph and `effort` by request shape, so `subproto models` refuses to list a
 model for them rather than recording a label that decided nothing.
 
+Instead of naming one model and hoping it is good, the **Router** picks per slot from
+what has actually been measured: `bench/ablation.py` scores each configured adapter's
+slot precision, and the Router routes each un-pinned slot to the best-scoring one under
+an optional latency budget (`SUBPROTO_ROUTER=on`, `SUBPROTO_ROUTER_BUDGET_MS=40`). It is
+deliberately honest — an adapter with no measured precision is never auto-picked, and
+ties fall back to the in-process heuristics rather than spending a network hop, so today
+(it only ships with a lexical stand-in that ties the baseline) the Router stays on
+heuristics. Explicit `SUBPROTO_MODEL_<slot>` pins always win. `subproto models --router`
+shows the plan and the evidence behind it.
+
+```bash
+SUBPROTO_ROUTER=on subproto up --slots       # best measured backend per un-pinned slot
+subproto models --router                     # what it would pick, and why
+```
+
 `bench/ablation.py` scores **any registry label** through that same adapter
 interface against the heuristic baseline on labelled ground truth. Today the only
 endpoint in the repo is our deterministic lexical stand-in, so the columns agree

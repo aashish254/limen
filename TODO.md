@@ -69,6 +69,27 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **S09** `bench/ablation.py` compares **adapters** (any registry label, scored through the `ModelAdapter` interface) against the heuristic baseline, not just a hard-coded laya column; committed evidence stays deterministic.
 - [x] **S10** Tests + docs for S08/S09; gate green on 3.9 & 3.11. (Suite 90 → 99; gate now also runs `ablation --adapters` and `subproto models`.)
 
+## v2 → v3 bridge — the Router: per-slot model choice from evidence, not a name (ROADMAP §1 Router row). Code-only, opt-in, mock-verifiable.
+
+Manual selection (`SUBPROTO_MODEL[_<slot>]`) names one model and *hopes* it is good.
+The Router instead reads what the system has actually measured — per-adapter slot
+precision (`bench/ablation.py`) and per-backend decision latency (`decision_ms`) —
+and hands each un-pinned slot's question to the best-scoring **configured** adapter
+within an optional latency budget. Honesty (I6): an adapter with no measured precision
+is never auto-picked as "best", and precision ties route to `heuristic` (no endpoint,
+no network hop) — so on today's synthetic evidence (laya == heuristic, Δ0) the Router
+correctly stays on heuristics rather than fabricating an edge. Opt-in via
+`SUBPROTO_ROUTER=on`; every routed decision records *why*.
+
+- [x] **S11** `subproto/systemone/router.py`: `load_evidence(path)` (precision per adapter from `bench/ablation.json`), `rank(candidates, evidence, budget_ms)` (measured-only, budget-filtered, heuristic-preferring ties, deterministic), and `Router(config, evidence=None, budget_ms=None)` with `.available` + `.select(slot) -> (adapter, label, reason)` + `.plan()`. `registry.configured_adapters(config)` supplies the candidate set. `config`: `router` (`SUBPROTO_ROUTER`), `router_budget_ms` (`SUBPROTO_ROUTER_BUDGET_MS`).
+- [x] **S12** `engine`: when routing is on, non-pinned model-backed slots resolve through the `Router` and record a `router` reason; explicit `SUBPROTO_MODEL_<slot>` / `model_by_slot` pins and empty-evidence degrade to the manual registry path. `subproto models` shows the router plan (which adapter it *would* use per slot, with the evidence that drove it) when enabled.
+- [x] **S13** `subproto/tests/test_router.py`: opt-in (default off → manual), pin respected, best-measured selection, no-evidence → manual degrade, latency-budget excludes a slow-but-precise adapter, precision tie → heuristic (I6 honesty), the shipped `ablation.json` evidence routes to heuristic, and an end-to-end engine decision carrying the routed `backend` + reason. Suite 99 → 115, green on 3.9 & 3.11.
+- [x] **S14** ROADMAP §1 Router row → shipped (opt-in, evidence-driven); `subproto models --router` + a `SUBPROTO_ROUTER=on` demo in the gate; full `run_tests.sh` green on 3.9 & 3.11.
+
+> Real *labelled* precision on live traffic stays the V2-A gate; the Router is wired to
+> consume it the day `bench/ablation.py` is re-run against the `subproto label` corpus —
+> only the number changes, not this module.
+
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 
 - [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.

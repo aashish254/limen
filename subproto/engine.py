@@ -86,6 +86,15 @@ class Engine:
                 self.graph_path = cand
         self.backends = systemone.resolve_all(config)
         self.backend, self.backend_label = systemone.resolve(config)
+        self.router = systemone.Router(config) if getattr(config, "router", False) else None
+        self.router_reasons = {}
+        if self.router is not None and self.router.available:
+            for slot in systemone.MODEL_SLOTS:
+                if systemone.is_pinned(config, slot):
+                    continue
+                adapter, label, reason = self.router.select(slot)
+                self.backends[slot] = (adapter, label)
+                self.router_reasons[slot] = reason
 
     def slot_backend(self, slot):
         """The adapter (and its label) that answers for one slot."""
@@ -94,10 +103,17 @@ class Engine:
     def model_status(self):
         """Health of the active System One backend, labelled with its own name."""
         slots = dict((s, lbl) for s, (a, lbl) in self.backends.items())
-        if self.backend is None or not self.backend.available:
-            return {"configured": False, "label": self.backend_label,
-                    "slots": slots, "graph": bool(self.graph)}
-        return dict(self.backend.health(), slots=slots, graph=bool(self.graph))
+        status = {"configured": bool(self.backend and self.backend.available),
+                  "label": self.backend_label, "slots": slots, "graph": bool(self.graph)}
+        if self.backend is not None and self.backend.available:
+            status.update(self.backend.health())
+            status["slots"] = slots
+        if self.router is not None:
+            status["router"] = {"enabled": self.router.available,
+                                "budget_ms": self.router.budget_ms,
+                                "evidence": sorted(self.router.evidence),
+                                "plan": self.router.plan()}
+        return status
 
     def decide(self, dialect, body, analysis, config):
         apply_set = _apply_set()
@@ -133,6 +149,8 @@ class Engine:
                 "candidates": hs,
                 "decision_ms": round(_now_ms() - _t0, 3),
             })
+            if "tool_gate" in self.router_reasons:
+                decisions[-1]["router"] = self.router_reasons["tool_gate"]
             if "tool_gate" in apply_set and dropped:
                 keep = set(d["target"] for d in hs if d["keep"])
                 new_body = dict(new_body or body)
@@ -164,6 +182,8 @@ class Engine:
                 "budget_tok": budget, "candidates": flags,
                 "decision_ms": round(_now_ms() - _t0, 3),
             })
+            if "compact" in self.router_reasons:
+                decisions[-1]["router"] = self.router_reasons["compact"]
             if "compact" in apply_set and dropped_idx:
                 # normalize_messages prepends a top-level `system` entry (Anthropic
                 # shape), so normalized indices sit one ahead of body["messages"].
