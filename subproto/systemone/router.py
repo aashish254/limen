@@ -89,12 +89,24 @@ def rank(candidates, evidence, budget_ms=None):
 
 
 class Router:
-    """Choose an adapter per slot from configured backends + measured evidence."""
+    """Choose an adapter per slot from configured backends + measured evidence.
 
-    def __init__(self, config, evidence=None, budget_ms=None):
+    The candidate pool is every endpoint the registry can bind *plus* every version in
+    `models.json`, so a `personal` fine-tune and the `foundation` model it was trained
+    from compete on measured precision with no extra selection surface.
+    """
+
+    def __init__(self, config, evidence=None, budget_ms=None, adapters=None,
+                 manifest=None):
+        from . import versions
         self.config = config
         self.enabled = bool(getattr(config, "router", False))
-        self.adapters = configured_adapters(config)
+        self.versions = versions
+        self.manifest = (manifest if manifest is not None
+                         else versions.load(versions.path(config)))
+        if adapters is None:
+            adapters = versions.configured_adapters(config, self.manifest)
+        self.adapters = adapters
         self.evidence = (evidence if evidence is not None
                          else load_evidence(getattr(config, "router_evidence", None)))
         self.budget_ms = (budget_ms if budget_ms is not None
@@ -110,11 +122,19 @@ class Router:
         return sorted(set(self.adapters) | {HEURISTIC})
 
     def select(self, slot):
-        """Return (adapter_or_None, label, reason) for one un-pinned slot."""
+        """Return (adapter_or_None, label, reason) for one un-pinned slot.
+
+        With nothing measured to rank against, the standing selection is the full
+        ladder — explicit pin, then the health-gated manifest version — not just the
+        registry's, so a `models --use` still means something when the Router has no
+        evidence to disagree with.
+        """
         ranking = rank(self.candidates, self.evidence, self.budget_ms)
         if not ranking:
-            adapter, label = resolve(self.config, slot=slot)
-            return adapter, label, "no measured evidence to rank; manual selection"
+            choice = self.versions.select(self.config, slot=slot, manifest=self.manifest)
+            return (choice["adapter"], choice["label"],
+                    "no measured evidence to rank; standing %s selection"
+                    % choice["source"])
         best = ranking[0]
         label = best["label"]
         budget = "" if self.budget_ms is None else " under %sms" % self.budget_ms
@@ -127,10 +147,10 @@ class Router:
             % (label, best["precision"], best.get("source") or "?", budget))
 
     def plan(self):
-        """{slot: {mode, label, reason}} describing every model-backed slot.
+        """{slot: {mode, label, version, reason}} for every model-backed slot.
 
         `pinned` = a human named this slot's model and routing will not touch it;
-        `manual` = the router is off, so the registry's normal selection stands;
+        `manual` = the router is off, so the standing selection holds;
         `routed` = the router chose from evidence (or degraded to manual with no evidence).
         """
         out = {}
@@ -138,12 +158,17 @@ class Router:
             if is_pinned(self.config, slot):
                 _, label = resolve(self.config, slot=slot)
                 out[slot] = {"mode": "pinned", "label": label,
+                             "version": self.versions.version_of(self.manifest, label),
                              "reason": "explicit %s" % slot_env(slot)}
             elif not self.enabled:
-                _, label = resolve(self.config, slot=slot)
-                out[slot] = {"mode": "manual", "label": label,
-                             "reason": "router off; manual selection"}
+                choice = self.versions.select(self.config, slot=slot,
+                                              manifest=self.manifest)
+                out[slot] = {"mode": "manual", "label": choice["label"],
+                             "version": choice["version"],
+                             "reason": "router off; %s selection" % choice["source"]}
             else:
                 _, label, reason = self.select(slot)
-                out[slot] = {"mode": "routed", "label": label, "reason": reason}
+                out[slot] = {"mode": "routed", "label": label,
+                             "version": self.versions.version_of(self.manifest, label),
+                             "reason": reason}
         return out

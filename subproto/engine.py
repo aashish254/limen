@@ -73,11 +73,25 @@ class Engine:
             if os.path.exists(cand):
                 self.graph = graph_mod.load(cand)
                 self.graph_path = cand
-        self.backends = systemone.resolve_all(config)
-        self.backend, self.backend_label = systemone.resolve(config)
+        self.backends = {}
+        self.manifest = systemone.load(systemone.path(config))
+        global_choice = systemone.select(config, manifest=self.manifest)
+        self.backend, self.backend_label = global_choice["adapter"], global_choice["label"]
+        # The version that answers *this* engine, per decision — a label can be reused
+        # across checkpoints, and "was the fine-tune better" needs the checkpoint.
+        self.model_version = global_choice["version"]
+        self.model_source = global_choice["source"]
+        self.model_notes = list(global_choice["notes"])
+        slot_backends, self.slot_versions, slot_notes = systemone.select_slots(
+            config, manifest=self.manifest)
+        self.backends.update(slot_backends)
+        for note in slot_notes:
+            if note not in self.model_notes:
+                self.model_notes.append(note)
         # Set when a compiled plan raised and we degraded; surfaced, never hidden.
         self.compile_error = None
-        self.router = systemone.Router(config) if getattr(config, "router", False) else None
+        self.router = systemone.Router(config, manifest=self.manifest) \
+            if getattr(config, "router", False) else None
         self.router_reasons = {}
         if self.router is not None and self.router.available:
             for slot in systemone.MODEL_SLOTS:
@@ -85,18 +99,35 @@ class Engine:
                     continue
                 adapter, label, reason = self.router.select(slot)
                 self.backends[slot] = (adapter, label)
+                self.slot_versions[slot] = systemone.version_of(self.manifest, label)
                 self.router_reasons[slot] = reason
 
     def slot_backend(self, slot):
         """The adapter (and its label) that answers for one slot."""
         return self.backends.get(slot, (None, "heuristic"))
 
+    def version_for(self, backend):
+        """The version stamp for whatever answered a decision.
+
+        Follows the answer, not the wish: after a health-gated fallback the decision says
+        `heuristic`, because the heuristic is what produced it. Stamping the model that
+        *should* have answered would break the one comparison this column exists for.
+        """
+        return systemone.version_of(self.manifest, backend or self.backend_label)
+
     def model_status(self):
         """Health of the active System One backend, labelled with its own name."""
         slots = dict((s, lbl) for s, (a, lbl) in self.backends.items())
         status = {"configured": bool(self.backend and self.backend.available),
-                  "label": self.backend_label, "slots": slots, "graph": bool(self.graph),
-                  "compiled": compile_enabled()}
+                  "label": self.backend_label, "version": self.model_version,
+                  "source": self.model_source, "slots": slots,
+                  "slot_versions": dict(self.slot_versions), "graph": bool(self.graph),
+                  "compiled": compile_enabled(),
+                  "manifest": {"active": self.manifest.get("active"),
+                               "previous": self.manifest.get("previous"),
+                               "registered": len(self.manifest.get("versions") or [])}}
+        if self.model_notes:
+            status["notes"] = list(self.model_notes)
         if self.compile_error:
             status["compile_error"] = self.compile_error
         if self.backend is not None and self.backend.available:
@@ -110,19 +141,29 @@ class Engine:
         return status
 
     def decide(self, dialect, body, analysis, config, body_sha=None):
-        """One turn of System One. Returns (new_body|None, decisions)."""
+        """One turn of System One. Returns (new_body|None, decisions).
+
+        Every decision leaves here stamped with the `model_version` that answered it —
+        both arms, and the heuristic answers too, so a version is comparable across the
+        whole corpus rather than only where a model happened to be wired in.
+        """
         apply_set = _apply_set()
+        out = None
         if compile_enabled():
             try:
                 out = self._decide_compiled(dialect, body, analysis, apply_set, body_sha)
                 self.compile_error = None
-                if out is not None:
-                    return out
             except Exception as exc:
                 # Never bet the request on one component: a failed plan degrades to the
                 # per-slot path, and the failure is recorded rather than swallowed.
+                out = None
                 self.compile_error = "%s: %s" % (type(exc).__name__, str(exc)[:160])
-        return self._decide_slots(dialect, body, analysis, config, apply_set)
+        if out is None:
+            out = self._decide_slots(dialect, body, analysis, config, apply_set)
+        new_body, decisions = out
+        for d in decisions:
+            d["model_version"] = self.version_for(d.get("backend"))
+        return new_body, decisions
 
     def _decide_compiled(self, dialect, body, analysis, apply_set, body_sha):
         """v5: tool_gate/compact/context resolve from one plan over one budget (S22)."""

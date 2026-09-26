@@ -14,6 +14,10 @@ Selection precedence (highest first):
 A slot may pick its own model with ``SUBPROTO_MODEL_<SLOT>`` (e.g.
 ``SUBPROTO_MODEL_COMPACT=djev``) or a ``model_by_slot`` map in the config file;
 unset slots fall through to the global selection above.
+
+Per-slot *and* versioned selection — the ``models.json`` ladder that decides which
+checkpoint answers, and whether it is alive — is ``versions.select_slots``. This module
+only turns a name into an endpoint.
 """
 
 import os
@@ -120,11 +124,6 @@ def resolve(config, slot=None):
     if not name:
         name = (getattr(config, "model", None) or "").strip()
     return _select(name, config)
-
-
-def resolve_all(config):
-    """{slot: (adapter, label)} for every slot a model can answer."""
-    return dict((slot, resolve(config, slot=slot)) for slot in MODEL_SLOTS)
 
 
 def configured_adapters(config):

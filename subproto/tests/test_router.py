@@ -143,7 +143,7 @@ def test_router_degrades_to_manual_when_no_evidence(tmp_path, monkeypatch):
     cfg = Config(source={"data_dir": str(tmp_path)})
     r = systemone.Router(cfg, evidence={})
     adapter, label, reason = r.select("tool_gate")
-    assert label == "semif" and "manual selection" in reason
+    assert label == "semif" and "standing pin selection" in reason
 
 
 # --- explicit pins survive routing --------------------------------------------

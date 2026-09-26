@@ -1,11 +1,12 @@
 #!/usr/bin/env python3.11
-"""Mutation gate for the label flywheel: edit the rule, the suite must fail.
+"""Mutation gate: edit a rule in the source, and the suite must fail.
 
 `subproto/implicit.py` decides, from recorded traffic alone, that a drop was wrong;
 `subproto/dataset.py` decides whether that verdict reaches the training set;
-`subproto/report.py` and `subproto/cli.py` decide what the human is shown. Each is a
-file of *rules*, and a test suite over rules can pass while the rule is inverted —
-so each rule is broken here, one at a time, and must be caught.
+`subproto/graph.py`/`compiler.py` decide what evidence survives the budget;
+`subproto/systemone/versions.py` decides which model answered and what it is called.
+Each is a file of *rules*, and a test suite over rules can pass while the rule is
+inverted — so each rule is broken here, one at a time, and must be caught.
 
 Three properties this script enforces on itself:
 
@@ -268,15 +269,146 @@ MUTANTS = [
     ("S32-10 the hint tier of scoring disappears with the set rewrite", "subproto/graph.py",
      "        score += 0.6 * len((rest - path_hits) & hints)",
      "        score += 0.0 * len((rest - path_hits) & hints)"),
+    # ------------------------------------------- S33: versions, health gate, stamps
+    ("S33-1 `use` forgets which version it replaced", "subproto/systemone/versions.py",
+     '    manifest["previous"] = manifest.get("active")\n    manifest["active"] = label\n',
+     '    manifest["active"] = label\n'),
+    ("S33-2 rolling back with nothing behind it pretends to succeed", "subproto/systemone/versions.py",
+     '    if manifest.get("active") is None and manifest.get("previous") is None:\n',
+     '    if False:\n'),
+    ("S33-3 an active naming an unregistered version is trusted", "subproto/systemone/versions.py",
+     '        if value not in seen:\n',
+     '        if False:\n'),
+    ("S33-4 a corrupt manifest is swallowed instead of reported", "subproto/systemone/versions.py",
+     '        out["warnings"].append("%s is not readable JSON; starting from an empty "\n'
+     '                               "manifest (the file is left alone)" % os.path.basename(target))\n',
+     ''),
+    ("S33-5 the atomic rename is skipped, so the write never lands", "subproto/systemone/versions.py",
+     '    os.replace(tmp, target)\n',
+     ''),
+    ("S33-6 re-registering a version rewrites its history", "subproto/systemone/versions.py",
+     '             "added": (existing or {}).get("added") or (today or time.strftime("%Y-%m-%d")),\n',
+     '             "added": (today or time.strftime("%Y-%m-%d")),\n'),
+    ("S33-7 a failed /health is ignored and the dead version is used", "subproto/systemone/versions.py",
+     '        if ok:\n            if i:\n',
+     '        if True:\n            if i:\n'),
+    ("S33-8 previous is preferred over a live active version", "subproto/systemone/versions.py",
+     '    wanted = [manifest.get("active"), manifest.get("previous")]\n',
+     '    wanted = [manifest.get("previous"), manifest.get("active")]\n'),
+    ("S33-9 degradation happens without saying what failed", "subproto/systemone/versions.py",
+     '        notes.append("%s: /health failed (%s)" % (label, reason))\n',
+     ''),
+    ("S33-10 the manifest outranks a globally pinned model", "subproto/systemone/versions.py",
+     '    return bool((getattr(config, "model", None) or "").strip()\n'
+     '                or (getattr(config, "laya_url", None) or "").strip())\n',
+     '    return False\n'),
+    ("S33-11 the manifest outranks a per-slot pin", "subproto/systemone/versions.py",
+     '    if slot and registry.is_pinned(config, slot):\n        return True\n',
+     '    if slot and registry.is_pinned(config, slot):\n        return False\n'),
+    ("S33-12 a dead pin degrades silently, one decision at a time", "subproto/systemone/versions.py",
+     '                notes.append("pinned %s is unreachable (%s); every decision it would have "\n'
+     '                             "answered says heuristic" % (label, reason))\n',
+     ''),
+    ("S33-13 the version column degenerates into the label", "subproto/systemone/versions.py",
+     '    return (entry or {}).get("version") or label\n',
+     '    return label\n'),
+    ("S33-14 any tier string is accepted", "subproto/systemone/versions.py",
+     '    if tier not in TIERS:\n        raise ValueError("tier must be %s (not %r)" % (" or ".join(TIERS), tier))\n',
+     '    if False:\n        raise ValueError("tier must be %s (not %r)" % (" or ".join(TIERS), tier))\n'),
+    ("S33-15 selecting an unregistered version is allowed", "subproto/systemone/versions.py",
+     '    if label not in known:\n',
+     '    if False:\n'),
+    ("S33-16 a per-slot stamp follows the wish, not the answer", "subproto/engine.py",
+     '        for d in decisions:\n            d["model_version"] = self.version_for(d.get("backend"))\n',
+     '        for d in decisions:\n            d["model_version"] = self.model_version\n'),
+    ("S33-17 the compiled arm stops stamping versions", "subproto/engine.py",
+     '        for d in decisions:\n            d["model_version"] = self.version_for(d.get("backend"))\n',
+     '        for d in decisions:\n            if d.get("compiled"):\n                continue\n'
+     '            d["model_version"] = self.version_for(d.get("backend"))\n'),
+    ("S33-18 the Router cannot see registered versions", "subproto/systemone/router.py",
+     '            adapters = versions.configured_adapters(config, self.manifest)\n',
+     '            adapters = registry.configured_adapters(config)\n'),
+    ("S33-19 pre-stamp decisions vanish from the version table", "subproto/report.py",
+     '            version = d.get("model_version") or "unrecorded"\n',
+     '            version = d.get("model_version")\n            if not version:\n                continue\n'),
+    ("S33-20 the export drops the version it was given", "subproto/dataset.py",
+     '                "backend": d.get("backend"),\n                "model_version": d.get("model_version"),\n',
+     '                "backend": d.get("backend"),\n'),
+    ("S33-21 an empty active silently reinstates the spare version", "subproto/systemone/versions.py",
+     '    if not manifest.get("active"):\n',
+     '    if False:\n'),
     ("S31-12 `.json` is truncated to `.js` again, so a data read cannot couple to its node",
      "subproto/protocol.py",
      '|csv|tsv|ya?ml|toml|md|html|css|sh|vue|svelte)(?![A-Za-z0-9_])")',
      '|csv|tsv|ya?ml|toml|md|html|css|sh|vue|svelte)")'),
+   # ------------------------------------------- retrain.py / cli.py: the cadence (S34)
+    ("S34-1 a refusal or a dry run starts the cooldown clock", "subproto/retrain.py",
+     '            if r.get("status") == "ran" and r.get("exit") == 0]\n',
+     '            if r.get("status") in ("ran", "refused", "planned")\n'),
+    ("S34-2 an unreadable history reads as an empty one, so the cadence invents a clean slate",
+     "subproto/retrain.py",
+     '                        "is recorded" % (os.path.basename(target), str(exc)[:90]))\n        return None\n',
+     '                        "is recorded" % (os.path.basename(target), str(exc)[:90]))\n        return []\n'),
+    ("S34-3 an unreadable history is overwritten with the one new row", "subproto/retrain.py",
+     '    if rows is None:\n        raise ValueError(warn[0] if warn else "the history file is unreadable")\n',
+     '    if rows is None:\n        rows = []\n'),
+    ("S34-4 the fingerprint cannot tell train=A val=B from train=B val=A", "subproto/retrain.py",
+     '    for marker, rows in ((b"#train\\n", train), (b"#val\\n", val)):\n',
+     '    for marker, rows in ((b"", train), (b"", val)):\n'),
+    ("S34-5 a slot that answers one way only is still counted as examples", "subproto/retrain.py",
+     '    if unbalanced:\n        reasons.append("a slot with only one answer teaches the answer, not the "\n',
+     '    if False:\n        reasons.append("a slot with only one answer teaches the answer, not the "\n'),
+    ("S34-6 the per-answer floor prints but does not gate", "subproto/retrain.py",
+     '    if short_answers:\n        reasons.append("under %d in both answers: %s" % (\n',
+     '    if False:\n        reasons.append("under %d in both answers: %s" % (\n'),
+    ("S34-7 the wait is advice, not a rule", "subproto/retrain.py",
+     '        elif days < min_days:\n',
+     '        elif False:\n'),
+    ("S34-8 an unchanged split is retrained anyway", "subproto/retrain.py",
+     '        if prev.get("split_sha") == sha:\n',
+     '        if False:\n'),
+    ("S34-9 the printed command breaks on this project's own path", "subproto/retrain.py",
+     '    return " ".join(shlex.quote(a) for a in argv)\n',
+     '    return " ".join(str(a) for a in argv)\n'),
+    ("S34-10 a version label is reused for a different split", "subproto/retrain.py",
+     '    return "lora-v%d" % (max(used) + 1 if used else 1)\n',
+     '    return "lora-v%d" % 1\n'),
+    ("S34-11 the record forgets why it refused", "subproto/retrain.py",
+     '        "reasons": list(state["reasons"]),\n        "notes": list(state["notes"]),\n',
+     '        "reasons": [],\n        "notes": [],\n'),
+    ("S34-12 the toolchain says weights and MLX are there when they are not", "subproto/retrain.py",
+     '        out["mlx"] = bool(trainer.mlx_available())\n',
+     '        out["mlx"] = True\n'),
+    ("S34-13 a trainer that never started is reported as exit 0", "subproto/retrain.py",
+     '        return subprocess.call(shlex.split(command_line),\n'
+     '                               stdout=sys.stderr if chatter_to_stderr else None)\n',
+     '        subprocess.call(shlex.split(command_line))\n        return 0\n'),
+    ("S34-19 --json glues the trainer's progress line onto the front of the document",
+     "subproto/retrain.py",
+     '                               stdout=sys.stderr if chatter_to_stderr else None)\n',
+     '                               stdout=None)\n'),
+    ("S34-14 --run ignores the cadence it just printed", "subproto/cli.py",
+     '    if args.run:\n        if state["ready"]:\n',
+     '    if args.run:\n        if True:\n'),
+    ("S34-15 --run names a split it never wrote", "subproto/cli.py",
+     '            wrote = retrain.write_split(config, split_kw)\n',
+     '            wrote = None\n'),
+    ("S34-16 every status check ages the cadence log by a phantom plan", "subproto/cli.py",
+     '    elif args.record:\n        status = "planned"\n',
+     '    if True:\n        status = "planned"\n'),
+    ("S34-17 a run that did not finish becomes a selectable version", "subproto/cli.py",
+     '        if (label and label != retrain.PLANNED and row.get("status") == "ran"\n                and row.get("exit") == 0):\n',
+     '        if label and label != retrain.PLANNED:\n'),
+    ("S34-18 a personal fine-tune is registered as a foundation model", "subproto/cli.py",
+     '                    manifest, label, url=args.url, tier=args.tier or "personal",\n',
+     '                    manifest, label, url=args.url, tier=args.tier or "foundation",\n'),
 ]
 
 TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
          "subproto/tests/test_dataset_split.py", "subproto/tests/test_report_sections.py",
-         "subproto/tests/test_graph.py", "subproto/tests/test_compiler.py"]
+         "subproto/tests/test_graph.py", "subproto/tests/test_compiler.py",
+         "subproto/tests/test_versions.py", "subproto/tests/test_router.py",
+         "subproto/tests/test_systemone.py", "subproto/tests/test_retrain.py"]
 
 
 def _run(label):
@@ -291,12 +423,25 @@ def _last(line_stdout):
 
 def main():
     originals = {}
+    # A duplicated entry kills nothing twice: it inflates the count and hides the rule
+    # that has no mutant at all. Check the list against itself before trusting it.
+    ids, pairs = set(), set()
+    dupes = []
+    for _id, path, old, new in MUTANTS:
+        if _id in ids or (path, old, new) in pairs:
+            dupes.append(_id)
+        ids.add(_id)
+        pairs.add((path, old, new))
+    if dupes:
+        print("REFUSING TO RUN: duplicate mutant entries: %s" % ", ".join(dupes))
+        return 2
+
     for _id, path, old, new in MUTANTS:
         if path not in originals:
             originals[path] = open(path).read()
 
     base = _run("baseline")
-    print("baseline (%d tests): %s" % (len(MUTANTS), _last(base.stdout)))
+    print("baseline over %d mutants: %s" % (len(MUTANTS), _last(base.stdout)))
     if base.returncode != 0:
         print("\nREFUSING TO RUN: the baseline is not green, so every 'kill' below "
               "would be vacuous.")

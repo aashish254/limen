@@ -170,6 +170,7 @@ def export(config, telemetry, path=None, slots=ALL_SLOTS, include_candidates=Tru
                 "model": r["model"],
                 "slot": d["slot"],
                 "backend": d.get("backend"),
+                "model_version": d.get("model_version"),
                 "applied": bool(d.get("applied")),
                 "in_tok": (r["in_tok"] or 0) + (r["cw_tok"] or 0) + (r["cr_tok"] or 0),
                 "out_tok": r["out_tok"],
@@ -295,6 +296,7 @@ def build_training_split(config, telemetry, val_frac=0.2, seed=1337, write=True)
                     "answer": "keep" if keep else "drop",
                     "label_source": source or ("human" if taught else "heuristic"),
                     "backend": d.get("backend"),
+                    "model_version": d.get("model_version"),
                     "body_sha": r["body_sha"],
                 })
 

@@ -64,6 +64,52 @@ def slot_precision(telemetry, labels):
     return out
 
 
+def version_rollup(telemetry, labels=None):
+    """Per model *version*: the decisions it answered, what they saved, how they scored.
+
+    ROADMAP v4 asks "was the fine-tune better than the model it replaced?". That is only
+    answerable if every decision carries the checkpoint that produced it, so this groups
+    the corpus by that stamp and puts it beside the label-driven approval rate. Decisions
+    recorded before the stamp existed group under `unrecorded` and stay visible — a
+    version table that quietly omits them would make a new model look cleaner than it is.
+    """
+    rows = telemetry.query(
+        "SELECT id, decisions FROM requests WHERE decisions IS NOT NULL ORDER BY id")
+    tally = {}
+    for r in rows:
+        try:
+            decisions = json.loads(r["decisions"] or "[]")
+        except ValueError:
+            continue
+        entry = (labels or {}).get(str(r["id"])) or {}
+        for d in decisions:
+            version = d.get("model_version") or "unrecorded"
+            t = tally.setdefault(version, {
+                "decisions": 0, "requests": set(), "saved_tok": 0, "ms": [],
+                "slots": {}, "backends": {}, "good": 0, "bad": 0, "uncertain": 0})
+            t["decisions"] += 1
+            t["requests"].add(r["id"])
+            t["saved_tok"] += int(d.get("savings_est_tok") or 0)
+            if d.get("decision_ms") is not None:
+                t["ms"].append(float(d["decision_ms"]))
+            slot = d.get("slot") or "?"
+            t["slots"][slot] = t["slots"].get(slot, 0) + 1
+            backend = d.get("backend") or "?"
+            t["backends"][backend] = t["backends"].get(backend, 0) + 1
+            verdict = entry.get(slot)
+            if verdict in ("good", "bad", "uncertain"):
+                t[verdict] += 1
+    out = {}
+    for version, t in sorted(tally.items()):
+        ms = sorted(t.pop("ms"))
+        requests = t.pop("requests")
+        den = t["good"] + t["bad"]
+        out[version] = dict(t, requests=len(requests),
+                            p50_decision_ms=round(_percentile(ms, 0.50), 3) if ms else None,
+                            approval_rate=round(t["good"] / float(den), 4) if den else None)
+    return out
+
+
 def _cache_hit_rate(totals):
     """Cached share of input tokens actually read from cache, across all requests."""
     fin = int(totals.get("in_tok") or 0) + int(totals.get("cw_tok") or 0)
@@ -127,6 +173,7 @@ def summarize(telemetry, since=None, until=None, labels=None, implicit=None):
         "avg": round(sum(ems) / len(ems), 3) if ems else None,
     }
     summary["cache_hit_rate"] = _cache_hit_rate(summary["totals"] or {})
+    summary["by_version"] = version_rollup(telemetry, labels)
     if labels:
         summary["slot_precision"] = slot_precision(telemetry, labels)
     if implicit is not None:
@@ -379,6 +426,22 @@ def render_text(summary, since=None, until=None):
             lines.append("    %-10s labelled %3d   good %3d  bad %3d  uncertain %3d   approval %s" % (
                 slot, m["labelled"], m["good"], m["bad"], m["uncertain"],
                 ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
+    bv = summary.get("by_version") or {}
+    if bv:
+        lines.append("")
+        lines.append("  by model version (which checkpoint answered; `models.json` owns "
+                     "the list)")
+        for version, m in sorted(bv.items(), key=lambda kv: -kv[1]["decisions"]):
+            ar = m["approval_rate"]
+            lines.append("    %-22s %5d decisions  %4d req  saved %8d tok  p50 %s ms  "
+                         "approval %s" % (
+                             version[:22], m["decisions"], m["requests"], m["saved_tok"],
+                             ("%.1f" % m["p50_decision_ms"])
+                             if m["p50_decision_ms"] is not None else "-",
+                             ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
+            lines.append("           slots %s · backends %s" % (
+                ", ".join("%s=%d" % kv for kv in sorted(m["slots"].items())),
+                ", ".join("%s=%d" % kv for kv in sorted(m["backends"].items()))))
     lines.extend(regret_section(summary.get("eviction_regret"),
                            summary.get("implicit_coverage")))
     lines.append("")

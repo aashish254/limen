@@ -70,8 +70,13 @@ def cmd_up(args):
             print("               %s is advisory-only: it records a tier, it never "
                   "rewrites the request" % ",".join(advisory))
     print("  graph        %s" % (engine.graph_path if engine else "n/a"))
-    if engine and engine.backend:
+    if engine and (engine.backend or engine.model_notes
+                   or engine.manifest.get("active")):
         print("  model        %s" % json.dumps(engine.model_status()))
+        # A version that could not be used must be said out loud at startup, not left
+        # inside the JSON or implied by each decision quietly recording `heuristic`.
+        for note in engine.model_notes:
+            print("               ! %s" % note)
     print("")
     for tool in (args.for_ or ["claude", "codex"]):
         for line in [l.format(port=config.port) for l in INJECT.get(tool, INJECT["generic"])]:
@@ -88,18 +93,103 @@ def cmd_up(args):
         telemetry.close()
 
 
+def _history_versions(config):
+    """{version: record} for runs that *finished* — the labels `--use` may select.
+
+    A trained checkpoint has no endpoint until something serves it, so the
+    manifest cannot know it exists. This is the one place the two stores meet:
+    the cadence log says a version was produced, the manifest says whether it is
+    answering. A `refused` or `planned` row is not a version and never becomes one.
+    """
+    from . import retrain
+
+    out = {}
+    for row in retrain.load_history(config) or []:
+        label = row.get("version")
+        if (label and label != retrain.PLANNED and row.get("status") == "ran"
+                and row.get("exit") == 0):
+            out[label] = row
+    return out
+
+
+def _models_edit(args, config, manifest, target):
+    """Apply `--add` / `--use` / `--rollback` to the manifest and persist it.
+
+    Returns (manifest, lines). Every failure raises before the file is written, so a
+    rejected `--use` cannot leave the manifest pointing at something half-registered.
+    """
+    from . import systemone
+    from .systemone import registry
+
+    lines = []
+    if args.add:
+        manifest, entry = systemone.add(manifest, args.add, url=args.url, tier=args.tier,
+                                        note=args.note)
+        lines.append("registered %s (%s tier, added %s)"
+                     % (entry["label"], entry["tier"], entry["added"]))
+    if args.use:
+        label = (args.use or "").strip()
+        known = {v.get("label") for v in manifest.get("versions") or []}
+        if label not in known and label != registry.HEURISTIC:
+            row = _history_versions(config).get(label)
+            if row:
+                manifest, _entry = systemone.add(
+                    manifest, label, url=args.url, tier=args.tier or "personal",
+                    version=label,
+                    note="from training_history: split %s, %d train / %d val, git %s"
+                         % (str(row.get("split_sha") or "")[:8], row.get("n_train") or 0,
+                            row.get("n_val") or 0, row.get("git_sha") or "no git tree"))
+                lines.append("registered %s from training_history (split %s…, "
+                             "%d train / %d val, git %s)"
+                             % (label, str(row.get("split_sha") or "")[:8],
+                                row.get("n_train") or 0, row.get("n_val") or 0,
+                                row.get("git_sha") or "no git tree"))
+                if not (args.url or registry.configured_url(label, config)):
+                    lines.append("note: %s has no endpoint to serve it — until one "
+                                 "answers /health, every decision says heuristic" % label)
+        manifest, message = systemone.use(manifest, args.use)
+        lines.append(message)
+    if args.rollback:
+        manifest, message = systemone.rollback(manifest)
+        lines.append(message)
+    if lines:
+        systemone.save(target, manifest)
+        lines.append("wrote %s" % target)
+        pin = os.environ.get("SUBPROTO_MODEL") or os.environ.get("LAYA_URL")
+        if pin:
+            lines.append("note: SUBPROTO_MODEL/LAYA_URL is set, so it still outranks the "
+                         "manifest — unset it for this to take effect on the next `up`")
+    return manifest, lines
+
+
 def cmd_models(args):
-    """List every System One backend the registry can bind, and which is active."""
+    """List every System One backend, and the version manifest that picks between them."""
     from . import systemone
 
     config = Config.load(args.config, data_dir=args.home, model=args.model,
                          router=True if args.router else None)
+    target = systemone.path(config)
+    manifest = systemone.load(target)
+    try:
+        manifest, changes = _models_edit(args, config, manifest, target)
+    except ValueError as exc:
+        sys.stderr.write("models: %s\n" % exc)
+        return 1
     st = systemone.status(config)
-    router = systemone.Router(config)
+    desc = dict(systemone.describe(manifest, config), path=target)
+    choice = systemone.select(config, manifest=manifest)
+    router = systemone.Router(config, manifest=manifest)
     plan = router.plan() if router.available else None
+    for line in changes:
+        print(line)
+    if changes:
+        print("")
     if args.json:
         st["router"] = {"enabled": router.available, "budget_ms": router.budget_ms,
                         "evidence": sorted(router.evidence), "plan": router.plan()}
+        st["manifest"] = desc
+        st["selection"] = {"label": choice["label"], "version": choice["version"],
+                           "source": choice["source"], "notes": choice["notes"]}
         print(json.dumps(st, indent=1))
         return 0
     print("active System One backend: %s" % st["active"])
@@ -114,13 +204,35 @@ def cmd_models(args):
     print("  context/effort are answered by the code graph and request shape, "
           "not by a model")
     print("")
+    print("  versions in %s" % desc["path"])
+    if not desc["versions"]:
+        print("    none registered — every decision is stamped with whatever the "
+              "selection above says")
+    for row in desc["versions"]:
+        mark = "*" if row["active"] else ("→" if row["previous"] else " ")
+        print("    %s %-14s %-10s %-11s %-34s %s"
+              % (mark, row["label"], row["tier"], row["version"],
+                 row["endpoint"] or "no url", row["health"]))
+    for warning in desc["warnings"]:
+        print("    ! %s" % warning)
+    if desc["versions"]:
+        print("    active=%s previous=%s" % (desc["active"] or "heuristic",
+                                             desc["previous"] or "-"))
+        if choice["source"] == "pin":
+            print("    SUBPROTO_MODEL/config `model` is set: it outranks the manifest, "
+                  "so %s is not answering"
+                  % (desc["active"] or "the manifest"))
+    for note in choice["notes"]:
+        print("    ! %s" % note)
+    print("")
     if plan:
         print("  router: ON (budget %s) · ranks configured backends by measured "
               "slot precision" % (("%gms" % router.budget_ms)
                                   if router.budget_ms else "none"))
         for slot in sorted(plan):
             info = plan[slot]
-            print("    %-10s %-7s %s" % (slot, info["mode"], info["reason"]))
+            print("    %-10s %-7s %-12s %s" % (slot, info["mode"], info["version"],
+                                               info["reason"]))
         print("")
     else:
         print("  router:  off — slots use the named model above (SUBPROTO_MODEL[_<slot>]).")
@@ -130,6 +242,10 @@ def cmd_models(args):
     print("select one: subproto up --model laya")
     print('           (SUBPROTO_MODEL=http://host:port works for any /health + /score server)')
     print(' per slot:  SUBPROTO_MODEL_COMPACT=djev subproto up --slots')
+    print('  versions: subproto models --add mlx-lora-v2 --url http://host:port '
+          '--tier personal')
+    print('     switch: subproto models --use mlx-lora-v2      undo: subproto models '
+          '--rollback')
     return 0
 
 
@@ -344,6 +460,73 @@ def cmd_split(args):
     return 0
 
 
+def cmd_retrain(args):
+    """Decide whether a fine-tune is worth starting, and record the decision.
+
+    Dry-run is the default in the only direction that matters: the printed page is
+    the product, and the trainer starts only if `--run` says so *and* the cadence
+    cleared. A refusal is still a record, because "we did not train, and here is
+    why" is the thing a later comparison needs.
+    """
+    from . import retrain
+
+    config = Config.load(args.config, data_dir=args.home)
+    split_kw = {}
+    if args.val_frac is not None:
+        split_kw["val_frac"] = args.val_frac
+    if args.seed is not None:
+        split_kw["seed"] = args.seed
+    state = retrain.readiness(config, min_per_slot=args.min_per_slot,
+                              min_answers=args.min_answers, min_days=args.min_days,
+                              split_kw=split_kw)
+    line = retrain.command(config, epochs=args.epochs, rank=args.rank)
+    ran, status, wrote = None, None, None
+    if args.run:
+        if state["ready"]:
+            # write what the page counted *before* naming it in a command, so the
+            # run trains on the split whose sha is about to go into the record
+            wrote = retrain.write_split(config, split_kw)
+            line = retrain.command(config, train_path=wrote.get("train_path"),
+                                   val_path=wrote.get("val_path"),
+                                   epochs=args.epochs, rank=args.rank)
+            version = retrain.version_for(retrain.load_history(config, []) or [])
+            ran = retrain.run_command(line, chatter_to_stderr=args.json)
+            status = "ran"
+            retrain.append_history(config, retrain.record(
+                state, status, command_line=line, version=version, exit_code=ran))
+        else:
+            status = "refused"
+            retrain.append_history(config, retrain.record(state, status,
+                                                          command_line=line))
+    elif args.record:
+        status = "planned"
+        retrain.append_history(config, retrain.record(state, status, command_line=line))
+    if args.json:
+        payload = dict(state)
+        payload["command"] = line
+        payload["recorded"] = status
+        payload["split_written"] = None if wrote is None else {
+            "n_train": wrote.get("n_train"), "n_val": wrote.get("n_val"),
+            "split_sha": retrain.fingerprint_rows(
+                [wrote.get("train_path"), wrote.get("val_path")])}
+        payload["exit"] = ran
+        print(json.dumps(payload, indent=1, default=str))
+    else:
+        print(retrain.render_text(state, line, ran=ran))
+        if wrote is not None:
+            same = retrain.fingerprint_rows([wrote.get("train_path"),
+                                             wrote.get("val_path")]) == state["split_sha"]
+            print("  wrote the split it measured: %s train / %s val on disk (%s)" % (
+                wrote.get("n_train"), wrote.get("n_val"),
+                "same rows as the page" if same else
+                "DIFFERENT rows than the page counted"))
+        if status:
+            print("  %s: %s" % (status, retrain.history_path(config)))
+    if args.run and not state["ready"]:
+        return 1
+    return 0 if ran in (None, 0) else 1
+
+
 def cmd_label(args):
     from . import dataset
     from .engine import ALL_SLOTS
@@ -447,6 +630,8 @@ def cmd_demo(args):
 
 
 def build_parser():
+    from . import retrain as retrain_mod
+
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--home", help="state dir (default ~/.subproto)")
     common.add_argument("--config", help="path to config json")
@@ -548,7 +733,38 @@ def build_parser():
     md.add_argument("--model", help="show the selection as if this backend were chosen")
     md.add_argument("--router", action="store_true",
                     help="show the evidence-driven routing plan as if SUBPROTO_ROUTER=on")
+    md.add_argument("--add", metavar="LABEL",
+                    help="register a model version in models.json (needs --url)")
+    md.add_argument("--url", help="endpoint for --add: any /health + /score server")
+    md.add_argument("--tier",
+                    help="foundation (a model you point at) or personal (one you trained)")
+    md.add_argument("--note", help="free text for --add: which checkpoint, what changed")
+    md.add_argument("--use", metavar="LABEL",
+                    help="make a registered version active (the old one becomes previous)")
+    md.add_argument("--rollback", action="store_true",
+                    help="put the previous version back, or drop to the heuristics")
     md.add_argument("--json", action="store_true")
+
+    rt = sub.add_parser("retrain", parents=[common],
+                        help="decide whether a fine-tune is worth starting (prints, "
+                             "and runs nothing, unless --run)")
+    rt.add_argument("--run", action="store_true",
+                    help="start the trainer, but only if the cadence cleared")
+    rt.add_argument("--record", action="store_true",
+                    help="append this decision to training_history.json without running")
+    rt.add_argument("--min-per-slot", type=int, default=retrain_mod.MIN_PER_SLOT,
+                    dest="min_per_slot", help="rows per slot before a run is worth it")
+    rt.add_argument("--min-answers", type=int,
+                    default=retrain_mod.MIN_ANSWERS_PER_SLOT, dest="min_answers",
+                    help="rows per slot in *both* answers — the tighter floor")
+    rt.add_argument("--min-days", type=int, default=retrain_mod.MIN_DAYS,
+                    dest="min_days", help="days to wait after a completed run")
+    rt.add_argument("--val-frac", type=float, default=None, dest="val_frac",
+                    help="forwarded to the split builder (default: its own)")
+    rt.add_argument("--seed", type=int, default=None)
+    rt.add_argument("--epochs", type=int, default=3)
+    rt.add_argument("--rank", type=int, default=8)
+    rt.add_argument("--json", action="store_true")
     return p
 
 
@@ -560,6 +776,6 @@ def main(argv=None):
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
           "where": cmd_where, "compile": cmd_compile,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
-          "learn": cmd_learn,
+          "learn": cmd_learn, "retrain": cmd_retrain,
           "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]
     return fn(args) or 0
