@@ -374,6 +374,14 @@ def index_path(root):
     return os.path.join(os.path.abspath(root), ".subproto-graph.json")
 
 
+def index_for(path):
+    """The index file a `--graph` value points at. Every surface that takes the flag
+    reads it as "the repo", so a directory means that repo's cached index."""
+    if os.path.isdir(path):
+        return index_path(path)
+    return path
+
+
 def save(graph, path):
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
@@ -385,7 +393,7 @@ def save(graph, path):
 
 
 def load(path):
-    with open(path) as f:
+    with open(index_for(path)) as f:
         return json.load(f)
 
 

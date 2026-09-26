@@ -119,17 +119,28 @@ months) → the gate** (external resource required, if any). `gate:` items stay
   says so; `training_history.json` is append-only, a refused row neither starts the cooldown
   nor becomes selectable, and only a finished run can be activated with
   `subproto models --use lora-vN`. Over the demo's own traffic it prints
-  `479 train / 120 val … decision READY`, and the trainer it invokes exits **3** with
+  `479 train / 120 val` and `decision  ready` under a per-slot table whose verdict leads each
+  row (`compact  ok  209 rows  177 keep  32 drop`), and the trainer it invokes exits **3** with
   `mlx / mlx-lm not installed` — the honest V2-D state, gated that way on 3.9 and 3.11.
 - **Measured on running traffic (S35, fresh home, mock, n=17, `SUBPROTO_APPLY=tool_gate,compact`):**
   the traffic judged the compiler's drops and the verdict is not flattering — `evicted reads
-  seen 14`, `regrettable drops 10 (enforced 10, shadow 0)`, `4088 tokens were paid back for
-  re-reads`. Against the `75,999 tok` the same run's 34 compiled decisions saved, the payback
+  seen 14`, `regrettable drops 10 (enforced 10, shadow 0)`, and `tokens paid back 4,088`
+  priced as re-reads of the 10 drops that reached the wire. Against the `75,999 tok` the same
+  run's 34 compiled decisions saved, the payback
   is 5.4 per cent of the saving; in shadow mode the identical traffic reports the *same* 10
   drops with `enforced 0` and nothing paid, so applying only changes who pays. Those 10
   became `keep` supervision rows the same minute (`implicit verdicts: keep 10`), which is the
   loop the row exists to close. `learn` (S29/S30) is the capture half and SPEC **FR-11** is
   where all three — labels, versions, cadence — are specified.
+- **The surface is part of the deliverable (S37).** Every readout prints through
+  `subproto/style.py` on one grid — a label column and a number column, colour only ever on a
+  state word, red only for breakage, no box drawing, long lines only for a path or a command
+  the reader copies — because a GIF, an issue thread and a README all take the same page at
+  different widths. `subproto/tests/test_style.py` enforces it as a property of every page,
+  and it earned its keep: the pass found a flagship `report` that printed no colour at all,
+  ANSI escapes counted as column width, a headerless `where`, a `demo` request that reshuffled
+  the compiler's own kept-tool proof between identical runs, a live meter that cleared a pipe,
+  and a report row (`human/traffic disagree`) whose mutant had no witness left to kill it.
 
 ### v5 — The Context Compiler (joint multi-slot optimisation) — **shipped, opt-in, mock-measured**
 - **Ships:** stop deciding tool/compact/context/effort independently; a joint optimiser

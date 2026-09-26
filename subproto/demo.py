@@ -134,12 +134,19 @@ def messages_for(i, turns=6):
     return msgs
 
 
-def synthetic_request(i, model="claude-sonnet-4-5", jitter=True, turns=6):
+def synthetic_request(i, model="claude-sonnet-4-5", jitter=True, turns=6, shuffle=None):
+    # `shuffle=None` keeps the replay's habit (every third request arrives with its
+    # tools in a different order, which is what the dialect tests are for). A caller
+    # who is *witnessing* a compile passes shuffle=False: the tool array is part of
+    # the input, so an unseeded shuffle in it makes the same command disagree
+    # with itself, and the cached prefix it reports on is literally the array.
+    if shuffle is None:
+        shuffle = (i % 3 == 0)
     return {
         "model": model,
         "max_tokens": 8192,
         "system": system_prompt(i, jitter=jitter),
-        "tools": tool_specs(24, shuffle=(i % 3 == 0)),
+        "tools": tool_specs(24, shuffle=shuffle),
         "messages": messages_for(i, turns=turns),
         "stream": True,
     }

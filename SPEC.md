@@ -265,9 +265,11 @@ Requirement IDs map to the shipped modules so progress is auditable.
 
 ### FR-9 TUI overlay — ✅ shipped
 `live.py`, `subproto live`
-- **AC:** live terminal meter: "saved 38% / 4,120 tok this session · $1.02 → $0.63",
-  tailing telemetry; `subproto live --once` emits a deterministic snapshot for CI and
-  screenshots. Pure `render(snapshot) -> str`, ANSI-tested.
+- **AC:** live terminal meter — `tokens saveable 38% 38,000 tok`, `spend before $1.02`,
+  `spend after $0.63`, and the meter's own state line (`potential` while the slots only
+  observe, `delivered` once bytes are actually cut); tailing telemetry,
+  `subproto live --once` emits a deterministic snapshot for CI and screenshots. Pure
+  `render(snapshot) -> str`, ANSI-tested.
 
 ### FR-10 The Context Compiler — ✅ shipped (opt-in, `SUBPROTO_COMPILE=on`; accuracy measured on the mock)
 `subproto/compiler.py`, `engine.decide`, `subproto compile`, `bench/live.py` (third arm)
@@ -282,8 +284,9 @@ scoring logic forks.
 - **AC (I3):** the protected set — last `PROTECTED_TAIL=4` turns, `core` tools, and at most
   `EVIDENCE_MAX=3` graph-evidence reads under a `PROTECTED_MAX=60%` cap — is booked before
   the optimiser runs, and a budget that cannot fit it reports `over_budget` instead of
-  truncating: `subproto compile … --budget 1500` → *"over budget: protected set needs 4983
-  tok, budget is 1500 — the tail is sacred (I3), so nothing was cut"*.
+  truncating: `subproto compile … --budget 1500` prints its own header
+  *"subproto compile — over budget: nothing was cut"* and one reason line, *"! protected
+  set needs 4959 tok, budget is 1500 — the tail is sacred (I3)"*, and exits 1.
 - **AC (I6) — retention proof:** every drop names the joint decision that beat it
   (`value/token 0.002700 < kept floor 0.002988 (floor set by tool_result#9)`) and carries a
   reversible address `{request_id, body_sha, pointer, index}` into telemetry — six decimals
@@ -350,10 +353,11 @@ it. All three are local, key-free, and gated on two interpreters.
   excludes the candidate), so the flywheel tightens the next dataset without a labeller.
 - **AC — measured on running traffic (S35, fresh home, mock, n=17 requests, applied
   `tool_gate,compact`):** `evicted reads seen 14`, `regrettable drops 10 (enforced 10,
-  shadow 0)`, `4088 tokens were paid back for re-reads of the 10 drops that reached the
-  wire`, `implicit verdicts: keep 10`. Against the same run's `75,999 tok` saved by its 34
-  compiled decisions the payback is **5.4 %** of the saving — and the *same 10 drops* are
-  what the identical traffic prints in shadow mode (`enforced 0`, `0 tokens paid back`), so
+  shadow 0)`, `tokens paid back 4,088 (re-reads of the 10 drops that reached the wire)`, and
+  the verdict it came from priced on its own row: `implicit:re-read 4,088 (10 labels)`.
+  Against the same run's `75,999 tok` saved by its 34 compiled decisions the payback is
+  **5.4 %** of the saving — and the *same 10 drops* are
+  what the identical traffic prints in shadow mode (`enforced 0`, `tokens paid back 0`), so
   the detector is mode-stable and `SUBPROTO_APPLY` only changes who pays. The regret count is
   reported as 10, not as a 0: applying a compiler costs re-reads, and saying otherwise would
   be the pitch this project exists to avoid.

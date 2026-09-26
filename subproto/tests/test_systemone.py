@@ -155,8 +155,12 @@ def test_cli_models_lists_backends_and_marks_the_active_one(tmp_path, monkeypatc
     capsys.readouterr()
     assert cli.main(["models", "--home", str(tmp_path)]) == 0
     text = capsys.readouterr().out
-    assert "active System One backend: mlx_lora" in text
+    # The answer is a grid row, and the list repeats it with the same mark the
+    # version list uses — two spellings of "which one is answering" is how a page
+    # starts disagreeing with itself.
+    assert " backend  mlx_lora" in text
     assert "* mlx_lora" in text
+    assert len([l for l in text.splitlines() if l.startswith("  * ")]) == 1, text
 
 
 def test_model_flag_threads_from_the_parser_into_the_engine(tmp_path, monkeypatch):

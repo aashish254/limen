@@ -52,6 +52,38 @@ def test_engine_context_slot_with_graph(tmp_path, monkeypatch):
     assert any("retry.py" in t for t in targets)
 
 
+def test_engine_reads_a_cached_index_from_a_repo_directory(tmp_path):
+    """`up --slots --graph <repo>` is the natural thing to type, since every other
+    command takes a repository; graph_path then names the index it resolved to."""
+    import shutil
+    from subproto import graph
+
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "fixtures", "sample_repo")
+    repo = str(tmp_path / "repo")
+    shutil.copytree(src, repo)
+    graph.save(graph.build(repo), graph.index_path(repo))
+
+    eng = Engine(_cfg(tmp_path), graph_path=repo)
+    assert eng.graph is not None
+    assert eng.graph["file_count"] == 3
+    assert eng.graph_path == graph.index_path(repo)
+
+
+def test_engine_graph_path_is_only_ever_the_index_that_loaded(tmp_path, monkeypatch):
+    """The startup banner reads graph_path as "the index these decisions used", so a
+    directory with no cached index must leave it None rather than echo the argument."""
+    from subproto.config import Config
+
+    monkeypatch.delenv("SUBPROTO_GRAPH", raising=False)
+    monkeypatch.chdir(tmp_path)
+    empty = tmp_path / "no_index_here"
+    empty.mkdir()
+    eng = Engine(Config(source={"data_dir": str(tmp_path)}), graph_path=str(empty))
+    assert eng.graph is None
+    assert eng.graph_path is None
+
+
 def test_engine_falls_back_when_laya_unreachable(tmp_path):
     cfg = _cfg(tmp_path, laya_url="http://127.0.0.1:1")  # nothing listening
     eng = Engine(cfg)

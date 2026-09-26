@@ -202,6 +202,35 @@ def test_save_creates_missing_parent_dirs(tmp_path):
     assert graph.load(p)["file_count"] == g["file_count"]
 
 
+def test_load_takes_a_repo_directory_the_way_every_flag_does(tmp_path):
+    """`--graph <repo>` is the form people actually write, because `subproto graph`
+    and `subproto compile` both take a repository. A loader that accepted only the
+    index file answered it with IsADirectoryError."""
+    g = _g()
+    root = str(tmp_path / "repo")
+    graph.save(g, graph.index_path(root))
+    assert graph.load(root)["file_count"] == g["file_count"]
+    assert graph.index_for(root) == graph.index_path(root)
+    file = str(tmp_path / "graph.json")
+    assert graph.index_for(file) == file
+
+
+def test_cli_up_with_an_unreadable_graph_exits_instead_of_tracebacking(tmp_path, capsys):
+    from subproto import cli
+
+    bad = tmp_path / "not-a-graph.json"
+    bad.write_text(u"this is not json\n")
+    rc = cli.main(["up", "--slots", "--graph", str(bad),
+                   "--home", str(tmp_path / "home"), "--port", "8867"])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "the graph did not load" in out
+    # The path the reader handed over has to be on the page, and it has to be the
+    # only graph they are told about: a traceback names the frame, not the file.
+    assert str(bad) in out
+    assert "Traceback" not in out
+
+
 def test_cli_graph_missing_root_exits_cleanly(tmp_path, capsys):
     from subproto import cli
 

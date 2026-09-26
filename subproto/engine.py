@@ -60,9 +60,12 @@ class Engine:
     def __init__(self, config, graph_path=None):
         self.config = config
         self.graph = None
-        self.graph_path = graph_path
-        if graph_path and os.path.exists(graph_path):
+        # Only ever the index that was actually read: a banner that names a path
+        # the engine fell back from would claim an index the decisions did not use.
+        self.graph_path = None
+        if graph_path and os.path.exists(graph_mod.index_for(graph_path)):
             self.graph = graph_mod.load(graph_path)
+            self.graph_path = graph_mod.index_for(graph_path)
         elif os.environ.get("SUBPROTO_GRAPH"):
             p = os.path.abspath(os.environ["SUBPROTO_GRAPH"])
             if os.path.exists(p):

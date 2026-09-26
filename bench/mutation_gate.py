@@ -173,8 +173,8 @@ MUTANTS = [
      "    if not er or not er[\"regrettable_drops\"]:\n        return []"),
     ("S30-24 a human/traffic disagreement is not surfaced in the report",
      "subproto/report.py",
-     '        if cov.get("disagreements"):',
-     '        if False:'),
+     '    if verdicts and cov.get("disagreements"):',
+     '    if verdicts and False:'),
 
     # -------------------------------------------------------- cli.py: the two doors
     ("S30-25 `report --no-learn` still re-harvests", "subproto/cli.py",
@@ -408,7 +408,10 @@ TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
          "subproto/tests/test_dataset_split.py", "subproto/tests/test_report_sections.py",
          "subproto/tests/test_graph.py", "subproto/tests/test_compiler.py",
          "subproto/tests/test_versions.py", "subproto/tests/test_router.py",
-         "subproto/tests/test_systemone.py", "subproto/tests/test_retrain.py"]
+         "subproto/tests/test_systemone.py", "subproto/tests/test_retrain.py",
+         # The grid is a rule now: a state word printed without its meaning, or a page
+         # that only renders for a tty, is the same class of defect as a wrong count.
+         "subproto/tests/test_style.py"]
 
 
 def _run(label):

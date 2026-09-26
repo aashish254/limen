@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 
-from . import pricing, protocol
+from . import pricing, protocol, style as st
 from .heuristics import route_effort, tool_gate
 from .telemetry import CATEGORIES
 
@@ -244,7 +244,7 @@ def _verdict_of(labels, implicit, rid):
     return dataset._merge_verdicts((labels or {}).get(rid), implicit.get(rid))[0]
 
 
-def regret_section(er, cov=None):
+def regret_section(er, cov=None, color=False):
     """The eviction-regret block, as lines — shared by `report` and `learn` so the
     two commands cannot print different versions of the same measurement.
 
@@ -255,45 +255,53 @@ def regret_section(er, cov=None):
         return []
     cov = cov or {}
     verdicts = cov.get("verdicts") or {}
-    out = ["", "  eviction regret  (what the recorded traffic said about the drops)"]
+    out = ["", st.section("eviction regret",
+                          "(what the recorded traffic said about the drops)",
+                          color=color)]
     if cov:
-        out.append("    %d requests scanned: %d bodies readable, %d never stored; "
-                   "%d carry an implicit verdict" % (
-                       er["requests_with_decisions"], er["bodies_readable"],
-                       er["bodies_never_stored"], cov.get("covered_by_harvest", 0)))
-    out.append("    evicted reads seen %d" % er["evicted_reads_seen"])
-    out.append("    regrettable drops %d (enforced %d, shadow %d)" % (
-        er["regrettable_drops"], er["enforced"], er["shadow"]))
-    if er["regrettable_drops"]:
-        back = ""
-        if er["shadow"]:
-            back = ", while the %d shadow drop%s cost nothing because nothing was cut" % (
-                er["shadow"], "" if er["shadow"] == 1 else "s")
-        out.append("      %d tokens were paid back for re-reads of the %d drop%s "
-                   "that reached the wire%s" % (
-                       er["refetch_tok_paid"], er["enforced"],
-                       "" if er["enforced"] == 1 else "s", back))
-    else:
-        out.append("      nothing was re-read after it was cut, so nothing is owed "
-                   "back — that is a real 0, not a missing measurement")
-    out.append("    window: %d turns / %ds of recorded traffic, read at %s" % (
-        er["window_turns"], er["window_s"], er["harvested_at"]))
+        out.append(st.detail("requests scanned", er["requests_with_decisions"]))
+        out.append(st.prose("bodies readable %d, never stored %d, carrying an implicit "
+                            "verdict %d" % (
+                                er["bodies_readable"], er["bodies_never_stored"],
+                                cov.get("covered_by_harvest", 0)),
+                            indent=st.SUB_INDENT + 2, color=color))
+    out.append(st.detail("evicted reads seen", er["evicted_reads_seen"]))
+    out.append(st.detail("regrettable drops", er["regrettable_drops"],
+                         "enforced %d, shadow %d" % (er["enforced"], er["shadow"])))
+    out.append(st.detail("tokens paid back", er["refetch_tok_paid"],
+                         "re-reads of the %d drop%s that reached the wire" % (
+                             er["enforced"], "" if er["enforced"] == 1 else "s")))
+    if er["shadow"]:
+        out.append(st.prose("the %d shadow drop%s cost nothing: nothing was cut, so "
+                            "nothing had to be re-read" % (
+                                er["shadow"], "" if er["shadow"] == 1 else "s"),
+                            indent=st.SUB_INDENT + 2, color=color))
+    if not er["regrettable_drops"]:
+        out.append(st.prose("nothing was re-read after it was cut, so nothing is owed "
+                            "back — that is a real 0, not a missing measurement",
+                            indent=st.SUB_INDENT + 2, color=color))
+    out.append(st.detail("window", "%d turns" % er["window_turns"],
+                         "%ds of recorded traffic, read at %s" % (
+                             er["window_s"], er["harvested_at"])))
     actions = dict((src, row) for src, row in (er["by_source"] or {}).items())
     if actions:
-        out.append("    verdicts by signal: " + ", ".join(
-            "%s: %d label%s, %d tok" % (a, row["labels"], "" if row["labels"] == 1 else "s",
-                                        row["regret_tok"])
-            for a, row in sorted(actions.items())))
-    else:
-        out.append("    verdicts by signal: none — no drop was contradicted")
+        out.append(st.sub("verdicts by signal", indent=st.SUB_INDENT, color=color))
+    for a, row in sorted(actions.items()):
+        # The price is the number; how many verdicts it came from is its qualifier.
+        out.append(st.detail(a, row["regret_tok"], "%d label%s" % (
+            row["labels"], "" if row["labels"] == 1 else "s")))
+    if not actions:
+        out.append(st.detail("verdicts by signal", "none"))
+        out.append(st.note("no drop was contradicted", indent=st.SUB_INDENT + 2,
+                           color=color))
     if verdicts:
-        out.append("    implicit verdicts: " + ", ".join(
-            "%s %d" % (v, n) for v, n in sorted(verdicts.items())))
-        if cov.get("disagreements"):
-            out.append("    %d request%s where a human verdict and the traffic "
-                       "disagree (human wins)" % (
-                           cov["disagreements"],
-                           "" if cov["disagreements"] == 1 else "s"))
+        out.append(st.sub("implicit verdicts by kind", indent=st.SUB_INDENT,
+                          color=color))
+    for v, n in sorted(verdicts.items()):
+        out.append(st.detail(v, n))
+    if verdicts and cov.get("disagreements"):
+        out.append(st.detail("human/traffic disagree", cov["disagreements"],
+                             "the human verdict wins"))
     return out
 
 
@@ -345,16 +353,19 @@ def opportunity_gaps(summary):
     ]
 
 
-def render_text(summary, since=None, until=None):
+def render_text(summary, since=None, until=None, color=False):
     t = summary["totals"] or {}
     n = int(t.get("n") or 0)
     lines = []
-    lines.append("subproto report  ·  %s requests%s" % (
-        n, ("  ·  %s..%s" % (since, until)) if (since or until) else ""))
+    lines.append(st.header("report", "%s requests" % n,
+                           *(["%s..%s" % (since, until)] if (since or until) else []),
+                           color=color))
     if not n:
         lines.append("")
-        lines.append("No telemetry yet. Point an agent at the proxy:")
-        lines.append("  ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude")
+        lines.append(st.prose("No telemetry yet. Point an agent at the proxy:",
+                              indent=0, color=color))
+        lines.append(st.action("ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude",
+                               color=color))
         return "\n".join(lines)
     fin = int(t.get("in_tok") or 0) + int(t.get("cw_tok") or 0)
     cin = int(t.get("cr_tok") or 0)
@@ -362,93 +373,131 @@ def render_text(summary, since=None, until=None):
     cost = float(t.get("cost") or 0.0)
     ttft = [r["ttfb_ms"] for r in summary["requests"] if r.get("ttfb_ms")]
     lines.append("")
-    lines.append("  billed input        %12d tok" % fin)
-    lines.append("  cached input        %12d tok  (%.1f%%)" % (
-        cin, 100.0 * cin / max(1, fin + cin)))
-    lines.append("  output              %12d tok" % out)
-    lines.append("  spend               %12s" % ("$%.2f" % cost))
-    lines.append("  failures            %12d" % int(t.get("fails") or 0))
+    lines.append(_metric("billed input", fin, "tok", color=color))
+    lines.append(_metric("cached input", cin, "tok", color=color,
+                         tail="%.1f%%" % (100.0 * cin / max(1, fin + cin))))
+    lines.append(_metric("output", out, "tok", color=color))
+    lines.append(_metric("spend", "$%.2f" % cost, color=color))
+    lines.append(_metric("failures", int(t.get("fails") or 0), color=color))
     if ttft:
         ttft.sort()
-        lines.append("  time to first token p50 %4dms  p95 %5dms" % (
-            _percentile(ttft, 0.50), _percentile(ttft, 0.95)))
+        lines.append(_metric("time to first token", "p50 %dms  p95 %dms" % (
+            _percentile(ttft, 0.50), _percentile(ttft, 0.95)), color=color))
     dl = summary.get("decision_latency") or {}
     if dl.get("n"):
-        lines.append("  slot decision latency p50 %.1fms  p95 %.1fms  (n=%d)" % (
-            dl["p50"], dl["p95"], dl["n"]))
+        lines.append(_metric("slot decision latency", "p50 %.1fms  p95 %.1fms" % (
+            dl["p50"], dl["p95"]), color=color, tail="n=%d" % dl["n"]))
     chr_ = summary.get("cache_hit_rate") or {}
     if chr_.get("hit_rate") is not None:
-        lines.append("  cache hit rate      %12.1f%%  (%d cached / %d input tok)" % (
-            100.0 * chr_["hit_rate"], chr_["cached_in"],
-            chr_["cached_in"] + chr_["fresh_in"]))
+        lines.append(_metric("cache hit rate", "%.1f%%" % (100.0 * chr_["hit_rate"]),
+                             color=color,
+                             tail="%s cached / %s input tok" % (
+                                 st.format_num(chr_["cached_in"]),
+                                 st.format_num(chr_["cached_in"] + chr_["fresh_in"]))))
     lines.append("")
-    lines.append("  where the input tokens came from (request characters)")
+    lines.append(st.section("where the input tokens came from",
+                            "(request characters)", indent=2, color=color))
     cats = summary["cat_chars"]
     ctotal = max(1, sum(cats.values()))
     for k in CATEGORIES:
         v = cats.get(k, 0)
-        lines.append("    %-18s %8.1f%%  %10d tok est" % (
-            k, 100.0 * v / ctotal, int(v / 3.6)))
+        lines.append(st.table(k, ("%.1f%%" % (100.0 * v / ctotal), "", 7),
+                              (int(v / 3.6), "tok est", 10), name_w=20, color=color))
     lines.append("")
-    lines.append("  by model")
+    lines.append(st.section("by model", indent=2, color=color))
     for r in summary["by_model"][:8]:
-        lines.append("    %-34s %4d req  in %9d  cached %6.0f%%  $%.2f" % (
-            (r.get("model") or "?")[:34], r["n"], int(r.get("fresh_in") or 0),
-            100.0 * (r.get("cached_in") or 0) / max(1, (r.get("fresh_in") or 0) + (r.get("cached_in") or 0)),
-            float(r.get("cost") or 0)))
+        lines.append(st.table(
+            (r.get("model") or "?")[:34],
+            (r["n"], "req", 5),
+            (int(r.get("fresh_in") or 0), "in", 9),
+            ("%.1f%%" % (100.0 * (r.get("cached_in") or 0)
+                         / max(1, (r.get("fresh_in") or 0)
+                               + (r.get("cached_in") or 0))), "cached", 6),
+            ("$%.2f" % float(r.get("cost") or 0), "", 6),
+            name_w=36, color=color))
     if summary["by_client"]:
         lines.append("")
-        lines.append("  by client")
+        lines.append(st.section("by client", indent=2, color=color))
         for r in summary["by_client"][:6]:
-            lines.append("    %-16s %4d req  $%.2f" % (
-                r["client"] or "?", r["n"], float(r.get("cost") or 0)))
+            lines.append(st.table(r["client"] or "?", (r["n"], "req", 5),
+                                  ("$%.2f" % float(r.get("cost") or 0), "", 6),
+                                  name_w=18, color=color))
     opp = cache_opportunity(summary["by_model"])
     if opp["by_model"]:
         lines.append("")
-        lines.append("  cache-stability headroom (upper bound, not a promise)")
+        lines.append(st.section("cache-stability headroom",
+                                "(upper bound, not a promise)", indent=2, color=color))
         for d in opp["by_model"]:
-            lines.append("    %-34s cached %5.1f%% -> %4.0f%%  reclaim %9d tok  $%.2f" % (
-                d["model"][:34], 100 * d["cached_ratio"], 100 * d["target"],
-                d["reclaimable_in_tok"], d["usd"]))
-        lines.append("    total headroom  $%.2f" % opp["usd"])
+            lines.append(st.table(
+                d["model"][:34],
+                ("%.1f%%" % (100 * d["cached_ratio"]), "cached", 6),
+                ("%.0f%%" % (100 * d["target"]), "-> to", 4),
+                (d["reclaimable_in_tok"], "tok", 9),
+                ("$%.2f" % d["usd"], "", 6), name_w=36, color=color))
+        lines.append(st.detail("total headroom", "$%.2f" % opp["usd"],
+                               label_w=16, color=color))
     lines.append("")
-    lines.append("  slot headroom")
+    lines.append(st.section("slot headroom", indent=2, color=color))
     for g in opportunity_gaps(summary):
-        lines.append("    %-10s %9d tok total  %6d/req  %5.1f%% of input" % (
-            g["slot"], g["est_tok_total"], g["est_tok_per_req"], 100 * g["share_of_input"]))
-        lines.append("               %s" % g["note"])
+        lines.append(st.table(
+            g["slot"], (g["est_tok_total"], "tok", 9),
+            (g["est_tok_per_req"], "/req", 6),
+            ("%.1f%%" % (100 * g["share_of_input"]), "of input", 5),
+            name_w=12, color=color))
+        lines.append(st.note(g["note"], indent=st.SUB_INDENT + 2, color=color))
     sp = summary.get("slot_precision")
     if sp:
         lines.append("")
-        lines.append("  slot precision (from `subproto label` verdicts; approval = good/(good+bad))")
+        lines.append(st.section("slot precision", "(from `subproto label` verdicts)",
+                                indent=2, color=color))
+        lines.append(st.note("approval = good/(good+bad)", indent=st.SUB_INDENT,
+                             color=color))
         for slot, m in sorted(sp.items()):
             ar = m["approval_rate"]
-            lines.append("    %-10s labelled %3d   good %3d  bad %3d  uncertain %3d   approval %s" % (
-                slot, m["labelled"], m["good"], m["bad"], m["uncertain"],
-                ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
+            lines.append(st.table(
+                slot, (m["labelled"], "labelled", 4), (m["good"], "good", 4),
+                (m["bad"], "bad", 4), (m["uncertain"], "uncertain", 4),
+                ((("%.1f%%" % (100 * ar)) if ar is not None else "n/a"), "approval", 6),
+                name_w=12, color=color))
     bv = summary.get("by_version") or {}
     if bv:
         lines.append("")
-        lines.append("  by model version (which checkpoint answered; `models.json` owns "
-                     "the list)")
+        lines.append(st.section("by model version",
+                                "(which checkpoint answered; `models.json` owns the list)",
+                                indent=2, color=color))
         for version, m in sorted(bv.items(), key=lambda kv: -kv[1]["decisions"]):
             ar = m["approval_rate"]
-            lines.append("    %-22s %5d decisions  %4d req  saved %8d tok  p50 %s ms  "
-                         "approval %s" % (
-                             version[:22], m["decisions"], m["requests"], m["saved_tok"],
-                             ("%.1f" % m["p50_decision_ms"])
-                             if m["p50_decision_ms"] is not None else "-",
-                             ("%.1f%%" % (100 * ar)) if ar is not None else "n/a"))
-            lines.append("           slots %s · backends %s" % (
+            lines.append(st.table(
+                version[:22],
+                (m["decisions"], "decisions", 5),
+                (m["saved_tok"], "tok saved", 8),
+                ((("%.1f" % m["p50_decision_ms"]) if m["p50_decision_ms"] is not None
+                  else "-"), "ms p50", 5),
+                ((("%.1f%%" % (100 * ar)) if ar is not None else "n/a"), "approval", 6),
+                name_w=22, color=color))
+            lines.append(st.note("slots %s — backends %s" % (
                 ", ".join("%s=%d" % kv for kv in sorted(m["slots"].items())),
-                ", ".join("%s=%d" % kv for kv in sorted(m["backends"].items()))))
+                ", ".join("%s=%d" % kv for kv in sorted(m["backends"].items()))),
+                indent=st.SUB_INDENT + 2, color=color))
     lines.extend(regret_section(summary.get("eviction_regret"),
-                           summary.get("implicit_coverage")))
+                                summary.get("implicit_coverage"), color=color))
     lines.append("")
-    lines.append("  run `subproto audit` to see what the slots would drop, "
-                 "`subproto learn` to let the traffic judge them, and "
-                 "`subproto export` to build the fine-tuning set.")
+    lines.append(st.prose("run `subproto audit` to see what the slots would drop, "
+                          "`subproto learn` to let the traffic judge them, and "
+                          "`subproto export` to build the fine-tuning set.",
+                          indent=0, color=color))
     return "\n".join(lines)
+
+
+def _metric(label, value, unit=None, tail=None, color=False):
+    """One line of the readout: label in the column, number right-aligned, unit
+    and qualifier in dim so the figure is the only loud thing."""
+    body = st.field(value, color=color)
+    if unit:
+        body += st.unit(unit, color=color)
+    if tail:
+        body += st.unit("(%s)" % tail, color=color)
+    return st.row(label, body, label_w=st.METRIC_W, color=color, styled=True)
 
 
 def render_json(summary):

@@ -32,6 +32,8 @@ import subprocess
 import sys
 import time
 
+from . import style
+
 MIN_PER_SLOT = 40       # rows per slot
 MIN_ANSWERS_PER_SLOT = 8   # per slot, in *both* answers — the tighter constraint
 MIN_DAYS = 7
@@ -440,25 +442,32 @@ def run_command(command_line, chatter_to_stderr=False):
         return 127
 
 
-def render_text(state, command_line, ran=None):
+def render_text(state, command_line, ran=None, color=False):
     """Everything the decision was made from, then the decision. The numbers a
-    `ready` claim rests on stay on the page beside it."""
+    `ready` claim rests on stay on the page beside it.
+
+    One label column (style.METRIC_W) for the whole page, so `split`, `examples`,
+    `per slot` and `decision` all hang at the same content column.
+    """
+    st = style
     t = state["thresholds"]
-    lines = ["subproto retrain  ·  cadence policy  ·  %s" % state["at"], ""]
-    lines.append("  split         %s…" % state["split_sha"][:12])
-    lines.append("  examples      %d train / %d val  (git %s)" % (
-        state["n_train"], state["n_val"], state.get("git_sha") or "none"))
+    lines = [st.header("retrain", "cadence policy", state["at"], color=color), ""]
+    lines.append(st.row("split", "%s…" % state["split_sha"][:12], color=color))
+    lines.append(st.row("examples", "%d train / %d val" % (
+        state["n_train"], state["n_val"]), color=color))
+    lines.append(st.note("git %s" % (state.get("git_sha") or "none"), color=color))
     if state["last_run"]:
         lr = state["last_run"]
-        lines.append("  last run      %s  %s  (%s days ago, split %s…)" % (
-            lr.get("at"), lr.get("version"), lr.get("days_ago"),
-            str(lr.get("split_sha") or "")[:8]))
-        lines.append("                status: %s" % lr.get("status"))
+        lines.append(st.row("last run", "%s  %s" % (lr.get("at"), lr.get("version")),
+                            color=color))
+        lines.append(st.note("%s days ago, split %s… — %s" % (
+            lr.get("days_ago"), str(lr.get("split_sha") or "")[:8],
+            lr.get("status")), color=color))
     else:
-        lines.append("  last run      none recorded")
+        lines.append(st.row("last run", "none recorded", color=color))
     lines.append("")
-    lines.append("  per slot      (floor %d rows, %d in both answers)" % (
-        t["min_per_slot"], t["min_answers"]))
+    lines.append(st.section("per slot", "(floor %d rows, %d in both answers)" % (
+        t["min_per_slot"], t["min_answers"]), indent=style.INDENT, color=color))
     for slot, m in sorted(state["slots"].items()):
         flags = []
         if m["total"] < t["min_per_slot"]:
@@ -466,35 +475,53 @@ def render_text(state, command_line, ran=None):
         for a in ("keep", "drop"):
             if m[a] < t["min_answers"]:
                 flags.append("only %d %s" % (m[a], a))
-        lines.append("    %-10s %6d rows  %4d keep %4d drop   %s" % (
-            slot, m["total"], m["keep"], m["drop"],
-            "ok" if not flags else "; ".join(flags)))
+        # The verdict leads: this table is read as "which slot is holding the
+        # decision back", and the counts are the evidence beside it. The specific
+        # deficit is spelled out in the `decision` block below.
+        verdict = st.state(st.OK, color=color) if not flags else \
+            st.state(st.SHORT, color=color)
+        lines.append(st.table(
+            slot, (verdict, "", -6), (m["total"], "rows", 6), (m["keep"], "keep", 5),
+            (m["drop"], "drop", 5), name_w=12, color=color))
     if not state["slots"]:
-        lines.append("    (nothing to count)")
+        lines.append(st.note("nothing to count", color=color))
     tc = state["toolchain"]
     lines.append("")
-    lines.append("  toolchain     trainer %s" % ("present" if tc["trainer"] else "MISSING"))
-    lines.append("                mlx + mlx-lm %s" % ("installed" if tc["mlx"] else "not installed"))
-    lines.append("                base %s  %s" % (
-        tc["model_dir"], "present" if tc["model_present"] else "absent (T16)"))
+    lines.append(st.section("toolchain", indent=style.INDENT, color=color))
+    lines.append(st.row("trainer", st.state(st.PRESENT if tc["trainer"]
+                                            else st.MISSING, color=color),
+                        color=color, styled=True))
+    lines.append(st.row("mlx + mlx-lm", st.state(st.INSTALLED if tc["mlx"]
+                                                 else st.MISSING, color=color),
+                        color=color, styled=True))
+    lines.append(st.row("base", "%s  %s%s" % (
+        tc["model_dir"], st.state(st.PRESENT if tc["model_present"] else st.MISSING,
+                                  color=color),
+        "" if tc["model_present"] else st.unit("(T16)", color=color)),
+        color=color, styled=True))
     for note in state["notes"]:
-        lines.append("  note          %s" % note)
+        lines.append(st.row("note", st.paint(note, st.DIM, color),
+                            color=color, styled=True))
     lines.append("")
     if state["ready"]:
-        lines.append("  decision      READY")
+        lines.append(st.row("decision", st.state(st.READY, color=color),
+                            color=color, styled=True))
     else:
-        lines.append("  decision      NOT READY — %d reason%s" % (
-            len(state["reasons"]), "" if len(state["reasons"]) == 1 else "s"))
+        lines.append(st.row("decision", "%s — %d reason%s" % (
+            st.state(st.NOT_READY, color=color), len(state["reasons"]),
+            "" if len(state["reasons"]) == 1 else "s"), color=color, styled=True))
         for r in state["reasons"]:
-            lines.append("                · %s" % r)
+            lines.append(st.reason(r, indent=style.CONTENT, color=color))
     lines.append("")
-    lines.append("  the command this would run:")
-    lines.append("    %s" % command_line)
+    lines.append(st.section("the command this would run", indent=style.INDENT,
+                            color=color))
+    lines.append(st.action(command_line, indent=style.SUB_INDENT, color=color))
     if ran is not None:
         lines.append("")
-        lines.append("  ran it: exit %s" % ran)
+        lines.append(st.row("ran it", "exit %s" % ran, color=color))
     else:
         lines.append("")
-        lines.append("  nothing was run. --run starts the trainer once READY.")
+        lines.append(st.prose("nothing was run. --run starts the trainer once ready.",
+                              indent=style.INDENT, color=color))
     return "\n".join(lines)
 

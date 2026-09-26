@@ -47,8 +47,8 @@ def test_learn_writes_the_store_and_its_text_prints_the_harvest(tmp_path, capsys
     assert "implicit:re-read" in out
     assert _printed(out, "evicted reads seen") == [2], "both turns cut a read"
     assert _printed(out, "regrettable drops") == [1, 1, 0], "1 of 2, enforced"
-    assert "2954 tokens were paid back" in out,                  "the re-read's price must be the number the harvest holds"
-    assert _printed(out, "verdicts by signal") == [1, 2954],     "the same price, attributed to its signal"
+    assert _printed(out, "tokens paid back") == [2954, 1],       "the re-read's price must be the number the harvest holds, priced over the 1 enforced drop"
+    assert _printed(out, "implicit:re-read") == [2954, 1],      "the same price, attributed to its signal"
     stored = implicit.load_implicit(config)
     assert list(stored) == ["1"], "the blame sits on the turn that cut the read"
     label = list(stored["1"]["targets"].values())[0]
@@ -71,7 +71,7 @@ def test_learn_dry_run_writes_nothing(tmp_path, capsys):
     config, telemetry = _re_read_home(tmp_path)
     cli.main(["learn", "--home", str(tmp_path / "home"), "--dry-run"])
     out = capsys.readouterr().out
-    assert "--dry-run: nothing written" in out
+    assert "written  nothing  (--dry-run)" in out
     assert not os.path.exists(implicit.implicit_path(config))
     assert implicit.load_implicit(config) == {}
     telemetry.close()
@@ -108,7 +108,10 @@ def test_a_second_learn_replaces_the_store_only_when_the_harvest_changed(tmp_pat
     assert second["summary"]["already_stored"] == 1 == second["summary"]["stored"]
     capsys.readouterr()
     cli.main(["learn", "--home", str(tmp_path / "home")])
-    assert "nothing new to store" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "written  nothing new" in out
+    assert "already holds 1 request and was left as it is" in out, \
+        "the page says what is in the store it did not touch"
 
 
 def test_a_harvest_that_found_nothing_creates_no_store_at_all(tmp_path):
@@ -248,11 +251,27 @@ def test_report_prints_eviction_regret_with_its_honest_split(tmp_path, capsys):
     text = report.render_text(summary)
     assert "eviction regret" in text
     assert _printed(text, "regrettable drops") == [1, 1, 0]
-    assert "2954 tokens were paid back" in text
-    assert "verdicts by signal: implicit:re-read: 1 label, 2954 tok" in text
+    assert _printed(text, "tokens paid back") == [2954, 1]
+    assert "verdicts by signal" in text
+    assert _printed(text, "implicit:re-read") == [2954, 1],      "one label, priced at the re-read"
     cov = summary["implicit_coverage"]
     assert cov["covered_by_harvest"] == 1 and cov["coverage"] == 0.5
     assert cov["covered_by_human"] == 0 and cov["disagreements"] == 0
+    telemetry.close()
+
+
+def test_the_report_says_out_loud_when_the_human_and_the_traffic_disagree(tmp_path):
+    """The row is the only place a reader learns that the two stores gave opposite
+    answers about the same drop; without it the report quietly keeps one side."""
+    config, telemetry = _re_read_home(tmp_path)
+    harvest = implicit.run(config, telemetry)
+    dataset.save_labels(config, {"1": {"compact": "bad"}})
+    summary = report.summarize(telemetry, labels=dataset.load_labels(config),
+                               implicit=harvest)
+    assert summary["implicit_coverage"]["disagreements"] == 1
+    text = report.render_text(summary)
+    assert _printed(text, "human/traffic disagree") == [1]
+    assert "the human verdict wins" in text
     telemetry.close()
 
 
@@ -265,8 +284,8 @@ def test_a_shadow_only_harvest_pays_back_zero_tokens(tmp_path):
     er = report.eviction_regret(harvest)
     assert er["refetch_tok_paid"] == 0 and er["enforced"] == 0 and er["shadow"] == 1
     text = report.render_text(report.summarize(telemetry, implicit=harvest))
-    assert "0 tokens were paid back" in text
-    assert "while the 1 shadow drop cost nothing because nothing was cut" in text
+    assert _printed(text, "tokens paid back") == [0, 0],      "a shadow drop is billed at 0, and its enforced count says why"
+    assert "the 1 shadow drop cost nothing" in text
     telemetry.close()
 
 

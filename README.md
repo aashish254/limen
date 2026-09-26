@@ -191,13 +191,25 @@ over `{message, tool spec, file note}` harvested from the same heuristics:
 ```bash
 subproto compile "refactor the retry path in app/payments/retry.py" \
   --graph subproto/tests/fixtures/sample_repo --budget 6000
-#  budget      6,000 tok  (pool was 11,313 tok)
-#  spent       5,945 tok  (-47.4%)
-#  protected   4,959 tok booked before the optimiser ran
-#  message     11 kept / 3 dropped      tool  12 kept / 12 dropped      file  3 kept / 0
-#
-#  what was cut, and what beat it:
-#    message  tool_result#7   440 tok  value/token 0.002700 < kept floor 0.002988 (floor set by too…
+```
+```
+subproto compile — compiled turn, one budget over messages, tools and files
+
+indexing subproto/tests/fixtures/sample_repo …
+  3 files, 0 import edges, 0.0s
+                       task  refactor the retry path in app/payments/retry.py
+                     budget      6,000 tok   pool was 11,313 tok
+                      spent      5,945 tok   −47.4%
+                  protected      4,959 tok
+                             booked before the optimiser ran
+
+  message                     11 kept       3 dropped
+  tool                        12 kept      12 dropped
+  file                         3 kept       0 dropped
+
+  what was cut, and what beat it
+    message   tool_result#7                440 tok value/token 0.002700 < kept floor 0.002988
+    …
 ```
 
 (`--graph` takes your repo *or* a saved index; the path above is this repo's own test
@@ -208,7 +220,9 @@ telemetry, and the last 4 turns / core tools are booked before the optimiser run
 the protected set alone doesn't fit, it says so rather than truncating your tail:
 
 ```
-over budget: protected set needs 4959 tok, budget is 1500 — the tail is sacred (I3), so nothing was cut
+subproto compile — over budget: nothing was cut
+
+  ! protected set needs 4959 tok, budget is 1500 — the tail is sacred (I3)
 ```
 
 Why bother, measured (see [Benchmark](#benchmark) for the repro command): **+17.0 pp
@@ -378,9 +392,9 @@ drop the wire disagreed with — content that was cut and later re-read. On a fr
 with `SUBPROTO_COMPILE=on SUBPROTO_APPLY=tool_gate,compact` it printed:
 
 ```
-evicted reads seen 14
-regrettable drops 10 (enforced 10, shadow 0)
-  4088 tokens were paid back for re-reads of the 10 drops that reached the wire
+         evicted reads seen            14
+          regrettable drops            10  (enforced 10, shadow 0)
+           tokens paid back         4,088  (re-reads of the 10 drops that reached the wire)
 ```
 
 That is the accuracy side of a cut, measured rather than argued: the same 34 compiled
@@ -396,10 +410,11 @@ finished run, a slot under 40 rows, an answer under 8 examples, fewer than 7 day
 clock:
 
 ```
-  per slot      (floor 40 rows, 8 in both answers)
-    compact       209 rows   177 keep   32 drop   ok
-    tool_gate     390 rows   206 keep  184 drop   ok
-  decision      READY
+  per slot  (floor 40 rows, 8 in both answers)
+    compact      ok        209 rows   177 keep    32 drop
+    tool_gate    ok        390 rows   206 keep   184 drop
+
+        decision  ready
 ```
 
 It runs nothing unless `--run` says so, `training_history.json` records every attempt —
@@ -417,6 +432,19 @@ command that cannot honour the run says so instead of pretending to train.
    your provider, exactly as it does today.
 4. **The dataset is the moat.** Usage compounds into a routing-decision corpus that
    nobody else has — the thing that makes the tiny model beat the zero-shot baseline.
+5. **A page has to survive a paste.** Every readout is printed through
+   `subproto/style.py` on one grid: a label column and a number column, no box drawing
+   and no rules (a frame sized for 80 columns is a frame that breaks in an issue
+   thread), a long line only for a path or a command you are meant to copy, and colour
+   only ever on a state word — `ok`, `present`, `short`, `missing`. Red means broken,
+   never "this number is interesting". Strip the escapes from the coloured page and you
+   get the plain page back character for character, so a paste into a README loses the
+   hue and keeps every meaning; `--color`/`--no-color` outrank the terminal heuristics
+   when you want a screenshot or a clean paste. `subproto/tests/test_style.py` walks the
+   pages and fails on a hue that is not a state, a box, a sentence wider than the page,
+   or a readout that reshuffles its own rows between two identical runs. `audit`,
+   `export` and `split` sit outside it deliberately: their stdout is JSON for `jq`, and
+   a design system does not own a pipe.
 
 ## Roadmap
 

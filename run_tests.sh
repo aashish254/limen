@@ -46,7 +46,7 @@ run_suite() {
   SUBPROTO_HOME="$DH" SUBPROTO_COMPILE=on "$py" -m subproto demo --port "$(port)" --slots >/dev/null
   expect "eviction regret" "$py" -m subproto learn --home "$DH"
   "$py" -m subproto learn --home "$DH" --json >/dev/null && echo "ok: learn --json"
-  expect "nothing written" "$py" -m subproto learn --home "$DH" --dry-run
+  expect "written  nothing" "$py" -m subproto learn --home "$DH" --dry-run
   expect "left as it is" "$py" -m subproto learn --home "$DH"
   expect "eviction regret" "$py" -m subproto report --home "$DH"
   if "$py" -m subproto report --home "$DH" --no-learn | grep -q "eviction regret"; then
@@ -80,14 +80,16 @@ run_suite() {
   SUBPROTO_HOME="$RH" SUBPROTO_APPLY=tool_gate,compact \
     "$py" -m subproto demo --port "$(port)" --slots >/dev/null
   "$py" -m subproto learn --home "$RH" >/dev/null
-  expect "decision      NOT READY" "$py" -m subproto retrain --home "$RH" --min-per-slot 99999
+  expect "decision  not ready" "$py" -m subproto retrain --home "$RH" --min-per-slot 99999
   if [ -e "$RH/training_history.json" ]; then
     echo "GATE FAILED: a plain status check wrote a cadence record" >&2; exit 1
   fi
   echo "ok: retrain with no flag records nothing"
-  expect "planned:" "$py" -m subproto retrain --home "$RH" --record --min-per-slot 99999
+  expect "record  planned" "$py" -m subproto retrain --home "$RH" --record --min-per-slot 99999
+  [ -e "$RH/training_history.json" ] || { echo "GATE FAILED: --record printed a row it did not write" >&2; exit 1; }
+  echo "ok: --record wrote the log it named"
   FLOOR="--min-per-slot 40 --min-answers 2 --min-days 0"
-  expect "decision      READY" "$py" -m subproto retrain --home "$RH" $FLOOR
+  expect "decision  ready" "$py" -m subproto retrain --home "$RH" $FLOOR
   RC=0
   "$py" -m subproto retrain --home "$RH" --run --json $FLOOR > "$RH/retrain.json" || RC=$?
   "$py" - "$RH" "$RC" <<'PYGATE'
@@ -115,7 +117,7 @@ PYGATE
     *) echo "GATE FAILED: the run page did not verify its own split: $OUT" >&2; exit 1 ;;
   esac
   case "$OUT" in
-    *"ran it: exit"*) ;; *) echo "GATE FAILED: the page hid the trainer's exit: $OUT" >&2; exit 1 ;;
+    *"ran it  exit"*) ;; *) echo "GATE FAILED: the page hid the trainer's exit: $OUT" >&2; exit 1 ;;
   esac
   "$py" - "$RH" <<'PYGATE'
 import json, os, sys

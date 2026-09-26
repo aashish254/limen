@@ -163,7 +163,7 @@ def test_the_printed_floor_is_the_floor_the_code_used(tmp_path):
     state = _state(tmp_path, rows, min_per_slot=40, min_answers=8)
     text = retrain.render_text(state, "cmd")
     assert "floor 40 rows, 8 in both answers" in text
-    assert "38 short" in text
+    assert "tool_gate short 38" in text
 
 
 # ---------------------------------------------------------------- the cooldown
@@ -336,7 +336,7 @@ def test_the_toolchain_is_read_from_the_machine_not_wished_for(tmp_path):
     assert toolchain["mlx"] is False
     state = _state(tmp_path, _rows(4))
     assert state["toolchain"]["mlx"] is False
-    assert "mlx + mlx-lm not installed" in retrain.render_text(state, "cmd")
+    assert "mlx + mlx-lm  missing" in retrain.render_text(state, "cmd")
     assert retrain.record(state, "refused")["toolchain"]["mlx"] is False
 
 
@@ -351,8 +351,8 @@ def test_the_page_prints_the_numbers_the_decision_rests_on(tmp_path):
     rows = _rows(4)
     state = _state(tmp_path, rows)
     text = retrain.render_text(state, "python3.11 train/finetune_mlx.py --train x")
-    assert "decision      READY" in text
-    assert "tool_gate       8 rows     4 keep    4 drop   ok" in text
+    assert "decision  ready" in text
+    assert "tool_gate    ok          8 rows     4 keep     4 drop" in text
     assert "nothing was run" in text
     assert "python3.11 train/finetune_mlx.py" in text
 
@@ -360,13 +360,14 @@ def test_the_page_prints_the_numbers_the_decision_rests_on(tmp_path):
 def test_a_refusal_prints_every_reason_instead_of_just_the_word_no(tmp_path):
     state = _state(tmp_path, _rows(1, slots=("tool_gate",)), min_per_slot=8)
     text = retrain.render_text(state, "cmd")
-    assert "NOT READY" in text
-    assert "· " in text and "short" in text
+    assert "decision  not ready — 2 reasons" in text
+    assert "! under 8 examples per slot: tool_gate short 6" in text
+    assert "! under 2 in both answers: tool_gate drop short 1, keep short 1" in text
 
 
 def test_a_run_prints_the_exit_it_got(tmp_path):
     state = _state(tmp_path, _rows(4))
-    assert "ran it: exit 4" in retrain.render_text(state, "cmd", ran=4)
+    assert "ran it  exit 4" in retrain.render_text(state, "cmd", ran=4)
 
 
 def test_the_page_distinguishes_no_trainer_from_no_weights(tmp_path):
@@ -376,9 +377,9 @@ def test_the_page_distinguishes_no_trainer_from_no_weights(tmp_path):
     state["toolchain"] = {"trainer": False, "mlx": False,
                           "model_dir": "/x/laya-base", "model_present": False}
     text = retrain.render_text(state, "cmd")
-    assert "trainer MISSING" in text
-    assert "mlx + mlx-lm not installed" in text
-    assert "absent (T16)" in text
+    assert "trainer  missing" in text
+    assert "mlx + mlx-lm  missing" in text
+    assert "missing (T16)" in text
 
 
 # ---------------------------------------------------------------- what it must not do
@@ -507,7 +508,7 @@ def test_a_plain_call_prints_the_page_and_touches_nothing(tmp_path, capsys):
     _traffic(tmp_path)
     assert _cli(tmp_path) == 0
     out = capsys.readouterr().out
-    assert "subproto retrain" in out and "the command this would run:" in out
+    assert "subproto retrain" in out and "the command this would run" in out
     assert not os.path.exists(tmp_path / "training_history.json")
     assert not os.path.exists(tmp_path / "training")
 
@@ -532,7 +533,9 @@ def test_a_ready_run_trains_on_the_split_whose_hash_it_printed(tmp_path, capsys)
     assert _cli(tmp_path, "--run", *READY) == 1
     out = capsys.readouterr().out
     assert "same rows as the page" in out, out
-    assert "wrote the split it measured" in out
+    assert retrain.fingerprint_rows([str(tmp_path / "training" / "train.jsonl"),
+                                     str(tmp_path / "training" / "val.jsonl")])[:12] in out, \
+        "the page prints the fingerprint of what it wrote, not just a claim"
     assert (tmp_path / "training" / "train.jsonl").exists()
     row = json.load(open(str(tmp_path / "training_history.json")))[-1]
     assert row["status"] == "ran" and row["exit"] != 0 and row["version"] == "lora-v1"

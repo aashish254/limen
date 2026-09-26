@@ -249,4 +249,4 @@ def test_cli_models_reports_the_router_plan(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     assert cli.main(["models", "--home", str(tmp_path)]) == 0
     text = capsys.readouterr().out
-    assert "router:  off" in text
+    assert "router  off" in text, "the page must say the router is not deciding"

@@ -14,10 +14,8 @@ import sys
 import time
 
 from . import pricing
+from . import style as _style
 from .telemetry import CATEGORIES
-
-# ANSI: only emitted when the target is a TTY; render() stays pure otherwise.
-_GREEN, _DIM, _BOLD, _RESET = "\033[32m", "\033[2m", "\033[1m", "\033[0m"
 
 
 def _savings_from_decisions(decisions_json):
@@ -64,38 +62,64 @@ def snapshot(tel, mode="auto"):
 
 
 def render(snap, color=False):
-    def c(code, s):
-        return (code + s + _RESET) if color else s
+    """The meter, on the same grid as every other surface.
+
+    This used to draw a fixed 46-column box (and a `+---+` one when colour was
+    off). A frame is the wrong object here: the number is the point, and a box
+    wraps into noise the moment it is pasted into a README or a narrow terminal.
+    """
     n = snap.get("n", 0)
-    lines = []
-    top = "┌" + "─" * 46 + "┐" if color else "+" + "-" * 46 + "+"
-    lines.append(c(_BOLD, top))
-    title = " subproto · System One meter".ljust(46)
-    lines.append(("│" + title + "│") if color else ("|" + title + "|"))
-    lines.append(c(_DIM, ("├" + "─" * 46 + "┤") if color else ("+" + "-" * 46 + "+")))
+    lines = [_style.header("live", "System One meter", color=color)]
     if not n:
-        body = "  no traffic yet — point an agent at the proxy ".ljust(46)
-        lines.append(("│" + body + "│") if color else ("|" + body + "|"))
-    else:
-        word = "saved" if snap["mode"] == "delivered" else "save "
-        line1 = " %s %d%% · %s tok   (%s)" % (
-            word, int(round(snap["saved_pct"])), _fmt(snap["saved_tok"]), snap["mode"])
-        line2 = " $%.2f  →  $%.2f     ·  %d req" % (
-            snap["cost_usd"], snap["after_usd"], n)
-        lines.append(("│" + line1.ljust(46) + "│") if color else ("|" + line1.ljust(46) + "|"))
-        lines.append(("│" + line2.ljust(46) + "│") if color else ("|" + line2.ljust(46) + "|"))
-    lines.append(c(_BOLD, ("└" + "─" * 46 + "┘") if color else ("+" + "-" * 46 + "+")))
+        lines.append("")
+        lines.append(_style.row("traffic", "no traffic yet",
+                                label_w=_style.METRIC_W, color=color))
+        lines.append(_style.note("point an agent at the proxy, then come back",
+                                 color=color))
+        return "\n".join(lines)
+    delivered = snap["mode"] == "delivered"
+    # One figure column for all four rows: `field(..., 9)` each, so the eye travels
+    # straight down the numbers instead of hunting for where each row's begins.
+    lines.append("")
+    lines.append(_style.row(
+        "tokens " + ("saved" if delivered else "saveable"),
+        _style.field("%d%%" % int(round(snap["saved_pct"])), width=9, color=color)
+        + "   "
+        + _style.field(snap["saved_tok"], width=9, color=color)
+        + _style.unit("tok", color=color), label_w=_style.METRIC_W, color=color,
+        styled=True))
+    lines.append(_style.row(
+        "spend before", _style.field("$%.2f" % snap["cost_usd"], width=9,
+                                     color=color),
+        label_w=_style.METRIC_W, color=color, styled=True))
+    lines.append(_style.row(
+        "spend after", _style.field("$%.2f" % snap["after_usd"], width=9, color=color),
+        label_w=_style.METRIC_W, color=color, styled=True))
+    lines.append(_style.row(
+        "traffic", _style.field(n, width=9, color=color)
+        + _style.unit("req", color=color) + "   "
+        + _style.field(snap["in_tok"], width=9, color=color)
+        + _style.unit("tok in", color=color), label_w=_style.METRIC_W, color=color,
+        styled=True))
+    lines.append("")
+    # I6: potential is headroom, delivered is measurement, and the meter never
+    # lets one read as the other.
+    lines.append("    " + _style.state(
+        _style.DELIVERED if delivered else _style.POTENTIAL, color=color)
+        + _style.paint(" — %s" % ("removed from the wire" if delivered else
+                                  "headroom; slots are observing, not enforcing"),
+                       _style.DIM, color))
     return "\n".join(lines)
 
-
-def _fmt(x):
-    x = int(x)
-    return "{:,}".format(x)
 
 
 def run(tel, interval=1.0, once=False, out=None):
     out = out or sys.stdout
-    color = hasattr(out, "isatty") and out.isatty()
+    # The refresh is a control code, not a colour: NO_COLOR still gets a meter in
+    # place, it just gets a monochrome one. Painting goes through the one gate every
+    # other surface uses, so `--no-color` and a pipe answer the same here as elsewhere.
+    frame = bool(getattr(out, "isatty", None) and out.isatty())
+    color = _style.enabled(out)
     snap = snapshot(tel)
     if once:
         out.write(render(snap, color=color) + "\n")
@@ -103,10 +127,10 @@ def run(tel, interval=1.0, once=False, out=None):
     try:
         while True:
             snap = snapshot(tel)
-            frame = render(snap, color=color)
-            if color:
+            rendered = render(snap, color=color)
+            if frame:
                 out.write("\033[2J\033[H")  # clear + home
-            out.write(frame + "\n")
+            out.write(rendered + "\n")
             out.flush()
             time.sleep(interval)
     except KeyboardInterrupt:

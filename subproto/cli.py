@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 
+from . import style
 from .config import Config
 from .engine import ALL_SLOTS
 from .telemetry import Telemetry
@@ -47,6 +48,7 @@ def cmd_up(args):
     from .proxy import serve
     from .engine import Engine
 
+    color = style.enabled()
     config = Config.load(args.config, port=args.port, data_dir=args.home,
                          store_bodies=True if args.store_bodies else None,
                          laya_url=args.laya_url, model=args.model,
@@ -55,34 +57,71 @@ def cmd_up(args):
     telemetry = _open_telemetry(config)
     engine = None
     if args.slots:
-        engine = Engine(config, graph_path=args.graph)
+        try:
+            engine = Engine(config, graph_path=args.graph)
+        except (OSError, ValueError) as e:
+            # A --graph value is user input, so a bad one is said as a state, not
+            # as a traceback: the reader has to see which path they handed over.
+            print(style.header("up", "the graph did not load", color=color))
+            print(style.reason("%s: %s" % (args.graph, e),
+                              indent=style.INDENT, color=color))
+            return 1
     srv = serve(config, telemetry, engine)
     applied = os.environ.get("SUBPROTO_APPLY")
-    print("subproto listening on http://127.0.0.1:%d" % config.port)
-    print("  data dir     %s" % config.data_dir)
-    print("  bodies       %s" % ("recording (gzip)" if config.store_bodies else "metadata only"))
-    print("  slots        %s" % (args.slots or "off (pure passthrough)"))
-    print("  enforcing    %s" % (applied or "nothing — observation mode"))
+    print("")
+    print(style.header("up", "listening on http://127.0.0.1:%d" % config.port,
+                       color=color))
+    print("")
+    print(_cfg_row("data dir", config.data_dir, color))
+    print(_cfg_row("bodies", "recording (gzip)" if config.store_bodies
+                                 else "metadata only", color))
+    print(_cfg_row("slots", style.state(style.ON if args.slots else style.OFF,
+                                        color=color)
+                   + ("" if args.slots else "  pure passthrough"),
+                   color, styled=True))
+    print(_cfg_row("enforcing", applied or _absent(
+        style.OFF, "observation mode — it records, it never rewrites",
+        color), color, styled=True))
     if applied:
         from .engine import ADVISORY_SLOTS
         advisory = [s.strip() for s in applied.split(",") if s.strip() in ADVISORY_SLOTS]
         if advisory:
-            print("               %s is advisory-only: it records a tier, it never "
-                  "rewrites the request" % ",".join(advisory))
-    print("  graph        %s" % (engine.graph_path if engine else "n/a"))
+            print(style.prose("%s is advisory-only: it records a tier, it never "
+                              "rewrites the request" % ",".join(advisory),
+                              indent=_UP_CONTENT, color=color))
+    print(_cfg_row("graph", _absent(style.PRESENT, engine.graph_path, color)
+                   if engine and engine.graph_path else _absent(
+                       style.OFF, "no index — subproto graph <repo> makes one",
+                       color), color, styled=True))
     if engine and (engine.backend or engine.model_notes
                    or engine.manifest.get("active")):
-        print("  model        %s" % json.dumps(engine.model_status()))
+        ms = engine.model_status()
+        health = ("up" if ms.get("ok") else
+                  ("not available" if ms.get("configured") else "in-process"))
+        print(_cfg_row("model", "%s  %s" % (
+            ms.get("label") or "heuristic",
+            style.state(health, color=color)), color, styled=True))
+        print(style.note("%s%s" % (
+            "version %s — " % ms["version"] if ms.get("version") else "",
+            "selected by %s" % ms.get("source")), indent=_UP_CONTENT, color=color))
+        if ms.get("slots"):
+            print(style.prose("slots  %s" % "  ".join(
+                "%s=%s" % kv for kv in sorted(ms["slots"].items())),
+                indent=_UP_CONTENT, color=color))
         # A version that could not be used must be said out loud at startup, not left
         # inside the JSON or implied by each decision quietly recording `heuristic`.
         for note in engine.model_notes:
-            print("               ! %s" % note)
+            print(style.reason(note, indent=_UP_CONTENT, color=color))
     print("")
+    print(style.section("point an agent at it", indent=style.INDENT, color=color))
     for tool in (args.for_ or ["claude", "codex"]):
-        for line in [l.format(port=config.port) for l in INJECT.get(tool, INJECT["generic"])]:
-            print("  % 12s %s" % (tool + ":", line))
+        print(style.sub(tool, indent=_UP_CONTENT, color=color))
+        for line in [l.format(port=config.port)
+                     for l in INJECT.get(tool, INJECT["generic"])]:
+            print(style.action(line, indent=_UP_CONTENT + 2, color=color))
     print("")
-    print("Ctrl-C to stop. Then run: subproto report")
+    print(style.prose("Ctrl-C to stop. Then run: subproto report", indent=0,
+                      color=color))
     sys.stdout.flush()
     try:
         srv.serve_forever()
@@ -91,6 +130,27 @@ def cmd_up(args):
     finally:
         srv.shutdown()
         telemetry.close()
+
+
+# The startup banner's label column is as wide as its longest label (`enforcing`),
+# so every note, command and reason on that page hangs at its content column — not at
+# the generic one, which would put the exports three columns left of the values.
+_UP_LABEL_TAKE = 8
+_UP_CONTENT = style.INDENT + (style.METRIC_W - _UP_LABEL_TAKE) + 2
+
+
+def _cfg_row(label, value, color, styled=False):
+    return style.row(label, value, label_w=style.METRIC_W - _UP_LABEL_TAKE,
+                     color=color, styled=styled)
+
+
+def _absent(state, why, color):
+    """A switched-off thing, named by its state and explained in dim beside it.
+
+    The colour goes on the one word that is a state; the sentence that says what
+    follows from it never takes colour, or a page has two reasons to be amber.
+    """
+    return style.state(state, color=color) + "  " + style.paint(why, style.DIM, color)
 
 
 def _history_versions(config):
@@ -166,6 +226,8 @@ def cmd_models(args):
     """List every System One backend, and the version manifest that picks between them."""
     from . import systemone
 
+    color = style.enabled()
+
     config = Config.load(args.config, data_dir=args.home, model=args.model,
                          router=True if args.router else None)
     target = systemone.path(config)
@@ -192,60 +254,86 @@ def cmd_models(args):
                            "source": choice["source"], "notes": choice["notes"]}
         print(json.dumps(st, indent=1))
         return 0
-    print("active System One backend: %s" % st["active"])
+    print(style.header("models", "%d backends, %d versions" % (
+        len(st["adapters"]), len(desc["versions"])), color=color))
     print("")
+    # The page's one answer, on the grid rather than as a sentence with a colon in it.
+    print(style.row("backend", style.state(st["active"], color=color), styled=True,
+                    color=color))
+    print("")
+    print(style.section("backends", indent=style.INDENT, color=color))
     for row in st["adapters"]:
+        # `*` is the same mark the version list uses: which one is answering now.
         mark = "*" if row["active"] else " "
-        extra = ("  -> %s" % ",".join(row["slots"])) if row.get("slots") else ""
-        print("  %s %-10s %-58s %s%s" % (mark, row["name"], row["about"],
-                                         row["where"], extra))
+        print("  %s %s" % (mark, style.table(
+            row["name"], (row["where"], "", 0), name_w=14, indent=0, color=color)))
+        print(style.note("%s%s" % (row["about"], ("  ->  " + ",".join(row["slots"]))
+                                   if row.get("slots") else ""),
+                         indent=style.SUB_INDENT + 2, color=color))
     print("")
-    print("  per slot:  %s" % "  ".join("%s=%s" % kv for kv in sorted(st["slots"].items())))
-    print("  context/effort are answered by the code graph and request shape, "
-          "not by a model")
+    print(style.row("per slot", "  ".join("%s=%s" % kv
+                                          for kv in sorted(st["slots"].items())),
+                    color=color))
+    print(style.prose("context/effort are answered by the code graph and request "
+                      "shape, not by a model", color=color))
     print("")
-    print("  versions in %s" % desc["path"])
+    print(style.section("versions", "(%s)" % desc["path"], indent=style.INDENT,
+                        color=color))
     if not desc["versions"]:
-        print("    none registered — every decision is stamped with whatever the "
-              "selection above says")
+        print(style.prose("none registered — every decision is stamped with whatever "
+                        "the selection above says", indent=style.SUB_INDENT,
+                        color=color))
     for row in desc["versions"]:
-        mark = "*" if row["active"] else ("→" if row["previous"] else " ")
-        print("    %s %-14s %-10s %-11s %-34s %s"
-              % (mark, row["label"], row["tier"], row["version"],
-                 row["endpoint"] or "no url", row["health"]))
+        mark = "*" if row["active"] else ("=" if row["previous"] else " ")
+        print("  %s %s" % (mark,
+                           style.table(row["label"],
+                                       (row["tier"], "", -10),
+                                       (row["version"], "", -11),
+                                       (row["endpoint"] or "no url", "", -34),
+                                       (row["health"], "", 0),
+                                       name_w=14, indent=0, color=color)))
     for warning in desc["warnings"]:
-        print("    ! %s" % warning)
+        print(style.reason(warning, color=color))
     if desc["versions"]:
-        print("    active=%s previous=%s" % (desc["active"] or "heuristic",
-                                             desc["previous"] or "-"))
+        print(style.row("active", desc["active"] or "heuristic", color=color))
+        print(style.row("previous", desc["previous"] or "-", color=color))
         if choice["source"] == "pin":
-            print("    SUBPROTO_MODEL/config `model` is set: it outranks the manifest, "
-                  "so %s is not answering"
-                  % (desc["active"] or "the manifest"))
+            print(style.reason("SUBPROTO_MODEL/config `model` is set: it outranks the "
+                               "manifest, so %s is not answering"
+                               % (desc["active"] or "the manifest"), color=color))
     for note in choice["notes"]:
-        print("    ! %s" % note)
+        print(style.reason(note, color=color))
     print("")
     if plan:
-        print("  router: ON (budget %s) · ranks configured backends by measured "
-              "slot precision" % (("%gms" % router.budget_ms)
-                                  if router.budget_ms else "none"))
+        print(style.section("router", "ON (budget %s) — ranks configured backends by "
+                            "measured slot precision" % (
+                                ("%gms" % router.budget_ms)
+                                if router.budget_ms else "none"),
+                            indent=style.INDENT, color=color))
         for slot in sorted(plan):
             info = plan[slot]
-            print("    %-10s %-7s %-12s %s" % (slot, info["mode"], info["version"],
-                                               info["reason"]))
+            print(style.table(slot, (info["mode"], "", 7), (info["version"], "", 12),
+                              (info["reason"], "", 0), name_w=14, color=color))
         print("")
     else:
-        print("  router:  off — slots use the named model above (SUBPROTO_MODEL[_<slot>]).")
-        print("           turn on with SUBPROTO_ROUTER=on (or --router) to pick the best")
-        print("           measured backend per slot; ties and no-evidence stay on heuristics.")
+        print(style.row("router", style.state(style.OFF, color=color)
+                        + "  slots use the named model above "
+                          "(SUBPROTO_MODEL[_<slot>])", color=color, styled=True))
+        print(style.prose("turn on with SUBPROTO_ROUTER=on (or --router) to pick the "
+                        "best measured backend per slot; ties and no-evidence stay "
+                        "on heuristics", color=color))
         print("")
-    print("select one: subproto up --model laya")
-    print('           (SUBPROTO_MODEL=http://host:port works for any /health + /score server)')
-    print(' per slot:  SUBPROTO_MODEL_COMPACT=djev subproto up --slots')
-    print('  versions: subproto models --add mlx-lora-v2 --url http://host:port '
-          '--tier personal')
-    print('     switch: subproto models --use mlx-lora-v2      undo: subproto models '
-          '--rollback')
+    print(style.section("select one", indent=style.INDENT, color=color))
+    print(style.row("model", "subproto up --model laya", color=color))
+    print(style.note("SUBPROTO_MODEL=http://host:port works for any "
+                     "/health + /score server", color=color))
+    print(style.row("per slot", "SUBPROTO_MODEL_COMPACT=djev subproto up --slots",
+                    color=color))
+    print(style.row("versions", "subproto models --add mlx-lora-v2 "
+                                "--url http://host:port --tier personal",
+                    color=color))
+    print(style.row("switch", "subproto models --use mlx-lora-v2", color=color))
+    print(style.row("undo", "subproto models --rollback", color=color))
     return 0
 
 
@@ -262,7 +350,9 @@ def cmd_report(args):
     if args.json:
         print(json.dumps(report.render_json(summary), indent=1, default=str))
     else:
-        print(report.render_text(summary, since=args.since, until=args.until))
+        color = style.enabled()
+        print(report.render_text(summary, since=args.since, until=args.until,
+                                color=color))
     telemetry.close()
 
 
@@ -282,14 +372,21 @@ def cmd_graph(args):
 
     root = os.path.abspath(args.path)
     if not os.path.isdir(root):
-        print("no such directory: %s" % root)
+        print(style.prose("no such directory: %s" % root, indent=0,
+                        color=style.enabled()))
         return 1
     started = time.time()
     g = graph_mod.build(root)
     target = args.out or os.path.join(root, ".subproto-graph.json")
     graph_mod.save(g, target)
-    print("%d files, %d import edges, %.1fs -> %s" % (
-        g["file_count"], g["edge_count"], time.time() - started, target))
+    color = style.enabled()
+    print(style.header("graph", os.path.basename(root), color=color))
+    print("")
+    print(style.row("files", g["file_count"], label_w=12, color=color))
+    print(style.row("import edges", g["edge_count"], label_w=12, color=color))
+    print(style.row("indexed in", "%.1fs" % (time.time() - started), label_w=12,
+                    color=color))
+    print(style.row("written", target, label_w=12, color=color))
     if args.install:
         config = Config.load(args.config, data_dir=args.home)
         config.ensure_dirs()
@@ -299,7 +396,9 @@ def cmd_graph(args):
             data = f.read()
         with open(link, "w") as f:
             f.write(data)
-        print("installed as %s (use --graph %s)" % (link, link))
+        print(style.row("installed", link, label_w=12, color=color))
+        print(style.note("point any command at it with --graph %s" % key,
+                         indent=style.LABEL_W + 4, color=color))
 
 
 def cmd_where(args):
@@ -314,12 +413,15 @@ def cmd_where(args):
         if os.path.exists(cached):
             g = graph_mod.load(cached)
         else:
-            print("no index at %s — built one in memory (cache it: subproto graph %s)"
-                  % (cached, root), file=sys.stderr)
+            # Not wrapped: both of these paths are things the reader copies out.
+            print(style.note("no index at %s — built one in memory (cache it: "
+                             "subproto graph %s)" % (cached, root),
+                             indent=0, color=style.enabled()), file=sys.stderr)
             g = graph_mod.build(root)
     else:
         if not os.path.exists(path):
-            print("no graph at %s — run: subproto graph <repo>" % path)
+            print(style.prose("no graph at %s — run: subproto graph <repo>" % path,
+                              indent=0))
             return 1
         g = graph_mod.load(path)
     query = " ".join(args.query) if isinstance(args.query, list) else (args.query or "")
@@ -332,11 +434,25 @@ def cmd_where(args):
     if args.json:
         print(json.dumps([{"file": r, "score": s, "why": w} for r, s, w in hits], indent=1))
     else:
+        color = style.enabled()
+        # The query belongs on the page: two of these side by side are otherwise
+        # indistinguishable, and the scores only mean something next to their ask.
+        print(style.header("where", style.clip(query, 52), color=color))
+        print("")
+        if not hits:
+            print(style.prose("no file in the index matched that.",
+                              indent=style.INDENT, color=color))
         for rel, score, why in hits:
             node = g["nodes"].get(rel, {})
-            print("%7.1f  %-52s %s" % (score, rel, ",".join(why)[:44]))
-            print("         %d lines · %s" % (node.get("lines") or 0,
-                                              (node.get("doc") or "")[:70]))
+            print(style.table("%.1f" % score, (rel, "", -52),
+                              (",".join(why)[:44], "", 0), name_w=6,
+                              indent=style.INDENT, color=color))
+            doc = (node.get("doc") or "").strip()[:70]
+            # Hang the qualifier under the path column (2 of indent + the 6-wide
+            # score + the cell's leading space), not under some other block's margin.
+            print(style.note("%d lines%s" % (
+                node.get("lines") or 0, "  %s" % doc if doc else ""),
+                indent=style.INDENT + 7, color=color))
     return 0
 
 
@@ -347,30 +463,43 @@ def cmd_compile(args):
 
     query = " ".join(args.task) if isinstance(args.task, list) else (args.task or "")
     if not query.strip():
-        print('nothing to compile — try: subproto compile "fix retry.py" --graph <repo>')
+        print(style.prose('nothing to compile — try: subproto compile "fix retry.py" '
+                          '--graph <repo>', indent=0))
         return 1
-    def say(line):
-        # stdout is reserved for the witness: with --json it must stay parseable.
-        print(line, file=sys.stderr if args.json else sys.stdout)
+    color = style.enabled()
+
+    def say(line, err=False):
+        # stdout is reserved for the witness: with --json it must stay parseable,
+        # so every human-facing line before the document goes to stderr.
+        print(line, file=sys.stderr if (args.json or err) else sys.stdout)
+
+    say(style.header("compile", "compiled turn, one budget over messages, tools "
+                                "and files", color=color))
+    say("")
 
     root = os.path.abspath(args.path or ".")
     path = args.graph or graph_mod.index_path(root)
     if os.path.isdir(path):
-        say("indexing %s ..." % path)
+        say(style.note("indexing %s …" % path, indent=0, color=color))
         started = time.time()
         g = graph_mod.build(path)
-        say("  %d files, %d import edges, %.1fs" % (
-            g["file_count"], g["edge_count"], time.time() - started))
+        say(style.note("%d files, %d import edges, %.1fs" % (
+            g["file_count"], g["edge_count"], time.time() - started),
+            indent=style.INDENT, color=color))
     elif os.path.exists(path):
         g = graph_mod.load(path)
     elif args.graph:
-        print("no graph at %s — run: subproto graph <repo>" % path)
+        # A line that carries a path is not wrapped: the reader has to copy it.
+        say(style.note("no graph at %s — run: subproto graph <repo>" % path,
+                       indent=0, color=color))
         return 1
     else:
-        say("no index at %s — building one from %s (or pass --graph)" % (path, root))
+        say(style.note("no index at %s — building one from %s (or pass --graph)"
+                       % (path, root), indent=0, color=color))
         g = graph_mod.build(root)
 
-    body = demo.synthetic_request(args.seed, jitter=False, turns=args.turns)
+    body = demo.synthetic_request(args.seed, jitter=False, turns=args.turns,
+                                  shuffle=False)
     # The task becomes the live turn: what the compiler reads is what you typed.
     body["messages"] = list(body["messages"]) + [{"role": "user", "content": query}]
     analysis = analyze_request(body)
@@ -379,11 +508,14 @@ def cmd_compile(args):
         body_sha=protocol.sha256_12(protocol.dump_body(body)),
         enforce=("tool_gate", "compact", "context"))
     if proof is None:
-        print("nothing to compile: the request has no droppable candidates")
+        print(style.reason("nothing to compile: the request has no droppable "
+                         "candidates", indent=0, color=color))
         return 1
     if proof["over_budget"]:
-        print("over budget: %s — the tail is sacred (I3), so nothing was cut"
-              % proof["reason"])
+        print(style.header("compile", "over budget: nothing was cut", color=color))
+        print("")
+        print(style.reason("%s — the tail is sacred (I3)" % proof["reason"],
+                           indent=style.INDENT, color=color))
         return 1
 
     by_kind = {}
@@ -397,29 +529,70 @@ def cmd_compile(args):
         return 0
     saved = proof["tokens_before"] - proof["tokens_after"]
     pct = 100.0 * saved / max(1, proof["tokens_before"])
-    print("compiled turn — one budget over messages, tools and files")
-    print("  task        %s" % (query[:68] + ("..." if len(query) > 68 else "")))
-    print("  budget      %s tok  (pool was %s tok)" % (
-        _fmt(proof["budget"]), _fmt(proof["tokens_before"])))
-    print("  spent       %s tok  (-%.1f%%)" % (_fmt(proof["tokens_after"]), pct))
-    print("  protected   %s tok booked before the optimiser ran"
-          % _fmt(proof["protected_tokens"]))
+    print(style.row("task", query[:68] + ("…" if len(query) > 68 else ""),
+                    label_w=style.METRIC_W, color=color, styled=True))
+    print(style.row("budget", style.field(proof["budget"], width=9, color=color)
+                    + style.unit("tok", color=color) + "   "
+                    + style.note("pool was %s tok" % _fmt(proof["tokens_before"]),
+                                 indent=0, color=color),
+                    label_w=style.METRIC_W, color=color, styled=True))
+    print(style.row("spent", style.field(proof["tokens_after"], width=9, color=color)
+                    + style.unit("tok", color=color) + "   "
+                    + "−%.1f%%" % pct,
+                    label_w=style.METRIC_W, color=color, styled=True))
+    print(style.row("protected",
+                    style.field(proof["protected_tokens"], width=9, color=color)
+                    + style.unit("tok", color=color),
+                    label_w=style.METRIC_W, color=color, styled=True))
+    print(style.note("booked before the optimiser ran",
+                     indent=style.METRIC_CONTENT, color=color))
+    print("")
     for kind in compiler.KINDS:
         if kind in by_kind:
-            print("  %-11s %d kept / %d dropped" % (kind, by_kind[kind][0], by_kind[kind][1]))
+            print(style.table(kind, (by_kind[kind][0], "kept", 3),
+                              (by_kind[kind][1], "dropped", 7),
+                              name_w=style.METRIC_W + 1, indent=style.INDENT,
+                              color=color))
+    def set_row(label, items):
+        """A kept set: its count in the number column, its members wrapped beneath.
+
+        The members are what a reader checks the tail against, and a joined list of
+        twelve of them ran off the page — so the count carries the scan and the
+        list carries the detail.
+        """
+        print(style.row(label, len(items) if items else "none",
+                        label_w=style.METRIC_W, color=color))
+        if items:
+            print(style.prose(", ".join(str(i) for i in items),
+                              indent=style.METRIC_CONTENT, width=86, color=color))
+
     nd = proof["never_dropped"]
-    print("  tail kept   %s" % (", ".join(nd["tail_indices"]) or "-"))
-    print("  core tools  %s" % (", ".join(nd["core_tools"]) or "-"))
-    print("  files added %s" % (", ".join(proof["files_surfaced"]) or "none"))
+    print("")
+    set_row("tail kept", nd["tail_indices"])
+    set_row("core tools", nd["core_tools"])
+    set_row("files added", proof["files_surfaced"] or [])
     if proof["dropped"]:
-        print("\n  what was cut, and what beat it:")
+        print("")
+        print(style.section("what was cut, and what beat it", indent=style.INDENT,
+                            color=color))
         for d in proof["dropped"][:8]:
-            print("    %-8s %-26s %5d tok  %s" % (
-                d["kind"], d["id"][:26], d["tokens"], d["reason"][:60]))
+            print(style.table(d["kind"], (style.clip(d["id"], 26), "", -26),
+                              (d["tokens"], "tok", 5),
+                              (style.clip(d["reason"], 46), "", 0),
+                              name_w=9, color=color))
         if len(proof["dropped"]) > 8:
-            print("    ... %d more in --json" % (len(proof["dropped"]) - 8))
-        print("\n  every drop carries a reversible pointer (body_sha + index); through the")
-        print("  proxy they resolve against the telemetry row: subproto show <request_id>")
+            print(style.note("%d more in --json" % (len(proof["dropped"]) - 8),
+                             indent=style.SUB_INDENT + 2, color=color))
+        print("")
+        floor = proof.get("floor_value_per_tok")
+        print(style.prose("every row lost to the same bar: the lowest value/token ratio "
+                          "the turn kept (%s). Which item set it is in --json."
+                          % ("%.6f" % floor if floor else "n/a"),
+                          indent=0, color=color))
+        print("")
+        print(style.prose("every drop carries a reversible pointer (body_sha + index); "
+                          "through the proxy they resolve against the telemetry row: "
+                          "subproto show <request_id>", indent=0, color=color))
     return 0
 
 
@@ -512,16 +685,25 @@ def cmd_retrain(args):
         payload["exit"] = ran
         print(json.dumps(payload, indent=1, default=str))
     else:
-        print(retrain.render_text(state, line, ran=ran))
+        color = style.enabled()
+        print(retrain.render_text(state, line, ran=ran, color=color))
         if wrote is not None:
-            same = retrain.fingerprint_rows([wrote.get("train_path"),
-                                             wrote.get("val_path")]) == state["split_sha"]
-            print("  wrote the split it measured: %s train / %s val on disk (%s)" % (
-                wrote.get("n_train"), wrote.get("n_val"),
+            on_disk = retrain.fingerprint_rows([wrote.get("train_path"),
+                                                wrote.get("val_path")])
+            same = on_disk == state["split_sha"]
+            print(style.row("wrote", "%s train / %s val on disk" % (
+                wrote.get("n_train"), wrote.get("n_val")), color=color))
+            # The fingerprint of what is actually on disk, printed beside the page's
+            # own — so "it trained on what it measured" is checkable, not asserted.
+            print(style.note("%s  (%s…)" % (
                 "same rows as the page" if same else
-                "DIFFERENT rows than the page counted"))
+                "DIFFERENT rows than the page counted", on_disk[:12]), color=color))
         if status:
-            print("  %s: %s" % (status, retrain.history_path(config)))
+            # `planned`/`ran`/`refused` name the row that went into the log, so they
+            # ride with the path they were written to — and take no hue: the page's
+            # verdict colour already lives in `decision`, and two would disagree.
+            print(style.row("record", "%s  %s" % (status, retrain.history_path(config)),
+                            color=color, styled=True))
     if args.run and not state["ready"]:
         return 1
     return 0 if ran in (None, 0) else 1
@@ -544,7 +726,10 @@ def cmd_label(args):
         entry["reason"] = args.reason
     labels[key] = entry
     path = dataset.save_labels(config, labels)
-    print("labelled request %s -> %s (%s) in %s" % (key, args.slot, args.value, path))
+    color = style.enabled()
+    print(style.row("labelled", "%s → %s (%s)" % (key, args.slot, args.value),
+                    label_w=9, color=color, styled=True))
+    print(style.note(path, color=color))
 
 
 def cmd_learn(args):
@@ -560,31 +745,46 @@ def cmd_learn(args):
                          indent=1, default=str))
         return 0
     s = out["summary"]
-    print("subproto learn  ·  %d requests with decisions, %d bodies readable"
-          " (%d never stored)" % (s["requests_scanned"], s["bodies_available"],
-                                  s["skipped_no_body"]))
+    color = style.enabled()
+    print(style.header("learn", "%d requests with decisions, %d bodies readable "
+                       "(%d never stored)" % (s["requests_scanned"],
+                                              s["bodies_available"],
+                                              s["skipped_no_body"]), color=color))
     if not s["bodies_available"]:
         print("")
-        print("Nothing to judge. A re-read is only visible in the recorded body, so")
-        print("start the proxy with --store-bodies and re-run some agent traffic.")
+        print(style.prose("Nothing to judge — a re-read is only visible in the recorded "
+                          "body, so start the proxy with --store-bodies and re-run some "
+                          "agent traffic.", indent=style.INDENT, color=color))
         return 0
     from .report import eviction_regret, regret_section
-    for line in regret_section(eviction_regret(out)):
+    for line in regret_section(eviction_regret(out), color=color):
         print(line)
     print("")
+    already = "%s already holds %d request%s" % (
+        implicit.IMPLICIT_FILE, s.get("already_stored", 0),
+        "" if s.get("already_stored", 0) == 1 else "s")
+    # The block closes on the same grid the measurement above it was read on, so the
+    # page has one number column rather than one per section.
     if args.dry_run:
-        print("  --dry-run: nothing written. %s already holds %d request%s." % (
-            implicit.IMPLICIT_FILE, s.get("already_stored", 0),
-            "" if s.get("already_stored", 0) == 1 else "s"))
+        print(style.row("written", "nothing  (--dry-run)", label_w=style.METRIC_W,
+                        color=color))
+        print(style.note(already, indent=style.METRIC_CONTENT, color=color))
     elif out.get("unchanged"):
-        print("  nothing new to store; %s already holds %d request%s and was left as it is"
-              % (implicit.IMPLICIT_FILE, s["stored"], "" if s["stored"] == 1 else "s"))
+        print(style.row("written", "nothing new", label_w=style.METRIC_W,
+                        color=color))
+        print(style.note("%s and was left as it is" % already,
+                         indent=style.METRIC_CONTENT, color=color))
     elif out.get("path"):
-        print("  wrote %d request%s to %s (human `subproto label` verdicts live in a"
-              " separate store and were not touched)" % (
-                  s["stored"], "" if s["stored"] == 1 else "s", out["path"]))
+        print(style.row("written", "%d request%s" % (
+            s["stored"], "" if s["stored"] == 1 else "s"),
+            label_w=style.METRIC_W, color=color))
+        print(style.action(out["path"], indent=style.METRIC_CONTENT, color=color))
+        print(style.note("human `subproto label` verdicts live in a separate store and "
+                         "were not touched", indent=style.METRIC_CONTENT, color=color))
     else:
-        print("  nothing new to store; %s is unchanged" % implicit.IMPLICIT_FILE)
+        print(style.row("written", "nothing new", label_w=12, color=color))
+        print(style.note("%s is unchanged" % implicit.IMPLICIT_FILE,
+                         indent=style.SUB_INDENT, color=color))
     return 0
 
 
@@ -619,7 +819,7 @@ def cmd_demo(args):
     t.start()
     n = demo.replay(config, mock_port=args.port + 1)
     time.sleep(0.2)
-    print(report.render_text(report.summarize(telemetry)))
+    print(report.render_text(report.summarize(telemetry), color=style.enabled()))
     print("")
     print("replayed %d synthetic agent requests through the proxy" % n)
     print("recorded bodies: %d" % len(dataset.record_bodies(config)))
@@ -635,6 +835,10 @@ def build_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--home", help="state dir (default ~/.subproto)")
     common.add_argument("--config", help="path to config json")
+    common.add_argument("--color", dest="color", action="store_true", default=None,
+                        help="force escapes on, even in a pipe (for a capture)")
+    common.add_argument("--no-color", dest="color", action="store_false",
+                        help="force escapes off (for a paste)")
 
     p = argparse.ArgumentParser(
         prog="subproto",
@@ -773,6 +977,9 @@ def main(argv=None):
     if not getattr(args, "cmd", None):
         build_parser().print_help()
         return 0
+    # One decision, made here, read by every surface: `--color` is how a page gets
+    # screenshotted from a pipe, `--no-color` how it gets pasted out of a terminal.
+    style.override(args.color)
     fn = {"up": cmd_up, "report": cmd_report, "live": cmd_live, "graph": cmd_graph,
           "where": cmd_where, "compile": cmd_compile,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,

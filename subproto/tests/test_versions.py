@@ -473,7 +473,8 @@ def test_cli_prints_the_manifest_with_health(tmp_path, capsys, server):
     capsys.readouterr()
     _models(tmp_path)
     out = capsys.readouterr().out
-    assert "versions in" in out
+    assert any(l.strip().startswith("versions") and "models.json" in l
+               for l in out.splitlines()), out
     assert "health ok" in out and "unreachable" in out
     assert "--use" in out and "--rollback" in out
 
