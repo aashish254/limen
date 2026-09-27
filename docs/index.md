@@ -1,8 +1,12 @@
-# subproto — documentation map
+# Limen — documentation map
 
 A local *System One* layer between a terminal coding agent and its LLM provider: it
 decides, before the turn is paid for, which tools and which context that turn needs.
 Zero runtime dependencies, Python 3.9+, stdlib only, no key and no network to run.
+
+**Limen** is the project. Every command below is `subproto`, the package name, and
+[`SPEC.md`](../SPEC.md) / [`ROADMAP.md`](../ROADMAP.md) keep that name in their titles
+because they document the code, not the brand.
 
 This is the map. Read `README.md` first; the rest is reference.
 
@@ -36,7 +40,7 @@ traffic would do), and **gated** (blocked on a human action) — see SPEC invari
 |---|---|---|
 | [`bench/live_results.md`](../bench/live_results.md) | measured (mock) | Pass-rate–held harness, sample set n=20: **−29.9%** input tokens (CI `[28.2, 31.3]`), pass-rate held 100%→100%, against the local mock at $0. The compiled arm beats per-slot on accuracy (precision +17.0 pp). |
 | [`bench/live_results_hard.md`](../bench/live_results_hard.md) | measured (mock) | The hard set, kept deliberately: the **per-slot** arm drives pass-rate to 0.0% (I3 VIOLATED); the **compiled** arm holds 100%. |
-| [`bench/results.md`](../bench/results.md) | projected | If all slots enforced: **−32.3%** input tokens, labelled a projection from measured prompt shapes — not delivered savings. |
+| [`bench/results.md`](../bench/results.md) | projected | If all slots enforced: **−32.4%** input tokens, labelled a projection from measured prompt shapes — not delivered savings. |
 | [`bench/laya_latency.md`](../bench/laya_latency.md) | measured (one host) | The real Laya checkpoint's per-decision latency curve, carrying its host load average and runtime conditions; shows `choice` fits the 350 ms budget and that there is no MLX path to the model. |
 | [`bench/ablation_results.md`](../bench/ablation_results.md) | measured (synthetic) | Laya vs the heuristic on the shipped corpus — Laya lands **below** the heuristic (Δ precision −0.083), and the file says the gold sets were written around the heuristic's own rule. |
 

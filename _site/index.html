@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limen — the decision layer that answers before your agent pays</title>
+<meta name="description" content="Limen sits between a terminal coding agent and its model API and decides, before the call is made, what the request does not need. 43.6% fewer input tokens on measured traffic, task pass-rate held, running locally at zero spend.">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://aashish254.github.io/limen/">
+<meta property="og:title" content="Limen — the decision layer that answers before your agent pays">
+<meta property="og:description" content="43.6% fewer input tokens with the pass-rate held, measured locally against a mock at $0. No key, no egress, Python 3.9+, zero runtime dependencies.">
+<meta property="og:type" content="website">
+<style>
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-400.woff2) format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-500.woff2) format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-700.woff2) format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Source Serif 4';src:url(assets/fonts/sourceserif4-var.woff2) format('woff2');font-weight:400 600;font-style:normal;font-display:swap}
+
+:root{
+  --paper:#fff; --band:#f4f5f7; --ink:#101317; --muted:#5b6472; --rule:#d5d9e0;
+  --graphite:#9aa1aa; --ok:#1e7a34; --warn:#a66a00; --bad:#b3261e;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:'Source Serif 4',Iowan Old Style,Georgia,serif;
+  --col:66rem;
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#0e1113;--band:#14181c;--ink:#e8ebef;--muted:#98a2b0;--rule:#262c34;
+        --graphite:#626d7b;--ok:#5fb878;--warn:#d7a44a;--bad:#e2705f}
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+     font-size:1.0625rem;line-height:1.62;font-variant-numeric:tabular-nums}
+.wrap{max-width:var(--col);margin:0 auto;padding:0 1.5rem}
+a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover{border-bottom-color:var(--ink)}
+a:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+code,kbd,.m{font-family:var(--mono);font-size:.875em}
+p{max-width:72ch}
+h1,h2,h3,.grid,.meter,.fig,.stamp,.routes,.ladder,pre{font-family:var(--mono)}
+
+/* the mark */
+header.mark{padding:3.2rem 0 1.6rem}
+.wordmark{font-size:clamp(2.5rem,6.5vw,4.1rem);font-weight:700;letter-spacing:-.055em;
+          line-height:.95;font-family:var(--mono)}
+.etym{font-family:var(--serif);font-style:italic;font-size:1.0625rem;color:var(--muted);margin:.5rem 0 0}
+.claim{font-size:clamp(1.15rem,2.4vw,1.4rem);line-height:1.5;max-width:44ch;margin:1.4rem 0 0;
+       font-family:var(--serif)}
+.claim b{font-family:var(--mono);font-weight:700;font-size:.92em}
+nav.top{margin:1.8rem 0 0;font-family:var(--mono);font-size:.8125rem;color:var(--muted);
+        display:flex;flex-wrap:wrap;gap:.35rem 1.6rem}
+nav.top a{border-bottom:0}
+nav.top a:hover{border-bottom:1px solid var(--ink)}
+
+/* sections: the CLI's own shape, 14ch of label then the content */
+section{border-top:1px solid var(--rule);padding:2.6rem 0 .4rem;margin-top:2.6rem}
+.sechead{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;margin:0 0 1.4rem;align-items:baseline}
+.sechead h2{grid-column:2;font-size:1.0625rem;font-weight:700;letter-spacing:-.01em;margin:0}
+.sechead .meta{grid-column:1;font-size:.8125rem;color:var(--muted);letter-spacing:.01em}
+@media (max-width:44rem){.sechead{grid-template-columns:1fr}.sechead h2,.sechead .meta{grid-column:1}}
+
+/* the hero printout */
+.printout{background:var(--band);border-left:2px solid var(--ink);padding:1.3rem 1.4rem;margin:0;
+          font-size:.8125rem;line-height:1.75;overflow-x:auto}
+.printout .ph{font-weight:700}
+.printout .pm{color:var(--muted);font-weight:400}
+.cut{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad);
+     text-decoration-thickness:1px}
+.kept{color:var(--ink)}
+.quote{color:var(--muted)}
+.state-ok{color:var(--ok);font-weight:500}
+.state-warn{color:var(--warn);font-weight:500}
+.state-bad{color:var(--bad);font-weight:500}
+.row{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
+.row .k{color:var(--muted)}
+.mrow{display:grid;grid-template-columns:25ch 12ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
+.mrow .v{text-align:right;font-weight:500}
+.mrow .u{color:var(--muted)}
+.beforeafter{border-left:2px solid var(--ok);background:var(--band);padding:.9rem 1.4rem 1rem;
+             margin:0 0 1.5rem}
+.beforeafter .mrow{grid-template-columns:30ch auto 1fr;padding-top:.4rem}
+.beforeafter .mrow .v{white-space:nowrap}
+.beforeafter .mrow:first-child>span:first-child{color:var(--ink)}
+@media (max-width:44rem){.mrow,.beforeafter .mrow{grid-template-columns:1fr 1fr}
+  .mrow .u{grid-column:1/-1}
+  .beforeafter .mrow{grid-template-columns:1fr}
+  .beforeafter .mrow .v{white-space:normal;text-align:left}}
+
+/* figures */
+.fig{margin:0 0 2.6rem}
+.figscroll{overflow-x:auto;overscroll-behavior-x:contain}
+.fig h3{font-size:.9375rem;margin:0 0 .2rem;font-weight:700}
+.fig p.cap{font-family:var(--serif);font-size:.9375rem;color:var(--muted);margin:.1rem 0 .8rem;max-width:64ch}
+.fig svg{width:100%;height:auto;display:block}
+.stamp{font-family:var(--mono);font-size:.6875rem;color:var(--muted);letter-spacing:.02em;
+       margin:.5rem 0 0;text-transform:none}
+.stamp b{font-weight:500;color:var(--ink)}
+/* A chart that shrinks to the phone is a chart nobody can read: below the column width it
+   keeps its own size and scrolls sideways instead. */
+@media (max-width:44rem){.figscroll svg{width:780px}}
+
+/* install routes */
+.routes{display:grid;grid-template-columns:1fr;gap:1.4rem;margin:0;min-width:0}
+.route{border-top:1px solid var(--rule);padding-top:.8rem;min-width:0}
+.route h3{font-size:.8125rem;margin:0 0 .5rem;color:var(--muted);font-weight:500}
+/* min-width:0 is what makes the scroll real: a grid item defaults to min-content, which
+   would widen the page instead of letting a long command line scroll inside the block. */
+pre{margin:0;font-size:.8125rem;line-height:1.85;overflow-x:auto;min-width:0;max-width:100%;
+    background:var(--band);padding:.85rem 1rem;border-left:2px solid var(--graphite)}
+pre .c{color:var(--muted)}
+
+/* tables in text, for the numbers a picture cannot carry */
+table{border-collapse:collapse;font-family:var(--mono);font-size:.8125rem;margin:.4rem 0 0;width:100%}
+th{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--rule);padding:.35rem .6rem .35rem 0}
+td{border-bottom:1px solid var(--band);padding:.35rem .6rem .35rem 0;overflow-wrap:anywhere}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+caption{text-align:left;font-family:var(--serif);font-size:.875rem;color:var(--muted);padding-bottom:.5rem}
+.slots td:first-child{white-space:nowrap}
+
+/* the ladder */
+.ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6rem;margin:0 0 .6rem}
+.ladder div{border-top:2px solid var(--ink);padding-top:.7rem}
+.ladder h3{font-size:.875rem;margin:0 0 .35rem}
+.ladder p{font-family:var(--serif);font-size:.9375rem;margin:0;color:var(--muted);max-width:32ch}
+@media (max-width:44rem){.ladder{grid-template-columns:1fr}}
+
+footer{border-top:1px solid var(--rule);margin-top:3rem;padding:1.6rem 0 4rem;
+       font-family:var(--mono);font-size:.75rem;color:var(--muted);line-height:2}
+footer b{color:var(--ink);font-weight:500}
+@media (prefers-reduced-motion:no-preference){
+  .printout{animation:settle .5s ease-out both}
+  @keyframes settle{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mark">
+  <div class="wordmark">Limen</div>
+  <p class="etym">līmen — the threshold. Everything below it never reaches the model.</p>
+  <p class="claim">A decision layer between your coding agent and its model API. It answers,
+    before the call is made, what the request does not need to carry:
+    <b>43.6%</b> fewer input tokens on measured traffic, task pass-rate held, running
+    on your own machine at <b>$0</b>.</p>
+  <nav class="top">
+    <a href="#install">install</a>
+    <a href="#numbers">the numbers</a>
+    <a href="#use">how to use it</a>
+    <a href="#cost">what it costs</a>
+    <a href="#gates">what is not measured</a>
+    <a href="https://github.com/aashish254/limen">source</a>
+  </nav>
+</header>
+
+<section id="hero" aria-label="one real request, before and after">
+  <div class="sechead"><span class="meta">the product</span><h2>one request, and what goes away</h2></div>
+  <p>One request from the demo corpus, replayed twice: once with every slot observing,
+  once with two of them enforcing. Both numbers below are the input the provider was
+  billed for, and the printout is the enforcing run's — the command the tool itself
+  tells you to run. Struck columns are what Limen removed; the reason beside each cut is
+  <em>not</em> struck, because the reason is the part you audit.</p>
+  <div class="beforeafter"><div class="mrow compare"><span>the request the client sent</span><span class="v">11,935</span><span class="u">tok input</span></div><div class="mrow"><span>what Limen let through</span><span class="v">6,356</span><span class="u">tok input  <b class="state-ok">−46.7%</b></span></div><div class="mrow"><span>spend, at the mock's tariff</span><span class="v">$0.0413 → $0.0246</span><span class="u">5,579 tok and $0.0167 went away</span></div></div>
+<pre class="printout"><span class="ph">subproto show</span><span class="pm"> — request 3, anthropic /v1/messages, claude-sonnet-4-5</span>
+
+<span class="k">                     client  </span> claude-code
+<span class="k">                   recorded  </span>2026-09-27 18:27:12
+<span class="k">                     stream  </span>yes
+<span class="k">                     status  </span>         200
+<span class="k">                       ttfb  </span>        0 ms
+<span class="k">                    latency  </span>        3 ms
+<span class="k">               billed input  </span>       6,356<span class="pm">  (2,464 cached)</span>
+<span class="k">                     output  </span>         320
+<span class="k">                      spend  </span>     $0.0246
+<span class="k">                       body  </span><span class="state-ok">present</span>  /tmp/limen-on/bodies/anthropic_b211a0a3e4ad.json.gz
+
+<span class="ph">  decisions</span><span class="pm">  3, and it could save 5,345 tok</span>
+<span class="ph">                  tool_gate  </span><span class="state-ok">delivered</span>  12 kept  12 cut  4,145 tok  1.3 ms  compiled
+<span class="k">    tool             </span><span class="cut">exitplanmode                 339 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Present the current plan for user approval. parameter 0 accepts…</span>
+<span class="k">    tool             </span><span class="cut">killshell                    334 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Terminate a running background shell session. parameter 0…</span>
+<span class="k">    tool             </span><span class="cut">mcp__browser__click          353 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Click an element in the browser by selector. parameter 0 accepts…</span>
+<span class="k">    tool             </span><span class="cut">mcp__browser__fill           348 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Fill a form field with a value. parameter 0 accepts a JSON…</span>
+<span class="k">    tool             </span><span class="cut">mcp__browser__navigate       355 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Navigate the browser to a URL. parameter 0 accepts a JSON object…</span>
+<span class="k">    tool             </span><span class="cut">mcp__browser__screenshot     362 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Capture a screenshot of the current page. parameter 0 accepts a…</span>
+<span class="k">    tool             </span><span class="cut">mcp__db__query               344 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Run a SQL query against the project database. parameter 0…</span>
+<span class="k">    tool             </span><span class="cut">mcp__db__schema              343 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
+                             <span class="quote">Print the schema of a database table. parameter 0 accepts a JSON…</span>
+<span class="pm">      4 more in --json</span>
+<span class="ph">                    compact  </span><span class="state-ok">delivered</span>  10 kept  3 cut  1,200 tok  0.0 ms  compiled
+<span class="k">    message          </span><span class="cut">tool_result#5                381 tok</span> <span class="pm">error, tool_result, names-task-file</span>
+                             <span class="quote">raise RetryExhausted(last_error) from err INFO connecting to…</span>
+<span class="k">    message          </span><span class="cut">tool_result#7                410 tok</span> <span class="pm">error, tool_result, names-task-file</span>
+                             <span class="quote">DEBUG serialising payload {'amount': 4210, 'currency': 'usd',…</span>
+<span class="k">    message          </span><span class="cut">tool_result#3                409 tok</span> <span class="pm">error, tool_result, names-task-file</span>
+                             <span class="quote">raise RetryExhausted(last_error) from err DEBUG serialising…</span>
+<span class="ph">                     effort  </span><span class="state-warn">potential</span>  0 tok  0.0 ms  heuristic
+                             <span class="quote">tier medium, advisory-only: multi-file</span></pre>
+  <p class="stamp">rendered verbatim from <b>subproto demo --slots --home /tmp/limen-off; SUBPROTO_APPLY=tool_gate,compact SUBPROTO_COMPILE=on subproto demo --slots --home /tmp/limen-on; subproto show 3 --home /tmp/limen-on</b> at commit <b>0f7a546</b>.
+  <code>delivered</code> means the bytes never reached the model; <code>potential</code>
+  means the slot named a cut it was not switched on to make. Nothing left this machine:
+  the upstream is the in-repo mock.</p>
+</section>
+
+<section id="what">
+  <div class="sechead"><span class="meta">what it is</span><h2>four decisions, made locally, in the time of one regex</h2></div>
+  <p>Limen is a proxy you point your agent at. It speaks the OpenAI, Anthropic and Gemini
+  request shapes, records every decision it makes, and answers four questions before your
+  prompt is sent: which tool specs this task cannot use, which old turns have gone stale,
+  which file notes the graph says are irrelevant, and how much reasoning this step deserves.
+  It is a <em>System One</em> layer — fast, cheap, fallible — sitting under the model rather
+  than replacing it.</p>
+  <p>It ships with no third-party runtime dependencies, needs no account, and starts in
+  <span class="state-warn">observation</span>: it records what it would have dropped and
+  changes nothing until you name the slots you trust.</p>
+  <table class="slots">
+    <caption>The four slots. None of them is on until you name it in
+      <code>SUBPROTO_APPLY</code>, and each one is reversible on its own. The token column is
+      the offline projection <code>bench/ab.py --mock</code> prints — what the slot could take
+      from recorded prompt shapes, not yet what it took.</caption>
+    <tr><th>slot</th><th>what it decides</th><th class="n">tokens it would cut</th><th class="n">% of input</th></tr>
+    <tr><td>tool_gate</td><td>which tool schemas this turn cannot use, out of the ~24 that ride along in every request</td><td class="n">101,562</td><td class="n">28.3%</td></tr>
+<tr><td>compact</td><td>which old turns have gone stale — a superseded tool result, an error the agent already worked around</td><td class="n">14,821</td><td class="n">4.1%</td></tr>
+<tr><td>context</td><td>which file notes the code graph says this task will not touch</td><td class="n">0</td><td class="n">0.0%</td></tr>
+<tr><td>effort</td><td>how much reasoning this step deserves — advisory: it names a tier and never rewrites the request</td><td class="n">0</td><td class="n">0.0%</td></tr>
+  </table>
+</section>
+
+<section id="install">
+  <div class="sechead"><span class="meta">install</span><h2>three routes, no account at any of them</h2></div>
+  <div class="routes">
+    <div class="route">
+      <h3>from the source you just cloned</h3>
+      <pre>git clone https://github.com/aashish254/limen.git
+cd limen
+./install.sh                <span class="c"># puts `subproto` on PATH, no package index</span></pre>
+    </div>
+    <div class="route">
+      <h3>into a virtualenv you already use</h3>
+      <pre>python -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install .               <span class="c"># Python 3.9 or newer, zero dependencies</span></pre>
+    </div>
+    <div class="route">
+      <h3>without installing anything</h3>
+      <pre>python3 -m subproto demo --slots   <span class="c"># replays 17 agent turns through the proxy</span></pre>
+    </div>
+  </div>
+  <p>The package and the command are still named <code>subproto</code>; <b>Limen</b> is the
+  project. Point your agent at it and check the machine before you believe anything else:</p>
+  <pre>subproto doctor            <span class="c"># 6 measured checks: interpreter, data dir, port, keys, backends</span>
+subproto demo --slots      <span class="c"># 17 synthetic agent requests through the proxy, against the local mock</span>
+subproto report            <span class="c"># what those requests would have cost, and what the slots would have cut</span></pre>
+  <p class="stamp"><b>438</b> tests and <b>157</b> mutants are the gate:
+  <code>bash run_tests.sh</code> runs them, and CI runs that on Python 3.9 and 3.11 on Linux
+  and macOS.</p>
+</section>
+
+<section id="numbers">
+  <div class="sechead"><span class="meta">the numbers</span><h2>the same traffic, with the system off and on</h2></div>
+  <p>Every figure below comes out of a run on this machine at $0 against the in-repo mock.
+  The corpus is 20 coding-agent tasks replayed 5 times through three arms:
+  <em>observe</em> (nothing is changed), <em>enforce</em> (each slot spends its own budget),
+  and <em>compiled</em> (one joint budget over the whole request). Where a number is a
+  projection or has not been run, the caption says which.</p>
+  <div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 944 193" width="944" height="193" role="img" aria-label="what the average request carries before anything is decided">
+<rect width="944" height="193" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">what the average request carries before anything is decided</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">mean of 20 tasks, 19,746 est input tokens, weighed part by part with the estimator the proxy itself uses</text>
+<g transform="translate(0,0)"><text x="0" y="97" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">mean request</text><rect x="134.0" y="80" width="301.3" height="20" fill="#1E7A34"/><text x="139.0" y="94" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#FFFFFF">11,757</text><rect x="435.3" y="80" width="108.5" height="20" fill="#A66A00"/><text x="440.3" y="94" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#FFFFFF">4,232</text><rect x="543.7" y="80" width="91.4" height="20" fill="#9AA1AA"/><text x="548.7" y="94" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#FFFFFF">3,568</text><rect x="635.2" y="80" width="3.4" height="20" fill="#3F6E8F"/><rect x="638.6" y="80" width="1.4" height="20" fill="#7A5C99"/><text x="650.0" y="95" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#101317">19,746</text><rect x="134" y="142" width="11" height="11" fill="#1E7A34"/><text x="150" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">tool specs (24)  11,757</text><rect x="332" y="142" width="11" height="11" fill="#A66A00"/><text x="348" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">stale reads  4,232</text><rect x="497" y="142" width="11" height="11" fill="#9AA1AA"/><text x="513" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">system prompt  3,568</text><rect x="676" y="142" width="11" height="11" fill="#3F6E8F"/><text x="692" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">the files the task needs  134</text><rect x="134" y="155" width="11" height="11" fill="#7A5C99"/><text x="150" y="165" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">task instruction  55</text><text x="0" y="66" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">total 19,746 tok</text></g>
+<text x="0" y="187" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">parts are weighed separately and scaled to the measured total (x1.446). Only the two rightmost categories are what the slots may touch.</text>
+</svg></div><p class="cap">The average request before anything is decided: a fifth of it is tool schemas the turn cannot use, and the task itself is a rounding error.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 300" width="768" height="300" role="img" aria-label="input tokens per task, by what the task is about">
+<rect width="768" height="300" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">input tokens per task, by what the task is about</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">20 tasks, 5 repeats each, same mock upstream. The compiler spends one budget over the whole request.</text>
+<g transform="translate(0,0)"><line x1="66" y1="226.0" x2="672" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="672" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">6,250</text><line x1="66" y1="144.0" x2="672" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">12,500</text><line x1="66" y1="103.0" x2="672" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">18,750</text><line x1="66" y1="62.0" x2="672" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">25,000</text><rect x="80.6" y="91.1" width="26.7" height="134.9" fill="#9AA1AA"/><text x="93.9" y="86.1" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">20,559</text><rect x="113.3" y="131.9" width="26.7" height="94.1" fill="#A66A00"/><text x="126.6" y="126.9" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">14,342</text><rect x="145.9" y="150.6" width="26.7" height="75.4" fill="#1E7A34"/><text x="159.3" y="145.6" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,500</text><text x="126.6" y="70.1" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-44.1%</text><text x="126.6" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">tests</text><rect x="201.8" y="92.6" width="26.7" height="133.4" fill="#9AA1AA"/><text x="215.1" y="87.6" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">20,340</text><rect x="234.5" y="128.8" width="26.7" height="97.2" fill="#A66A00"/><text x="247.8" y="123.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">14,816</text><rect x="267.1" y="150.8" width="26.7" height="75.2" fill="#1E7A34"/><text x="280.5" y="145.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,464</text><text x="247.8" y="71.6" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.6%</text><text x="247.8" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">payments</text><rect x="323.0" y="97.4" width="26.7" height="128.6" fill="#9AA1AA"/><text x="336.3" y="92.4" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19,607</text><rect x="355.7" y="136.7" width="26.7" height="89.3" fill="#A66A00"/><text x="369.0" y="131.7" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">13,608</text><rect x="388.3" y="153.8" width="26.7" height="72.2" fill="#1E7A34"/><text x="401.7" y="148.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,012</text><text x="369.0" y="76.4" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.8%</text><text x="369.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">security</text><rect x="444.2" y="97.5" width="26.7" height="128.5" fill="#9AA1AA"/><text x="457.5" y="92.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19,586</text><rect x="476.9" y="139.1" width="26.7" height="86.9" fill="#A66A00"/><text x="490.2" y="134.1" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">13,254</text><rect x="509.5" y="153.5" width="26.7" height="72.5" fill="#1E7A34"/><text x="522.9" y="148.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,045</text><text x="490.2" y="76.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.6%</text><text x="490.2" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">data</text><rect x="565.4" y="101.2" width="26.7" height="124.8" fill="#9AA1AA"/><text x="578.7" y="96.2" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19,023</text><rect x="598.1" y="138.5" width="26.7" height="87.5" fill="#A66A00"/><text x="611.4" y="133.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">13,341</text><rect x="630.7" y="155.1" width="26.7" height="70.9" fill="#1E7A34"/><text x="644.1" y="150.1" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">10,814</text><text x="611.4" y="80.2" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.2%</text><text x="611.4" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">services</text><rect x="66" y="262" width="11" height="11" fill="#9AA1AA"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer off</text><rect x="204" y="262" width="11" height="11" fill="#A66A00"/><text x="220" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">per-slot budgets</text><rect x="365" y="262" width="11" height="11" fill="#1E7A34"/><text x="381" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">one compiled budget</text><text x="672" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">tok</text></g>
+<text x="0" y="294" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">measured on the mock at $0; a request-shape proxy, not a billed invoice. Families are author labels.</text>
+</svg></div><p class="cap">Input tokens per task with the layer off, per-slot, and compiled, split by what the task is about. The reduction is flat across families, which is the point — it is not one kind of task paying for the others.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 909 300" width="909" height="300" role="img" aria-label="the cut by request size, quartiles of the unmanaged request">
+<rect width="909" height="300" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">the cut by request size, quartiles of the unmanaged request</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">buckets are set by what the request costs before the system sees it, so a task cannot be moved into a flattering bucket</text>
+<g transform="translate(0,0)"><line x1="66" y1="226.0" x2="542" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="542" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">6,250</text><line x1="66" y1="144.0" x2="542" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">12,500</text><line x1="66" y1="103.0" x2="542" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">18,750</text><line x1="66" y1="62.0" x2="542" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">25,000</text><rect x="84.5" y="105.2" width="38.0" height="120.8" fill="#9AA1AA"/><text x="103.5" y="100.2" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">18,413</text><rect x="128.5" y="156.7" width="38.0" height="69.3" fill="#1E7A34"/><text x="147.5" y="151.7" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">10,570</text><text x="125.5" y="84.2" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-42.6%</text><text x="125.5" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">Q1 smallest</text><rect x="203.5" y="97.5" width="38.0" height="128.5" fill="#9AA1AA"/><text x="222.5" y="92.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19,595</text><rect x="247.5" y="153.6" width="38.0" height="72.4" fill="#1E7A34"/><text x="266.5" y="148.6" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,035</text><text x="244.5" y="76.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.7%</text><text x="244.5" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">Q2</text><rect x="322.5" y="97.4" width="38.0" height="128.6" fill="#9AA1AA"/><text x="341.5" y="92.4" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19,610</text><rect x="366.5" y="153.7" width="38.0" height="72.3" fill="#1E7A34"/><text x="385.5" y="148.7" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,021</text><text x="363.5" y="76.4" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-43.8%</text><text x="363.5" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">Q3</text><rect x="441.5" y="85.8" width="38.0" height="140.2" fill="#9AA1AA"/><text x="460.5" y="80.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">21,367</text><rect x="485.5" y="147.9" width="38.0" height="78.1" fill="#1E7A34"/><text x="504.5" y="142.9" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">11,905</text><text x="482.5" y="64.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#1E7A34">-44.3%</text><text x="482.5" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">Q4 largest</text><rect x="66" y="262" width="11" height="11" fill="#9AA1AA"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer off</text><rect x="204" y="262" width="11" height="11" fill="#1E7A34"/><text x="220" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer on</text><text x="542" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">tok</text></g>
+<text x="0" y="294" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">mean input tokens per task in each quartile; Q1 smallest 16666-19583, Q2 19588-19604, Q3 19605-19615, Q4 largest 19627-22581</text>
+</svg></div><p class="cap">The same three arms grouped by the size of the unmanaged request. Bigger requests do not get a proportionally bigger cut, so the saving does not live only in the outliers.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 781 180" width="781" height="180" role="img" aria-label="what each slot would cut, in estimated input tokens">
+<rect width="781" height="180" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">what each slot would cut, in estimated input tokens</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">a projection per slot over the deterministic synthetic corpus (30 requests, 359,259 est input tokens)</text>
+<g transform="translate(0,0)"><text x="0" y="97" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the synthetic corpus</text><rect x="162.0" y="80" width="417.1" height="20" fill="#1E7A34"/><text x="167.0" y="94" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#FFFFFF">101,562</text><rect x="579.1" y="80" width="60.9" height="20" fill="#A66A00"/><text x="584.1" y="94" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#FFFFFF">14,821</text><text x="650.0" y="95" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="700" fill="#101317">116,383</text><rect x="162" y="142" width="11" height="11" fill="#1E7A34"/><text x="178" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">tool_gate  101,562</text><rect x="326" y="142" width="11" height="11" fill="#A66A00"/><text x="342" y="152" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">compact  14,821</text><text x="0" y="66" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">total 116,383 tok</text></g>
+<text x="0" y="174" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">a projection from measured prompt shapes (I6): these are tokens that would not be sent, not a provider invoice.</text>
+</svg></div><p class="cap">The ablation's own corpus: what each slot would take off a request shaped like the ones it measures, priced in estimated input tokens. That is why it is not the number the arms above delivered.</p><p class="stamp"><b>python3 bench/ab.py --mock 24 --json</b>, run by <b>python3 bench/launch_stats.py --iters 5</b> — 30 requests, 359,259 est input tokens.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 931 300" width="931" height="300" role="img" aria-label="task pass-rate, by family: the floor the cut has to clear">
+<rect width="931" height="300" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">task pass-rate, by family: the floor the cut has to clear</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">a task passes when the files it needed are still in the request. The gate is -1 pp; the observed delta is 0.0 pp.</text>
+<g transform="translate(0,0)"><line x1="66" y1="226.0" x2="542" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="542" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">25</text><line x1="66" y1="144.0" x2="542" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">50</text><line x1="66" y1="103.0" x2="542" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">75</text><line x1="66" y1="62.0" x2="542" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">100</text><rect x="79.2" y="62.0" width="31.4" height="164.0" fill="#9AA1AA"/><text x="94.9" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><rect x="116.6" y="62.0" width="31.4" height="164.0" fill="#1E7A34"/><text x="132.3" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><text x="113.6" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">tests</text><rect x="174.4" y="62.0" width="31.4" height="164.0" fill="#9AA1AA"/><text x="190.1" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><rect x="211.8" y="62.0" width="31.4" height="164.0" fill="#1E7A34"/><text x="227.5" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><text x="208.8" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">payments</text><rect x="269.6" y="62.0" width="31.4" height="164.0" fill="#9AA1AA"/><text x="285.3" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><rect x="307.0" y="62.0" width="31.4" height="164.0" fill="#1E7A34"/><text x="322.7" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><text x="304.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">security</text><rect x="364.8" y="62.0" width="31.4" height="164.0" fill="#9AA1AA"/><text x="380.5" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><rect x="402.2" y="62.0" width="31.4" height="164.0" fill="#1E7A34"/><text x="417.9" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><text x="399.2" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">data</text><rect x="460.0" y="62.0" width="31.4" height="164.0" fill="#9AA1AA"/><text x="475.7" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><rect x="497.4" y="62.0" width="31.4" height="164.0" fill="#1E7A34"/><text x="513.1" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100</text><text x="494.4" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">services</text><rect x="66" y="262" width="11" height="11" fill="#9AA1AA"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer off</text><rect x="204" y="262" width="11" height="11" fill="#1E7A34"/><text x="220" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer on</text><text x="542" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">% of tasks passing</text></g>
+<text x="0" y="294" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">same 20 tasks, 5 repeats, mock upstream. Held at 100%, family by family, is the claim; a pooled average could hide one broken family.</text>
+</svg></div><p class="cap">Pass-rate by family with the cut enforced. A saving that broke the task would be visible here as a missing bar, not as a footnote.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 944 300" width="944" height="300" role="img" aria-label="what survives the cut: recall and precision of the evidence">
+<rect width="944" height="300" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">what survives the cut: recall and precision of the evidence</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">recall = required files still present. precision = the share of what survived that was required.</text>
+<g transform="translate(0,0)"><line x1="66" y1="226.0" x2="542" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="542" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">25</text><line x1="66" y1="144.0" x2="542" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">50</text><line x1="66" y1="103.0" x2="542" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">75</text><line x1="66" y1="62.0" x2="542" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">100</text><rect x="144.0" y="62.0" width="38.0" height="164.0" fill="#9AA1AA"/><text x="163.0" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100.0</text><rect x="188.0" y="62.0" width="38.0" height="164.0" fill="#1E7A34"/><text x="207.0" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100.0</text><text x="185.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">recall of required files</text><rect x="382.0" y="222.9" width="38.0" height="3.1" fill="#9AA1AA"/><text x="401.0" y="217.9" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">1.9</text><rect x="426.0" y="193.9" width="38.0" height="32.1" fill="#1E7A34"/><text x="445.0" y="188.9" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">19.6</text><text x="423.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">precision of what survived</text><rect x="66" y="262" width="11" height="11" fill="#9AA1AA"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer off</text><rect x="204" y="262" width="11" height="11" fill="#1E7A34"/><text x="220" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">the layer on</text><text x="542" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">%</text></g>
+<text x="0" y="294" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">precision starts low because an unmanaged request carries every tool spec and every stale turn; the cut raises it only if recall holds.</text>
+</svg></div><p class="cap">Of the files a task is about, how many survive (recall), and of what survives, how many are the ones that matter (precision). Per-slot keeps recall and spends precision; the compiler moves both.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 976 315" width="976" height="315" role="img" aria-label="the set built to break the naive version of this idea">
+<rect width="976" height="315" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">the set built to break the naive version of this idea</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">8 long requests where the file the task needs sits behind a run of large files it does not need. A per-slot budget spends itself</text>
+<text x="0" y="53" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">on the newest and drops the one that matters; one joint budget over the whole request does not.</text>
+<g transform="translate(0,15)"><line x1="66" y1="226.0" x2="620" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="620" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">25</text><line x1="66" y1="144.0" x2="620" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">50</text><line x1="66" y1="103.0" x2="620" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">75</text><line x1="66" y1="62.0" x2="620" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">100</text><rect x="117.3" y="225.0" width="38.0" height="1.0" fill="#B3261E"/><text x="136.3" y="220.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">0.0</text><rect x="161.3" y="62.0" width="38.0" height="164.0" fill="#1E7A34"/><text x="180.3" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100.0</text><text x="158.3" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">task pass-rate</text><rect x="302.0" y="221.6" width="38.0" height="4.4" fill="#B3261E"/><text x="321.0" y="216.6" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">2.7</text><rect x="346.0" y="62.0" width="38.0" height="164.0" fill="#1E7A34"/><text x="365.0" y="57.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">100.0</text><text x="343.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">recall of required files</text><rect x="486.7" y="225.0" width="38.0" height="1.0" fill="#B3261E"/><text x="505.7" y="220.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">0.5</text><rect x="530.7" y="184.9" width="38.0" height="41.1" fill="#1E7A34"/><text x="549.7" y="179.9" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">25.1</text><text x="527.7" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">precision of what survived</text><rect x="66" y="262" width="11" height="11" fill="#B3261E"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">three slots, three budgets</text><rect x="301" y="262" width="11" height="11" fill="#1E7A34"/><text x="317" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">one compiled budget</text><text x="620" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">%</text></g>
+<text x="0" y="309" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">this is why the shipping arm is the compiler. A slot that saves more tokens than it is allowed to is not a saving, it is a failure.</text>
+</svg></div><p class="cap">Eight tasks built so the file the grader wants sits behind a run of large files it does not need — which is what a per-slot recency budget is worst at. Per-slot loses every one of them. This panel is the reason the compiler is the default story rather than a bonus arm.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0, 20 tasks × 5 repeats, commit <b>0f7a546</b>.</p></div>
+<div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 896 280" width="896" height="280" role="img" aria-label="the real checkpoint's cost per decision, against the shipped budget">
+<rect width="896" height="280" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">the real checkpoint's cost per decision, against the shipped budget</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">convaiinnovations/laya 0.3.20 on cpu, 30 decisions per shape, measured through the server that would use it</text>
+<g transform="translate(0,0)"><line x1="62" y1="208.0" x2="600" y2="208.0" stroke="#D5D9E0"/><text x="54" y="212.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="62" y1="133.0" x2="600" y2="133.0" stroke="#D5D9E0"/><text x="54" y="137.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">750</text><line x1="62" y1="58.0" x2="600" y2="58.0" stroke="#D5D9E0"/><text x="54" y="62.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">1500</text><line x1="62" y1="173.0" x2="600" y2="173.0" stroke="#B3261E" stroke-width="2" stroke-dasharray="6 4"/><text x="66" y="167.0" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#B3261E">budget 350 ms</text><rect x="119.7" y="195.7" width="64.0" height="12.3" fill="#1E7A34"/><text x="151.7" y="189.7" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">123</text><text x="151.7" y="228" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">choice</text><rect x="299.0" y="128.0" width="64.0" height="80.0" fill="#B3261E"/><text x="331.0" y="122.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">800</text><text x="331.0" y="228" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">keep_drop</text><rect x="478.3" y="98.3" width="64.0" height="109.7" fill="#B3261E"/><text x="510.3" y="92.3" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">1097</text><text x="510.3" y="228" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">noul</text></g>
+<text x="0" y="274" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">read from bench/laya_latency.json, measured earlier; not re-run here. Only the shape under the red line is usable in the engine.</text>
+</svg></div><p class="cap">The real small model's measured cost per decision against the shape it has to answer in. One shape fits the budget; the one that would name every option does not, so the shipped path scores a single choice.</p><p class="stamp"><b>convaiinnovations/laya 0.3.20</b> on cpu, read from <b>bench/laya_latency.json</b> — measured against the local server, not re-run by the arms.</p></div>
+  <table class="pool">
+    <caption>The pooled result, in text, so the figures are not the only record. Pooled
+      over every task and repeat; the change column is <em>observe → compiled</em> unless
+      the row says otherwise.</caption>
+    <tr><th>metric</th><th class="n">without</th><th class="n">per-slot</th><th class="n">compiled</th><th class="n">change</th></tr>
+    <tr><td>input tokens / task</td><td class="n">19,746</td><td class="n">13,822</td><td class="n">11,133</td><td class="n state-ok">−43.6%</td></tr>
+<tr><td>task pass-rate</td><td class="n">100%</td><td class="n">100%</td><td class="n">100%</td><td class="n">held</td></tr>
+<tr><td>recall of the files the task needs</td><td class="n">100%</td><td class="n">100%</td><td class="n">100%</td><td class="n">held</td></tr>
+<tr><td>precision of what survives</td><td class="n">1.9%</td><td class="n">2.6%</td><td class="n">19.6%</td><td class="n state-ok">+17.7 pp</td></tr>
+<tr><td>p50 request latency (ms)</td><td class="n">6.8</td><td class="n">6.3</td><td class="n">6.5</td><td class="n">-0.2</td></tr>
+<tr><td>hard set: pass-rate / recall</td><td class="n">100% / 100%</td><td class="n"><b class="state-bad">0% / 2.7%</b></td><td class="n">100% / 100%</td><td class="n">per-slot lost it</td></tr>
+  </table>
+  <p class="stamp">all panels generated by <b>python3 bench/launch_stats.py --iters 5</b> at commit <b>0f7a546</b> on
+  <b>Darwin 27.0.0, 10 cores</b>, python <b>3.11.15</b>, load average <b>6.2</b> at start.
+  Re-run that command and the page rebuilds from what it measures.</p>
+</section>
+
+<section id="use">
+  <div class="sechead"><span class="meta">how to use it</span><h2>the ladder, and where each rung earns its keep</h2></div>
+  <div class="ladder">
+    <div><h3>1 — observe</h3><p>Set the base URL and record. Nothing is rewritten, and the
+      first page you read is <code>subproto report</code>: what your own traffic carries that
+      it does not need.</p></div>
+    <div><h3>2 — enforce what you trust</h3><p>Name the slots, one at a time:
+      <code>SUBPROTO_APPLY=tool_gate</code>. Each one is reversible, and the pass-rate gate
+      is checked per arm, not pooled.</p></div>
+    <div><h3>3 — compile</h3><p><code>SUBPROTO_COMPILE=on</code> spends a single budget over
+      messages, tool specs and file notes together. Cheaper and more precise — and slower per
+      decision, which is stated below rather than hidden.</p></div>
+  </div>
+  <p>The cached prefix is never rewritten. That is the whole reason a token-saving proxy can
+  be worth anything: busting a provider's prompt cache costs more than the tokens it saves, so
+  Limen only ever edits the part of the request the cache does not hold, and there is an
+  invariant test that asserts byte equality on it.</p>
+</section>
+
+<section id="cost">
+  <div class="sechead"><span class="meta">the honest part</span><h2>what it costs when it is wrong</h2></div>
+  <p>The demo corpus is 17 requests and every one of them carries a decision. The regret harvest looks for the case where the wire disagrees with a cut — a file the slot dropped that the agent then read again — and it saw 14 evicted reads, of which <b>10 were wrong</b>: the file came back on the next turn, so the cut cost <b>4,088 tokens</b> of refetch instead of saving them. All 10 were enforced and none was shadow, so that is the price of a call made, not of a call observed — which is why Limen starts in observation, why each slot is reversible on its own, and why this bill sits on the page beside the saving. It works out at 588.2 regrettable drops per 1,000 requests. The mechanism still nets out at 43.6% fewer input tokens per task with the pass-rate held; the honest number is the pair, not the one that flatters it.</p>
+  <div class="fig"><div class="figscroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 971 313" width="971" height="313" role="img" aria-label="what enforcing costs when it is wrong">
+<rect width="971" height="313" fill="#FFFFFF"/>
+<text x="0" y="20" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" fill="#101317">what enforcing costs when it is wrong</text>
+<text x="0" y="38" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#5B6472">tokens paid back by re-reads of drops the traffic asked for again, against the tokens the same corpus saves</text>
+<g transform="translate(0,0)"><line x1="66" y1="226.0" x2="542" y2="226.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="230.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">0</text><line x1="66" y1="185.0" x2="542" y2="185.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="189.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">37,500</text><line x1="66" y1="144.0" x2="542" y2="144.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="148.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">75,000</text><line x1="66" y1="103.0" x2="542" y2="103.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="107.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">112,500</text><line x1="66" y1="62.0" x2="542" y2="62.0" stroke="#D5D9E0" stroke-width="1"/><text x="57" y="66.0" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">150,000</text><rect x="166.0" y="98.8" width="38.0" height="127.2" fill="#1E7A34"/><text x="185.0" y="93.8" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">116,383</text><text x="185.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">tokens saved</text><rect x="404.0" y="221.5" width="38.0" height="4.5" fill="#1E7A34"/><text x="423.0" y="216.5" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#101317">4,088</text><text x="423.0" y="246" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">tokens paid back</text><rect x="66" y="262" width="11" height="11" fill="#1E7A34"/><text x="82" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#101317">this corpus</text><text x="542" y="272" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">tok</text></g>
+<text x="0" y="294" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">10 regrettable drops on replayed demo traffic with the slots enforcing; the payback is 3.5% of the saving, and it is the price of enforcing</text>
+<text x="0" y="307" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#5B6472">rather than of observing.</text>
+</svg></div><p class="cap">17 of the 17 requests that carried a decision still had their body on disk when the harvest ran, which is what lets the payback be counted rather than estimated.</p><p class="stamp"><b>python3 bench/launch_stats.py --iters 5</b> on Darwin 27.0.0 — 17 demo requests replayed with the slots enforcing, bodies stored, commit <b>0f7a546</b>.</p></div>
+</section>
+
+<section id="gates">
+  <div class="sechead"><span class="meta">not measured</span><h2>the claims this page does not make</h2></div>
+  <table>
+    <caption>Every one of these is a human action or a spend decision, and each is written into
+      <code>TODO.md</code> as gated rather than checked off.</caption>
+    <tr><th>claim</th><th>what it would take</th></tr>
+    <tr><td>−X% on your own traffic</td><td>a real agent session across ≥2 vendors, run by you. Nothing here has seen a human conversation; every number on this page comes from a seeded synthetic corpus.</td></tr>
+<tr><td>the billed hero number</td><td>an approved API budget and a public 20-task SWE-bench-shaped set with a grader. The $ figures on this page are the in-repo mock's own tariff.</td></tr>
+<tr><td>that a fine-tune beats the heuristic</td><td>labels. The published ablation says the real checkpoint loses by −0.083 precision on the corpus we carry, and 7 of its 10 cases have gold sets equal to the heuristic's own answer.</td></tr>
+<tr><td>a shipped routing model</td><td>the same labels, plus a training run and a weights release.</td></tr>
+<tr><td>version 1.0</td><td>a tag, a PyPI upload, and the launch post. The install routes above are git and pip-from-source until then.</td></tr>
+<tr><td>that it works on Windows</td><td>`os.getloadavg` is POSIX and ANSI handling differs, so CI runs Windows and reports it without gating on it.</td></tr>
+  </table>
+  <p>Against other systems: the published comparison for a decision layer of this kind is
+  TypeSafe AI's Jev, a hosted classifier at $0.042 per million tokens. Limen is local, Apache-2.0
+  and bills nothing. <b>We have never run Jev</b>, so this page carries no speed or accuracy
+  multiplier against it — only the axis we can stand on: what our own traffic costs with the
+  layer on and off.</p>
+</section>
+
+<footer>
+  <div><b>Limen</b> is the project; the package and the command are still
+  <code>subproto</code>. Apache-2.0, 17 subcommands, no runtime dependencies, a
+  Python 3.9 floor.</div>
+  <div>This page is generated: <code>python3 bench/launch_stats.py --iters 5 &amp;&amp;
+  python3 tools/make_site.py</code>. The numbers are not typed by hand, so they cannot drift
+  from the run that produced them.</div>
+  <div><a href="https://github.com/aashish254/limen">github.com/aashish254/limen</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/docs/commands.md">every command</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/docs/configuration.md">every variable</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/CHANGELOG.md">changelog</a></div>
+</footer>
+
+</div>
+</body>
+</html>

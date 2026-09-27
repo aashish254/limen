@@ -14,7 +14,10 @@ import time
 
 
 _REPLAYED = re.compile(r"replayed (\d+) synthetic agent requests")
-_SANDBOX = re.compile(r"^sandbox: (.+)$", re.M)
+# The page has to name the directory *and* the command that reads it: the README tells
+# a reader to run `subproto report` next, and a sandbox line they cannot act on left
+# that second command printing "0 requests" (S46/B1).
+_SANDBOX = re.compile(r"^\s*subproto report --home (.+)$", re.M)
 
 
 def free_port():

@@ -46,6 +46,9 @@ PY
 agg -q --theme github-light --font-size 15 --line-height 1.35 \
     --font-family "SF Mono,Menlo,DejaVu Sans Mono" --cols 100 --rows 26 \
     --idle-time-limit 0.6 /tmp/hero-sized.cast /tmp/hero.gif
+# The cast is the same session the GIF renders, so it has to be re-copied with it —
+# a stale .cast beside a fresh .gif is a claim that cannot be replayed.
+cp /tmp/hero-sized.cast first-30-seconds.cast
 # One row of the empty bottom margin is cropped; the tallest page in the roll needs 25.
 python3 - /tmp/hero.gif <<'PY'
 import sys

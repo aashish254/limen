@@ -1,13 +1,83 @@
 """A mock upstream that speaks just enough of both dialects to test the proxy:
 streamed SSE with realistic usage events, non-streamed JSON, and errors.
+
+It used to answer every request with the same usage block. That made the whole billing
+side of the tool unfalsifiable: `subproto report` printed the identical `billed input`
+and `spend` whether the slots had cut 40 % of the request or nothing at all, while
+`subproto live` on the same traffic said the tokens were delivered — two pages of one
+product disagreeing about whether anything happened (S46/B4). The mock now prices the
+body it was actually sent, and it models a prompt cache the way a provider does: the
+part of this request that is the same string as the last one is a cache read, so a
+proxy that rewrites the cached prefix is billed for it (I2 stops being a claim and
+becomes something the meter can see).
+
+Output is still a tariff constant: the mock answers "done" and does not measure what it
+wrote, so no page should read an output figure as a result.
 """
 
 import json
 import os
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SLEEP = float(os.environ.get("MOCKUP_SLEEP", "0") or 0)
+
+# The same characters-per-token the proxy's own estimator uses, so the two agree on what
+# a request weighs rather than differing by an unexplained factor.
+TOK_CHARS = 3.6
+
+# Per dialect: what the mock charges for an answer, and the shape it answers in.
+TARIFFS = {
+    "anthropic": {"output": 320, "reasoning": 0},
+    "openai": {"output": 320, "reasoning": 0},
+    "gemini": {"output": 410, "reasoning": 90},
+    "responses": {"output": 210, "reasoning": 64},
+}
+
+
+def _tok(text):
+    return int(len(text or "") / TOK_CHARS + 0.5)
+
+
+def prompt_text(body):
+    """The request as one string, in the order a provider reads it."""
+    parts = []
+    if isinstance(body.get("system"), str):
+        parts.append(body["system"])
+    if isinstance(body.get("instructions"), str):
+        parts.append(body["instructions"])
+    for tool in body.get("tools") or []:
+        parts.append(json.dumps(tool, sort_keys=True))
+    for key in ("messages", "input"):
+        for item in body.get(key) or []:
+            parts.append(item if isinstance(item, str) else json.dumps(item, sort_keys=True))
+    if isinstance(body.get("prompt"), str):
+        parts.append(body["prompt"])
+    if isinstance(body.get("contents"), (list, str)):
+        parts.append(json.dumps(body["contents"], sort_keys=True))
+    return "\n".join(parts)
+
+
+def _common_prefix(a, b):
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def price(body, tariff, previous=""):
+    """Usage for this body, given the text the same session sent last time."""
+    text = prompt_text(body)
+    total = _tok(text)
+    cached = _tok(text[:_common_prefix(text, previous)])
+    out = dict(TARIFFS[tariff])
+    out.update({"model": body.get("model") or "mock-model",
+                "input_uncached": max(0, total - cached),
+                "cache_write": 0, "cache_read": cached})
+    return out
 
 
 def anthropic_stream(usage):
@@ -146,15 +216,25 @@ class Handler(BaseHTTPRequestHandler):
                 "type": "overloaded_error", "message": "mock overloaded"}}, 529)
         model = body.get("model") or "mock-model"
         stream = bool(body.get("stream"))
-        usage = {"model": model, "input_uncached": 120, "cache_write": 0,
-                 "cache_read": 48000, "output": 320, "reasoning": 0}
         is_gemini = "generateContent" in self.path or "streamGenerateContent" in self.path
         is_responses = "/responses" in self.path
         is_anthropic = "/messages" in self.path
+        tariff = ("gemini" if is_gemini else "responses" if is_responses
+                  else "anthropic" if is_anthropic else "openai")
         if is_gemini:
             stream = stream or "streamGenerateContent" in self.path
-            usage.update({"input_uncached": 220, "cache_read": 5100,
-                          "output": 410, "reasoning": 90})
+        text = prompt_text(body)
+        key = (tariff, model)
+        seen = getattr(self.server, "seen", None)
+        lock = getattr(self.server, "seen_lock", None)
+        if seen is None:                      # a bare handler, not behind MockUpstream
+            seen, lock = {}, threading.Lock()
+            self.server.seen, self.server.seen_lock = seen, lock
+        with lock:
+            previous = seen.get(key, "")
+            usage = price(body, tariff, previous)
+            seen[key] = text
+        if is_gemini:
             if stream:
                 wfile = _sse(self)
                 for line in gemini_stream(usage):
@@ -163,8 +243,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             return self._json(_gemini_obj(usage))
         if is_responses:
-            usage.update({"input_uncached": 340, "cache_read": 52000,
-                          "output": 210, "reasoning": 64})
             if stream:
                 wfile = _sse(self)
                 for line in responses_stream(usage):
@@ -173,7 +251,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             return self._json(_responses_obj(usage))
         if is_anthropic:
-            usage.update({"cache_read": 48000, "cache_write": 900})
             if stream:
                 wfile = _sse(self)
                 for line in anthropic_stream(usage):
@@ -202,6 +279,10 @@ class MockUpstream(ThreadingHTTPServer):
     def __init__(self, port=8799):
         ThreadingHTTPServer.__init__(self, ("127.0.0.1", port), Handler)
         self.port = port
+        # What each (dialect, model) session last sent, so the next request can be
+        # priced against it. This is the mock's whole memory.
+        self.seen = {}
+        self.seen_lock = threading.Lock()
 
     def start(self):
         import threading

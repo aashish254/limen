@@ -288,8 +288,8 @@ Requirement IDs map to the shipped modules so progress is auditable.
 
 ### FR-9 TUI overlay — ✅ shipped
 `live.py`, `subproto live`
-- **AC:** live terminal meter — `tokens saveable 38% 38,000 tok`, `spend before $1.02`,
-  `spend after $0.63`, and the meter's own state line (`potential` while the slots only
+- **AC:** live terminal meter — `tokens saveable 32% 66,493 tok`, `spend before $0.59`,
+  `spend after $0.40`, and the meter's own state line (`potential` while the slots only
   observe, `delivered` once bytes are actually cut); tailing telemetry,
   `subproto live --once` emits a deterministic snapshot for CI and screenshots. Pure
   `render(snapshot) -> str`, ANSI-tested.
@@ -309,7 +309,7 @@ scoring logic forks.
   the optimiser runs, and a budget that cannot fit it reports `over_budget` instead of
   truncating: `subproto compile … --budget 1500` prints its own header
   *"subproto compile — over budget: nothing was cut"* and one reason line, *"! protected
-  set needs 4959 tok, budget is 1500 — the tail is sacred (I3)"*, and exits 1.
+  set needs 4,959 tok, budget is 1,500 — the tail is sacred (I3)"*, and exits 1.
 - **AC (I6) — retention proof:** every drop names the joint decision that beat it
   (`value/token 0.002700 < kept floor 0.002988 (floor set by tool_result#9)`) and carries a
   reversible address `{request_id, body_sha, pointer, index}` into telemetry — six decimals

@@ -8,7 +8,7 @@ without the change.
 ## Five minutes to a working branch
 
 ```bash
-git clone https://github.com/aashish254/subproto && cd subproto
+git clone https://github.com/aashish254/limen && cd limen
 python3 -m venv .venv && source .venv/bin/activate
 pip install "pytest>=7"              # the package itself has no runtime dependencies
 bash run_tests.sh                    # the whole gate: ~2 h, prints ALL GATES PASS

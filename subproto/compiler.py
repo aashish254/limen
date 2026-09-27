@@ -108,7 +108,7 @@ def plan(candidates, budget):
         return {"budget": budget, "over_budget": True, "protected_tokens": p_tok,
                 "tokens_before": before, "tokens_after": p_tok,
                 "kept": [], "dropped": [], "floor_ratio": None,
-                "reason": "protected set needs %d tok, budget is %d" % (p_tok, budget)}
+                "reason": "protected set needs %s tok, budget is %s" % ("{:,}".format(p_tok), "{:,}".format(budget))}
 
     remaining = budget - p_tok
     # Deterministic: best value-per-token, then absolute value, then kind, then id —

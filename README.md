@@ -1,8 +1,11 @@
 <div align="center">
 
-# subproto
+# Limen
 
-[![CI](https://github.com/aashish254/subproto/actions/workflows/ci.yml/badge.svg)](https://github.com/aashish254/subproto/actions/workflows/ci.yml)
+*the threshold a stimulus has to cross before it is noticed* — here, the decision an
+agent makes before it spends anything
+
+[![CI](https://github.com/aashish254/limen/actions/workflows/ci.yml/badge.svg)](https://github.com/aashish254/limen/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-informational)](pyproject.toml)
 [![Runtime dependencies: 0](https://img.shields.io/badge/dependencies-none-informational)](pyproject.toml)
@@ -28,8 +31,9 @@ just by using it.*
 *The first thirty seconds, on an installed wheel: `subproto --version`, then `doctor`
 reads the machine, `demo` replays 17 synthetic agent requests through the proxy against a
 local mock, and `live` prices the headroom those requests still carry — 32% here, while
-the slots are **observing**, not enforcing. No key, and nothing billed: the `$0.32` on
-screen is what the mock's pricing says the traffic *would* have cost.
+the slots are **observing**, not enforcing. No key, and nothing billed: the `$0.59` on
+screen is what the mock's pricing says the traffic *would* have cost, and `$0.40` is what
+the same 17 requests would cost with the headroom removed.
 [How this was captured](docs/assets/first-30-seconds.sh).*
 
 The full product & engineering spec — goal, requirements, success criteria — lives in
@@ -117,6 +121,13 @@ Enforce a slot explicitly with `SUBPROTO_APPLY=tool_gate,compact`.
 > injection is appended after the cached prefix; compaction only fires past a size
 > threshold where a fresh cache is already cheaper than a replay.
 
+## Names
+
+**Limen** is the project: this repository, the docs and the landing page. **`subproto`**
+is the package and the command — `pip install subproto`, `subproto demo` — and it is not
+going anywhere, because every wiring guide, config example and muscle memory in the wild
+says `subproto`. One brand for people to point at, one name for a shell to type.
+
 ## Install
 
 Python 3.9 or newer, **zero runtime dependencies**, stdlib only, no key, no network
@@ -124,7 +135,7 @@ beyond the provider you point it at. Verified on macOS and Linux; Windows runs b
 explicit "not tested by us" (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 ```bash
-git clone https://github.com/aashish254/subproto && cd subproto
+git clone https://github.com/aashish254/limen && cd limen
 ./install.sh                 # puts a `subproto` shim on your PATH ($HOME/.local/bin)
 # or, without installing anything:  python3 -m subproto …
 # or, as a package:                 pip install .        (pipx-ready: it declares one console script)
@@ -153,9 +164,14 @@ pipx install subproto        # or: pip install subproto
 Two commands is the whole pitch, and neither spends anything:
 
 ```bash
-subproto demo --slots --audit    # replays synthetic agent traffic through the proxy
-subproto report                  # where the tokens went, and what the slots cut
+subproto demo --slots --audit --home /tmp/subproto-try
+subproto report --home /tmp/subproto-try
 ```
+
+`--home` is the part you would otherwise miss: without it `demo` writes to a fresh
+directory it picks for itself, and the bare `subproto report` after it reads your
+default `~/.subproto` instead — 0 requests, or worse, someone else's traffic. The
+`demo` page prints the exact `--home` line to run; these two have it already.
 
 `demo` runs against `fakeup`, a local mock upstream, so you get the real report pages —
 tool counts, per-slot decisions, tokens kept vs cut, p50 decision latency — with no API
@@ -169,7 +185,7 @@ backends answer. Run that first when a command surprises you.
 ```bash
 # 1. See the whole idea with zero setup — replays synthetic agent traffic
 #    through the proxy against a local mock upstream. No key, no spend.
-subproto demo --slots --audit
+subproto demo --slots --audit --home /tmp/subproto-try
 
 # 2. Run for real. Point Claude Code at it (your key stays with Anthropic):
 subproto up --store-bodies --slots &
@@ -204,6 +220,38 @@ subproto retrain              # the cadence verdict + the exact trainer command,
 `subproto inject claude|codex|gemini|aider` prints the exact env vars for each tool.
 For the precise `base_url`/endpoint every supported agent uses, see
 [`WIRING.md`](WIRING.md).
+
+## What it prints
+
+Three pages, photographed from the installed wheel rather than typed out by hand. The
+first two are the same 17 synthetic requests the demo replays against the in-repo mock, so
+every price on screen is what the mock's tariff says that traffic *would* have cost: `$0`
+of API spend, no key.
+
+**`subproto demo --slots`, then `subproto report`** — where the input tokens came from,
+what each model and client cost, the headroom the slots price without touching, and the
+decision latency the routing model actually answered at.
+
+![report after the demo: 179,280 tok billed input, p50 1.2ms slot decision latency, 56.1% of input in tool schemas](docs/assets/terminal/demo-slots.png)
+
+**`subproto show 3`** — one request and every decision it carried, with the reason beside
+each cut. `delivered` is a verdict the model made and the compiler paid for; `potential` is
+advice only. The `body present ~/…` line is the stored request, so a pointer can be opened
+and checked rather than trusted.
+
+![show 3: tool_gate delivered 12 kept 12 cut 4,145 tok, compact delivered 10 kept 3 cut 1,200 tok, effort potential](docs/assets/terminal/show-compiled.png)
+
+**`subproto doctor --port 0`** — the machine readout a stranger gets when something is
+wrong: six checks, each one measured rather than assumed, two state words that need
+fixing, and no key material on the page.
+
+![doctor: 6 checks, 2 to fix — python ok, data dir ok, port ok, provider keys warn, laya runtime not ready, backend not configured](docs/assets/terminal/doctor.png)
+
+`live`'s meter and the `report` page over traffic with no decisions are in
+[`docs/assets/terminal/`](docs/assets/terminal), and
+[`docs/assets/terminal-stills.sh`](docs/assets/terminal-stills.sh) re-runs every command
+above and re-draws every picture — including the row count, which each page measures for
+itself so nothing scrolls out of the frame.
 
 ## The code graph
 
@@ -252,8 +300,10 @@ indexing subproto/tests/fixtures/sample_repo …
   file                         3 kept       0 dropped
 
   what was cut, and what beat it
+    message   tool_result#5                389 tok value/token 0.002987 < kept floor 0.002988
     message   tool_result#7                440 tok value/token 0.002700 < kept floor 0.002988
-    …
+    tool      exitplanmode                 339 tok value/token 0.000000 < kept floor 0.002988
+    …    (3 message rows, 12 tool rows, 0 file rows; `--json` carries all 15)
 ```
 
 (`--graph` takes your repo *or* a saved index; the path above is this repo's own test
@@ -266,7 +316,7 @@ the protected set alone doesn't fit, it says so rather than truncating your tail
 ```
 subproto compile — over budget: nothing was cut
 
-  ! protected set needs 4959 tok, budget is 1500 — the tail is sacred (I3)
+  ! protected set needs 4,959 tok, budget is 1,500 — the tail is sacred (I3)
 ```
 
 That address is walkable. `subproto show <request_id>` reads one recorded request back
@@ -281,32 +331,41 @@ subproto show 3 --home /tmp/subproto-readme
 subproto show — request 3, anthropic /v1/messages, claude-sonnet-4-5
 
                      client   claude-code
-                   recorded  2026-09-27 02:14:51
+                   recorded  2026-09-27 16:11:51
                      stream  yes
                      status           200
                        ttfb          0 ms
-                    latency          3 ms
-               billed input           120  (900 cached)
+                    latency          5 ms
+               billed input        11,935  (2,464 cached)
                      output           320
-                      spend       $0.0223
-                       body  present  /tmp/subproto-readme/bodies/anthropic_8d8beac54010.json.gz
+                      spend       $0.0413
+                       body  present  /tmp/subproto-readme/bodies/anthropic_96a260a6d0ba.json.gz
 
-  decisions  3, 5,345 tok headroom
-                  tool_gate  potential  22 kept  15 cut  4,145 tok  1.8 ms  compiled
-    message          tool_result#5                381 tok value/token 0.002932 < kept floor 0.003003
-                             raise RetryExhausted(last_error) from err INFO connecting to…
-    message          tool_result#7                410 tok value/token 0.002790 < kept floor 0.003003
-                             DEBUG serialising payload {'amount': 4210, 'currency': 'usd',…
-    …
+  decisions  3, and it could save 5,345 tok
+                  tool_gate  potential  12 kept  12 cut  4,145 tok  2.4 ms  compiled
     tool             exitplanmode                 339 tok value/token 0.000000 < kept floor 0.003003
                              Present the current plan for user approval. parameter 0 accepts…
-      7 more in --json
+    tool             killshell                    334 tok value/token 0.000000 < kept floor 0.003003
+                             Terminate a running background shell session. parameter 0…
+    …
+    tool             mcp__db__schema              343 tok value/token 0.000000 < kept floor 0.003003
+                             Print the schema of a database table. parameter 0 accepts a JSON…
+      4 more in --json
                     compact  potential  10 kept  3 cut  1,200 tok  0.0 ms  compiled
     message          tool_result#5                381 tok error, tool_result, names-task-file
                              raise RetryExhausted(last_error) from err INFO connecting to…
+    message          tool_result#7                410 tok error, tool_result, names-task-file
+                             DEBUG serialising payload {'amount': 4210, 'currency': 'usd',…
+    message          tool_result#3                409 tok error, tool_result, names-task-file
+                             raise RetryExhausted(last_error) from err DEBUG serialising…
                      effort  potential  0 tok  0.0 ms  heuristic
                              tier medium, advisory-only: multi-file
 ```
+
+Every block on that page adds up on its own: 12 rows of `tool_gate` sum to the 4,145 tok
+beside its name and 3 rows of `compact` to its 1,200, and no cut is listed twice — the
+joint proof the compiler solves once is attached to one record, so each slot's block is
+projected onto the pool it paid for (S46/B6).
 
 Three things on that page are deliberate. It reads `potential` rather than `delivered`
 because the demo proxy observes without editing the request — the saving is not sold as
@@ -357,7 +416,7 @@ tasks and the *same* graph (`--tasks bench/tasks.hard.jsonl` for the hard set):
 | precision of what survived | 2.6% | 19.6% | **+17.0 pp** `[+2.8, +35.8]` |
 | hard set: pass-rate / recall | **0% / 2.7%** | **100% / 100%** | per-slot VIOLATES I3 |
 
-**Projected on heuristic prompt shapes** (`bench/results.md`): −32.3% if every slot
+**Projected on heuristic prompt shapes** (`bench/results.md`): −32.4% if every slot
 enforces. These are prompt-shape projections, not billed savings, and latency is a
 request-shape proxy against the mock rather than a real time-to-first-token. The
 compiler's p50 on the mock is *still slower* (6.1 → 6.3 ms in the run behind
@@ -378,7 +437,7 @@ real provider billing:
 
 > **same 20 tasks, same model, held pass-rate: −X% input tokens, −Y ms p50 to first
 > token, $A → $B** (billed). Until that exists, the mock-measured −29.9% and the
-> projected −32.3% above are exactly what they're labelled — you can reproduce both
+> projected −32.4% above are exactly what they're labelled — you can reproduce both
 > locally in one command, no key.
 
 ## Bring your own System One model (not just Laya)

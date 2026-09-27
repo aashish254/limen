@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from fakeup import server as mockup
 from subproto import demo
 from subproto.config import Config
 from subproto.engine import Engine
@@ -144,7 +145,9 @@ def test_gemini_streamed_e2e_records_usage(proxied, settled):
     row = tel.query("SELECT api, model, in_tok, cr_tok, out_tok, reasoning_tok, usage_source "
                     "FROM requests ORDER BY id DESC LIMIT 1")[0]
     assert row["api"] == "gemini" and row["usage_source"] == "gemini"
-    assert row["in_tok"] == 220 and row["cr_tok"] == 5100
+    # The mock prices the body it was sent (S46/B4), so the expectation is that body's
+    # weight — not a constant someone once typed into the mock.
+    assert row["in_tok"] == mockup._tok(mockup.prompt_text(body)) and row["cr_tok"] == 0
     assert row["out_tok"] == 410 and row["reasoning_tok"] == 90
 
 
@@ -158,7 +161,8 @@ def test_gemini_non_stream_e2e(proxied, settled):
     row = tel.query("SELECT in_tok, out_tok, usage_source FROM requests "
                     "ORDER BY id DESC LIMIT 1")[0]
     assert row["usage_source"] == "gemini"
-    assert row["in_tok"] == 220 and row["out_tok"] == 410
+    assert row["in_tok"] == mockup._tok(mockup.prompt_text(body))
+    assert row["out_tok"] == 410
 
 
 def test_responses_streamed_e2e_records_usage(proxied, settled):
@@ -171,5 +175,50 @@ def test_responses_streamed_e2e_records_usage(proxied, settled):
     row = tel.query("SELECT api, in_tok, cr_tok, out_tok, reasoning_tok, usage_source "
                     "FROM requests ORDER BY id DESC LIMIT 1")[0]
     assert row["api"] == "responses" and row["usage_source"] == "responses"
-    assert row["in_tok"] == 340 and row["cr_tok"] == 52000
+    assert row["in_tok"] == mockup._tok(mockup.prompt_text(body)) and row["cr_tok"] == 0
     assert row["out_tok"] == 210 and row["reasoning_tok"] == 64
+
+
+def _row(tel, settled, n=1):
+    settled(tel, n)
+    return tel.query("SELECT in_tok, cr_tok, out_tok FROM requests "
+                     "ORDER BY id DESC LIMIT 1")[0]
+
+
+def test_the_mock_bills_a_repeated_prefix_as_a_cache_read(proxied, settled):
+    """The meter has to move when the request moves.
+
+    This is the S46/B4 witness: while the mock answered with a fixed usage block, the
+    enforce arm and the observe arm of the same traffic printed identical `billed input`
+    and `spend`, and `subproto report` contradicted `subproto live` on the same home.
+    """
+    cfg, tel, srv = proxied
+    base = "http://127.0.0.1:%d" % cfg.port
+    body = demo.synthetic_request(3)
+    assert _post_stream(base, "/v1/messages", body, {"x-api-key": "mock"}) == 200
+    first = _row(tel, settled)
+    assert first["in_tok"] == mockup._tok(mockup.prompt_text(body))
+    assert first["cr_tok"] == 0, "nothing was sent before this, so nothing can be cached"
+    assert _post_stream(base, "/v1/messages", body, {"x-api-key": "mock"}) == 200
+    again = _row(tel, settled, 2)
+    assert again["in_tok"] == 0 and again["cr_tok"] == first["in_tok"], again
+
+
+def test_a_rewritten_prefix_is_billed_as_a_cache_miss(proxied, settled):
+    """I2 in the meter, not only in the invariant test.
+
+    A proxy that edits the cached head of the request saves tokens on the body and pays
+    for the whole prefix again. The mock is the only party here that knows about prompt
+    caching, so this is where that trade becomes visible.
+    """
+    cfg, tel, srv = proxied
+    base = "http://127.0.0.1:%d" % cfg.port
+    body = demo.synthetic_request(4)
+    assert _post_stream(base, "/v1/messages", body, {"x-api-key": "mock"}) == 200
+    before = _row(tel, settled)
+    edited = json.loads(json.dumps(body))
+    edited["system"] = edited["system"] + " and then a clause nobody had before"
+    assert _post_stream(base, "/v1/messages", edited, {"x-api-key": "mock"}) == 200
+    after = _row(tel, settled, 2)
+    assert after["cr_tok"] < before["in_tok"], "a changed prefix cannot be a full read"
+    assert after["in_tok"] > 0, "the rewritten head is re-billed, which is the point"

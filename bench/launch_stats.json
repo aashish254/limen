@@ -1,0 +1,374 @@
+{
+ "generated": "2026-09-27 16:17",
+ "host": {
+  "platform": "Darwin 27.0.0",
+  "python": "3.11.15",
+  "load_average": [
+   6.173828125,
+   6.3779296875,
+   6.40185546875
+  ]
+ },
+ "git_sha": "0f7a546",
+ "command": "python3 bench/launch_stats.py --iters 5",
+ "corpus": {
+  "tasks": "tasks.sample.jsonl",
+  "n": 20,
+  "arms": [
+   "observe",
+   "enforce",
+   "compiled"
+  ],
+  "iters": 5,
+  "seed": 7,
+  "upstream": "in-repo mock, $0, no key"
+ },
+ "overall": {
+  "observe": 19746.35,
+  "enforce": 13822.25,
+  "compiled": 11132.85,
+  "p50_latency": {
+   "observe": 6.763041004887782,
+   "enforce": 6.288207994657569,
+   "compiled": 6.538874993566424
+  },
+  "pass_rate": {
+   "observe": 100.0,
+   "enforce": 100.0,
+   "compiled": 100.0
+  },
+  "recall": {
+   "observe": 100.0,
+   "enforce": 100.0,
+   "compiled": 100.0
+  },
+  "precision": {
+   "observe": 1.8691044082131762,
+   "enforce": 2.617295569704578,
+   "compiled": 19.594380135854905
+  },
+  "reduction_pct": 43.62071977859198
+ },
+ "by_family": {
+  "labels": [
+   "tests",
+   "payments",
+   "security",
+   "data",
+   "services"
+  ],
+  "families": [
+   "tests and build",
+   "payments and retries",
+   "security and auth",
+   "data correctness",
+   "services and infra"
+  ],
+  "counts": [
+   3,
+   4,
+   4,
+   4,
+   5
+  ],
+  "observe": [
+   20559.333333333332,
+   20340.0,
+   19607.0,
+   19586.5,
+   19023.0
+  ],
+  "enforce": [
+   14342.0,
+   14816.0,
+   13608.25,
+   13254.0,
+   13341.2
+  ],
+  "compiled": [
+   11500.0,
+   11464.5,
+   11012.5,
+   11045.0,
+   10813.8
+  ],
+  "reduction_pct": [
+   44.06433412237751,
+   43.63569321533923,
+   43.83383485489876,
+   43.60911852551502,
+   43.15407664406246
+  ],
+  "pass_rate": {
+   "observe": [
+    100.0,
+    100.0,
+    100.0,
+    100.0,
+    100.0
+   ],
+   "enforce": [
+    100.0,
+    100.0,
+    100.0,
+    100.0,
+    100.0
+   ],
+   "compiled": [
+    100.0,
+    100.0,
+    100.0,
+    100.0,
+    100.0
+   ]
+  }
+ },
+ "by_size": {
+  "labels": [
+   "Q1 smallest",
+   "Q2",
+   "Q3",
+   "Q4 largest"
+  ],
+  "observe": [
+   18413.2,
+   19595.4,
+   19609.6,
+   21367.2
+  ],
+  "compiled": [
+   10570.4,
+   11035.2,
+   11021.0,
+   11904.8
+  ],
+  "reduction_pct": [
+   42.593356939586826,
+   43.68474233748737,
+   43.797935704960835,
+   44.284698041858555
+  ],
+  "tok_ranges": [
+   [
+    16666.0,
+    19583.0
+   ],
+   [
+    19588.0,
+    19604.0
+   ],
+   [
+    19605.0,
+    19615.0
+   ],
+   [
+    19627.0,
+    22581.0
+   ]
+  ],
+  "counts": [
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "composition": {
+  "mean_request_tok": 19746.35,
+  "scale": 1.4461652593188872,
+  "parts": [
+   [
+    "tool specs (24)",
+    11757.323558262553
+   ],
+   [
+    "stale reads",
+    4232.214485210324
+   ],
+   [
+    "system prompt",
+    3567.6896947396945
+   ],
+   [
+    "the files the task needs",
+    134.16798193330976
+   ],
+   [
+    "task instruction",
+    54.954279854117715
+   ]
+  ]
+ },
+ "hard_set": {
+  "observe": {
+   "in_tok": 40272.125,
+   "pass_pct": 100.0,
+   "recall_pct": 100.0,
+   "precision_pct": 10.178676826232753
+  },
+  "enforce": {
+   "in_tok": 24975.75,
+   "pass_pct": 0.0,
+   "recall_pct": 2.67496813674542,
+   "precision_pct": 0.46014814255234116
+  },
+  "compiled": {
+   "in_tok": 20402.0,
+   "pass_pct": 100.0,
+   "recall_pct": 100.0,
+   "precision_pct": 25.08079352529568
+  },
+  "n": 8
+ },
+ "slots": {
+  "totals": {
+   "requests": 30,
+   "est_in_tok": 359259
+  },
+  "slots": {
+   "tool_gate": {
+    "decisions": 30,
+    "would_drop": 330,
+    "savings_est_tok": 101562
+   },
+   "compact": {
+    "decisions": 30,
+    "would_drop": 6,
+    "savings_est_tok": 14821
+   },
+   "effort": {
+    "decisions": 30,
+    "would_drop": 0,
+    "savings_est_tok": 0
+   }
+  }
+ },
+ "regret": {
+  "requests_with_decisions": 17,
+  "bodies_readable": 17,
+  "bodies_never_stored": 0,
+  "evicted_reads_seen": 14,
+  "regrettable_drops": 10,
+  "enforced": 10,
+  "shadow": 0,
+  "refetch_tok_paid": 4088,
+  "regrettable_per_1k_requests": 588.2,
+  "by_source": {
+   "implicit:re-read": {
+    "labels": 10,
+    "regret_tok": 4088
+   }
+  },
+  "window_turns": 20,
+  "window_s": 1800.0,
+  "harvested_at": "2026-09-27 10:32:12",
+  "home": "/var/folders/jn/pnnpl_cn0gx93p8v1yf8jb080000gn/T/launch-regret-1r57o3_5"
+ },
+ "checkpoint_curve": {
+  "conditions": {
+   "cores": 10,
+   "device": "cpu",
+   "laya": "0.3.20",
+   "load_avg_end": [
+    10.16,
+    8.17,
+    7.98
+   ],
+   "load_avg_start": [
+    7.79,
+    7.47,
+    7.74
+   ],
+   "model": "convaiinnovations/laya",
+   "os": "Darwin 27.0.0",
+   "python": "3.11.15",
+   "runtime_warnings": [
+    "laya: this checkpoint ships invalid temperatures or values outside [0.5, 5]; using choice:11+=0.10058280825614929 -> 0.5. Treat confidence from the affected entries as uncalibrated."
+   ],
+   "threads": 4,
+   "torch": "2.6.0"
+  },
+  "shapes": [
+   {
+    "shape": "choice",
+    "shipped": true,
+    "passes": 1,
+    "ms": {
+     "max": 139.0,
+     "n": 30,
+     "p50": 123.0,
+     "p95": 133.0
+    }
+   },
+   {
+    "shape": "keep_drop",
+    "shipped": true,
+    "passes": "one per option",
+    "ms": {
+     "max": 1383.0,
+     "n": 30,
+     "p50": 800.0,
+     "p95": 1250.0
+    }
+   },
+   {
+    "shape": "noul",
+    "shipped": false,
+    "passes": "one per option",
+    "ms": {
+     "max": 2385.8,
+     "n": 30,
+     "p50": 1096.7,
+     "p95": 1581.0
+    }
+   }
+  ],
+  "budget_ms": 350
+ },
+ "ablation": {
+  "n_cases": 10,
+  "heuristic": {
+   "precision": 0.9722,
+   "recall": 0.9859,
+   "f1": 0.979
+  },
+  "corpus": {
+   "cases": 10,
+   "gold_equals_heuristic": 7,
+   "decisions": 86,
+   "baseline_false_keeps": 2,
+   "baseline_false_cuts": 1,
+   "differing_cases": [
+    {
+     "query": "read app/config.py and run the failing tests",
+     "only_in_gold": [],
+     "only_in_heuristic": [
+      "mcp__figma__read"
+     ]
+    },
+    {
+     "query": "open a pull request and fetch review comment",
+     "only_in_gold": [
+      "mcp__github__pr"
+     ],
+     "only_in_heuristic": []
+    },
+    {
+     "query": "refactor the retry loop, keep interfaces sta",
+     "only_in_gold": [],
+     "only_in_heuristic": [
+      "mcp__figma__read"
+     ]
+    }
+   ]
+  }
+ },
+ "s32": {
+  "raw": [
+   "  enforce   best 3.24 ms/decision   median 3.29   spread 3.24-3.32",
+   "  compiled  best 3.61 ms/decision   median 3.62   spread 3.61-3.64",
+   "  gate (compiled <= per-slot): NOT MET"
+  ],
+  "text": "  gate (compiled <= per-slot): NOT MET"
+ }
+}

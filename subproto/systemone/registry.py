@@ -117,6 +117,38 @@ def _select(name, config):
     return (HTTPScoreAdapter(url, label=label, timeout=timeout_for(config)), label)
 
 
+def selection_name(config, slot=None):
+    """The string a human typed for this selection, before it became an endpoint."""
+    name = _slot_name(slot, config) if slot else ""
+    if not name:
+        name = (getattr(config, "model", None) or "").strip()
+    if not name and getattr(config, "laya_url", None):
+        return "laya (from laya_url)"
+    return name
+
+
+def why_unused(config, slot=None):
+    """Why a named backend resolved to the heuristics, or None when there is nothing
+    to report — a name that was never typed, and `heuristic` itself, are choices.
+
+    `_select` answers "which adapter"; this answers "what should the operator be
+    told", because a pin that silently became nothing left `up` with no model row
+    at all and every decision quietly recording `heuristic`.
+    """
+    name = selection_name(config, slot)
+    if not name:
+        return None
+    key = name.lower()
+    if key in DISABLED or "://" in name:
+        return None
+    if key not in REGISTRY:
+        return "%s is not a known backend — subproto models lists the names" % name
+    if not configured_url(key, config):
+        return "%s is not being served — set %s, or name its URL in SUBPROTO_MODEL" \
+               % (name, REGISTRY[key]["env"])
+    return None
+
+
 def resolve(config, slot=None):
     """Return (adapter_or_None, label) — the label is what slots record.
 

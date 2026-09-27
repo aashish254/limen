@@ -76,7 +76,8 @@ def test_engine_leaves_backends_untouched_when_router_off(tmp_path, monkeypatch,
 # --- I6 honesty: the shipped evidence says the model loses, so no hop ---------
 
 def test_shipped_ablation_evidence_routes_to_heuristic(tmp_path, monkeypatch):
-    """bench/ablation.json is measured, not a stand-in: the real checkpoint lands below the heuristic here, so auto must NOT spend a hop."""
+    """The shipped evidence is measured, not a stand-in: the real checkpoint lands
+    below the heuristic on this corpus, so auto must NOT spend a hop getting there."""
     monkeypatch.setenv("SUBPROTO_ROUTER", "on")
     monkeypatch.delenv("SUBPROTO_MODEL", raising=False)
     cfg = Config(source={"data_dir": str(tmp_path), "router": True,

@@ -71,11 +71,8 @@ class Engine:
             if os.path.exists(p):
                 self.graph = graph_mod.load(p)
                 self.graph_path = p
-        if self.graph is None:
-            cand = os.path.join(os.getcwd(), ".subproto-graph.json")
-            if os.path.exists(cand):
-                self.graph = graph_mod.load(cand)
-                self.graph_path = cand
+        # Nothing is read from the working directory: the command layer decides whether
+        # a repository's installed index counts, and says so by passing `graph_path`.
         self.backends = {}
         self.manifest = systemone.load(systemone.path(config))
         global_choice = systemone.select(config, manifest=self.manifest)
@@ -109,13 +106,29 @@ class Engine:
         """The adapter (and its label) that answers for one slot."""
         return self.backends.get(slot, (None, "heuristic"))
 
+    @property
+    def enforcing(self):
+        """The slots this engine will actually rewrite with, resolved the same way
+        `decide` resolves them. The banner used to read `SUBPROTO_APPLY` raw, so a
+        `SUBPROTO_ENFORCE=1` start enforced two slots while printing that it was
+        observing (S46/M1). Ask the engine instead of the environment.
+        """
+        return sorted(_apply_set())
+
     def version_for(self, backend):
         """The version stamp for whatever answered a decision.
 
         Follows the answer, not the wish: after a health-gated fallback the decision says
         `heuristic`, because the heuristic is what produced it. Stamping the model that
         *should* have answered would break the one comparison this column exists for.
+
+        A composite label like `graph+heuristic` names a source, not a model, so it takes
+        the heuristic stamp here and keeps its own wording in the `backend` field. Two
+        columns, two meanings: `model_version` groups a fine-tune against the baseline,
+        and anything that is not a registered model would poison that grouping.
         """
+        if backend and systemone.HEURISTIC in backend.split("+"):
+            return systemone.HEURISTIC
         return systemone.version_of(self.manifest, backend or self.backend_label)
 
     def model_status(self):
@@ -299,15 +312,20 @@ class Engine:
             hits = graph_mod.search(self.graph, query, top_k=10)
             ds = heuristics.file_drop_scores(query, hits)
             if ds:
-                decisions.append({
+                decision = {
                     "slot": "context", "backend": "graph+heuristic",
                     "applied": "context" in apply_set,
                     "dropped": [d["target"] for d in ds if not d["keep"]],
                     "candidates": ds,
                     "top": [d["target"] for d in ds[:5]],
+                    # This slot adds a note block; it never removes a turn. Its saving is
+                    # zero by construction rather than unmeasured, and its cost is the
+                    # block it actually injected, recorded on the applied path below.
+                    "savings_est_tok": 0,
                     "cost_est_tok": 0,
                     "decision_ms": round(_now_ms() - _t0, 3),
-                })
+                }
+                decisions.append(decision)
                 if "context" in apply_set:
                     add = ("Relevant files in this repo, ranked by a local code graph "
                            "(not read yet):\n" + "\n".join("- " + d["target"] for d in ds[:6]))
@@ -319,6 +337,7 @@ class Engine:
                     if injected:
                         new_body = candidate
                         mutated.add("context")
+                        decision["cost_est_tok"] = protocol.approx_tokens(add)
 
         effort = self._effort_decision(analysis, last_user, est_in)
         if effort:

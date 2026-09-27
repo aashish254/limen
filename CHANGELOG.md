@@ -143,6 +143,93 @@ was run, on `python:3.11-slim` and `python:3.9-slim` (Linux aarch64):
   needs the commit graph, and a read-only mount without `PYTHONDONTWRITEBYTECODE=1` made
   `py_compile` raise on writing `__pycache__`.
 
+### The launch pass: a name, a landing page, and the numbers re-measured
+
+- **The project is Limen** — the threshold a stimulus has to cross before it is noticed;
+  here, the decision an agent makes before it spends anything. The rename is brand and repo
+  only: this repository, the README, the docs and the landing page say Limen, while
+  `pip install subproto` and `subproto demo` stay, because every wiring guide and config
+  example in the wild says `subproto`. README's `Names` section states the split in one
+  place rather than leaving it to be inferred from a mismatch.
+- **`bench/launch_stats.py` is the single run the launch numbers come from**: three arms
+  (observe / enforce / compiled) over 20 sampled tasks × 5 repeats, seed 7, against the
+  in-repo mock — `$0`, no key, nothing leaving the machine. Headline **−43.6%** of billed
+  input between observing and compiling, with pass rate and recall held at 100%. The host
+  is recorded beside it (Darwin, Python 3.11.15, load average 6.17 at the start), because a
+  timing row without its load is a claim rather than a measurement.
+- **The landing page is the printout, not a document about it.** `tools/make_site.py` and
+  `tools/site.html.tmpl` build `_site/index.html` — published by
+  `.github/workflows/pages.yml`, which refuses a page with an unrendered token — from
+  `bench/launch_stats.json`, the test/mutant/subcommand counts and two live demo replays.
+  **No number on the page is typed by hand.** Each figure carries a stamp naming its kind:
+  *measured* (the arms above), *projection* (`bench/ab.py --mock`, inside the same run),
+  *delivered* (the 17 replayed requests, bodies stored), *curve* (the checkpoint latency
+  curve read from `bench/laya_latency.json`, not re-run for this page). The builder reads
+  the projection's command out of the bench source and **fails the build** if the bench
+  stops calling `ab.py` the way the page says it does — a caption that cannot go stale
+  silently is worth more than a caption that is merely correct today.
+- **A figure is a view of the record, so a caption can be fixed without re-measuring.**
+  `render_figures(stats)` draws every panel from the json, and
+  `bench/launch_stats.py --figures-only` redraws them and measures nothing.
+- **A heading takes another line, never a wider canvas** (`CANVAS_MAX = 980`, `_wrap`,
+  `_legend`): the page scales each SVG into its own column, so a 1,690-unit panel came back
+  as 7-pixel type — the same defect as a clipped title, arrived at from the other
+  direction.
+- **The mutation gate's bookkeeping went stale in one place, and a sweep found it.** All
+  156 `(id, file, anchor, replacement)` triples were re-checked read-only: **S42-3 pointed
+  at a line `demo` no longer prints** — the sandbox pointer became a
+  `subproto report --home …` action line — so that mutant could no longer be applied, let
+  alone killed. Re-anchored, and B7's interpreter branch became mutant **S46-B7**
+  (156 → **157**). Both were probed in seconds by applying one anchor, running the two
+  covering test files, and restoring, rather than 65 minutes into the gate.
+
+### What the first-time-user run got wrong
+
+Each of these is a surface that said something the code did not do, and each now has a
+witness in `subproto/tests/`. The `B` items change a printed number; `M` and `m` items
+change what a page does when the reader's input is not what it expected.
+
+- **B1** — `subproto demo` and then `subproto report` printed *0 requests*: the demo wrote
+  one home and the report read another.
+- **B2** — a per-slot record lists a cut twice and `show` believed it, printing
+  `12 kept 24 cut` with 24 rows for 12 tools.
+- **B4** — the mock answered with a fixed usage block, so traffic was priced for a body it
+  never sent. `fakeup` now prices the body it was handed, which moved every dollar figure
+  in the repo: **−43.6%** is that re-measure, and the older number is gone with it.
+- **B5** — `0 cached` printed over a request that had read 2,464 tokens from the provider's
+  cache. `billed input` follows `report`'s convention now and names the read beside it.
+- **B6** — one joint-compiler record carries the whole proof, and the page listed all of it
+  under each slot, so a request read as having lost 18 items when it lost 15.
+- **B7** — `doctor` told a reader on Python 3.11 that `laya` was "not importable here" and
+  to move to a "Python >= 3.10 environment". The version was not the blocker; the missing
+  install was. The row branches on the interpreter it is actually running on.
+- **B8** — `show`'s one long line — the stored body's path, printed so a drop's pointer can
+  be opened — wrapped mid-token in a screenshot. Inside the home it prints as `~/…`, which
+  fits the page's 100-column measure and still pastes into a shell; `--json` keeps the
+  absolute path, because a script has no home to expand.
+- **M1** — the `up` banner read the environment instead of asking the engine, so it could
+  say *observing* while the slots were enforcing.
+- **M3** — a date `report` could not parse failed without saying what it wanted. One named
+  error, raised at the boundary, printed by the dispatcher.
+- **M4** — the ablation evidence was a bench-side copy of a file the product ships, which is
+  how a figure quietly goes stale. It lives in `subproto/systemone/evidence/` now, and
+  `bench/ablation.py --write` refreshes it.
+- **m2, m3, m4, m8** — `--path` failing at a file the reader never typed; an unbounded
+  filter end silently not applied; a `--json` payload that could not distinguish "no such
+  request" from "a request with no decisions"; an unknown `--model` name resolving to
+  nothing and printing nothing.
+
+### The terminal, photographed rather than described
+
+- `docs/assets/terminal-stills.sh` re-makes `docs/assets/terminal/*.png`: five pages run
+  through a pty against the installed wheel and rendered with `agg`, so the colour choices
+  are the ones a real terminal makes. Each page measures its own output first and is given
+  exactly that many rows, so nothing scrolls out of the frame, and the still is the last
+  frame — everything printed, nothing mid-scroll.
+- README's `What it prints` section embeds three of them with the command named in the
+  caption, and `docs/assets/first-30-seconds.gif` was re-recorded against the same wheel so
+  the hero shows the pages as they now read.
+
 ### Still gated — not in this tree
 
 - **Version tag and PyPI.** `pyproject.toml` is at `0.1.0` and the entry point is wired,

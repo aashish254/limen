@@ -18,11 +18,36 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 OURS = tuple(v for v in os.environ
              if v.startswith("SUBPROTO_") or v.startswith("LAYA_"))
 
+# Captured before any fixture can replace it, so a test can ask for the shipped lookup.
+from subproto import graph as _graph                      # noqa: E402
+
+AMBIENT_INDEX_AS_SHIPPED = _graph.ambient
+
 
 @pytest.fixture(autouse=True)
 def host_keeps_its_settings_out_of_the_test_room(monkeypatch):
     for name in OURS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def test_room_has_no_ambient_repository(monkeypatch):
+    """Nothing in the working directory decides which slots answer.
+
+    `subproto graph <repo> --install` leaves a `.subproto-graph.json` behind, and the
+    command layer reads that file as "this repo has an index" — so a contributor who had
+    indexed their own checkout ran a different suite than CI did, and two of those tests
+    were red rather than merely different. A test that wants an index hands one over.
+    """
+    from subproto import graph
+    monkeypatch.setattr(graph, "ambient", lambda root=None: None)
+
+
+@pytest.fixture
+def ambient_index_as_shipped(monkeypatch):
+    """Hand one test back the real lookup, because that lookup is what it is about."""
+    from subproto import graph
+    monkeypatch.setattr(graph, "ambient", AMBIENT_INDEX_AS_SHIPPED)
 
 
 @pytest.fixture

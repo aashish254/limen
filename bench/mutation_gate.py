@@ -583,8 +583,8 @@ MUTANTS = [
      '        home = "/tmp/subproto-demo"\n'),
     ("S42-3 the demo hides the directory it wrote, so the run cannot be re-read",
      "subproto/cli.py",
-     '    if sandbox:\n        print("sandbox: %s" % home)\n',
-     '    if False:\n        print("sandbox: %s" % home)\n'),
+     '    if sandbox:\n        print("")\n',
+     '    if False:\n        print("")\n'),
     ("S42-4 the mock upstream takes port+1 without asking whether it is free",
      "subproto/cli.py",
      "    n = demo.replay(config, mock_port=_port_or_next(config.port + 1))\n",
@@ -633,6 +633,13 @@ MUTANTS = [
      "subproto/doctor.py",
      "    return (int(match.group(1)), int(match.group(2))), os.path.basename(PYPROJECT)\n",
      "    return FLOOR, os.path.basename(PYPROJECT)\n"),
+    # S46: `doctor` explains an absent checkpoint, and the explanation has to be the one
+    # that is true of the interpreter running it. Naming "Python >= 3.10" to a reader
+    # already on 3.11 sends them to fix something that is not broken.
+    ("S46-B7 the laya row blames the interpreter version on a version that is new enough",
+     "subproto/doctor.py",
+     "    if py < (3, 10):\n",
+     "    if False:\n"),
 ]
 
 TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",

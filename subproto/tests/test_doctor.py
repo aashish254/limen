@@ -251,8 +251,25 @@ def test_laya_absent_says_what_to_install_without_a_private_path(env, monkeypatc
     monkeypatch.setattr(laya_server, "laya_importable", lambda: False)
     row = _row(doctor.check_all(env, port=_free_port()), "laya runtime")
     assert row["state"] == style.NOT_READY
-    assert 'pip install "laya[serve]"' in row["fix"] and "3.10" in row["fix"]
+    assert 'pip install "laya[serve]"' in row["fix"]
     assert "laya-venv" not in row["fix"], "the fix must name no maintainer path"
+    # The reason has to be the one that is true of the interpreter running the check.
+    # On 3.10+ the package is merely missing; sending that reader to Python 3.10 is a
+    # fix for something that is not broken.
+    if sys.version_info[:2] >= (3, 10):
+        assert "not installed in this interpreter" in row["value"]
+        assert "3.10" not in row["value"] + row["fix"]
+    else:
+        assert "needs python 3.10" in row["value"]
+
+
+def test_an_interpreter_too_old_for_laya_is_told_that_is_the_blocker(monkeypatch):
+    """The other branch, which the running interpreter cannot reach by itself."""
+    monkeypatch.setattr(laya_server, "laya_importable", lambda: False)
+    row = doctor._laya_row(version=(3, 9))
+    assert row["state"] == style.NOT_READY
+    assert "needs python 3.10" in row["value"] and "3.10" in row["fix"]
+    assert "not installed" not in row["value"]
 
 
 def test_laya_present_is_reported_installed(env, monkeypatch):

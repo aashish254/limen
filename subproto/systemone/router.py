@@ -8,7 +8,7 @@ precision (`bench/ablation.py`) and, when supplied, per-backend decision latency
 
 Honesty (invariant I6): an adapter with no measured precision is never auto-picked
 as "best", and precision ties route to `heuristic` (in-process, no endpoint, no
-network hop). On the evidence shipped today — `bench/ablation.json` scored against
+network hop). On the evidence shipped today — `systemone/evidence/ablation.json` scored
 the real Laya checkpoint, which lands *below* the heuristic on this corpus — that
 means the Router correctly stays on heuristics instead of inventing an edge for a
 model we have not measured beating the baseline.
@@ -24,8 +24,10 @@ from . import registry
 from .registry import MODEL_SLOTS, configured_adapters, is_pinned, resolve, slot_env
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-DEFAULT_ABLATION_JSON = os.path.join(_REPO, "bench", "ablation.json")
+# Inside the package, not in `bench/`: the Router needs its evidence at run time, and
+# `bench/` is shipped in the sdist but not installed, so a pip user had the flag and not
+# the data (S46/M4). `bench/ablation.py --write` refreshes this file.
+DEFAULT_ABLATION_JSON = os.path.join(_HERE, "evidence", "ablation.json")
 
 HEURISTIC = "heuristic"
 

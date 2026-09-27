@@ -252,7 +252,18 @@ def select(config, slot=None, manifest=None, health=None):
     if is_explicit(config, slot):
         adapter, label = registry.resolve(config, slot=slot)
         notes = []
-        if adapter is not None and adapter.available:
+        if adapter is None:
+            # Degraded before it was even reached: the name resolved to no endpoint.
+            # `--model` that lands on the heuristics has to say so at startup, not
+            # leave it inside each decision's `backend` field. Said once, by the
+            # selection that named it — an unpinned slot inherits the global name.
+            # No "it answered with the heuristics" clause: the model row above this
+            # one already reads `heuristic`, and the line has to stay inside MAX_W.
+            reason = registry.why_unused(config, slot=slot) if (
+                slot is None or registry.is_pinned(config, slot)) else None
+            if reason:
+                notes.append(reason)
+        elif adapter.available:
             ok, reason = _check_health(adapter, health)
             if not ok:
                 # A pin is not swapped out from under the operator, but the dead endpoint

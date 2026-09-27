@@ -143,15 +143,27 @@ def _keys_row():
                     "the proxy forwards it and never stores it")
 
 
-def _laya_row():
+def _laya_row(version=None):
+    """The checkpoint's absence, spelled with the reason that actually applies here.
+
+    On an interpreter too old for `laya`, the version is the blocker. On one new enough,
+    `laya` is simply not installed in it — and naming 3.10 to a reader already on 3.11
+    sends them to fix something that is not broken (S46/B7).
+    """
     if laya_server.laya_importable():
         return _row("model backends", "laya runtime", style.INSTALLED,
                     "importable in this interpreter")
+    py = tuple(version) if version else sys.version_info[:2]
+    if py < (3, 10):
+        return _row("model backends", "laya runtime", style.NOT_READY,
+                    "needs python 3.10 or newer (this is %d.%d)" % py,
+                    fix='the real checkpoint needs a Python >= 3.10 interpreter and '
+                        'pip install "laya[serve]" there — subproto\'s lexical server '
+                        "runs anywhere and needs nothing")
     return _row("model backends", "laya runtime", style.NOT_READY,
-                "not importable here (python %d.%d)" % sys.version_info[:2],
-                fix='the real checkpoint needs pip install "laya[serve]" on a '
-                    "Python >= 3.10 environment — subproto's lexical server "
-                    "runs anywhere and needs nothing")
+                "not installed in this interpreter (python %d.%d)" % py,
+                fix='pip install "laya[serve]" here for the real checkpoint — '
+                    "subproto's lexical server answers without it and needs nothing")
 
 
 def _probed_rows(config):

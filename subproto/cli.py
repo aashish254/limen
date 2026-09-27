@@ -9,7 +9,7 @@ import threading
 import time
 
 from . import __version__, style
-from .config import Config
+from .config import Config, HomeError
 from .engine import ALL_SLOTS
 from .telemetry import Telemetry
 
@@ -38,6 +38,43 @@ INJECT = {
 }
 
 
+def _is_date(value):
+    import datetime
+    try:
+        datetime.date.fromisoformat(str(value).strip())
+    except ValueError:
+        return False
+    return True
+
+
+def _count_requests(db_path):
+    """How many rows a command is about to overwrite. 0 when there is nothing to read."""
+    if not os.path.exists(db_path):
+        return 0
+    import sqlite3
+    try:
+        tel = Telemetry(db_path)
+        try:
+            rows = tel.query("SELECT COUNT(*) AS n FROM requests")
+            return int(rows[0]["n"]) if rows else 0
+        finally:
+            tel.close()
+    except sqlite3.Error:
+        # A home the user pointed at may hold a database this version cannot read. The
+        # command still works — it replaces the file — so the count is cosmetic here.
+        return 0
+
+
+def _graph_arg(args):
+    """Which index a command runs with: `--graph` wins, then this directory's own.
+
+    The engine deliberately does not look at the working directory, so the one place
+    that decides whether an installed index counts is here, where a reader can see it.
+    """
+    from . import graph as graph_mod
+    return getattr(args, "graph", None) or graph_mod.ambient()
+
+
 def _open_telemetry(config):
     config.ensure_dirs()
     return Telemetry(config.db_path)
@@ -45,6 +82,21 @@ def _open_telemetry(config):
 
 def _fmt(n):
     return "{:,}".format(int(n))
+
+
+def _shown_path(path, home=None):
+    """A stored body's path, spelled the way a reader would type it.
+
+    The page has a 100-column measure and this line is the one that can break it. A path
+    under the home prints as `~/…`, which both fits and pastes into a shell as-is; `--json`
+    keeps the absolute path, because a script has no home to expand (S46/B8).
+    """
+    if not path:
+        return path
+    root = home if home is not None else os.path.expanduser("~")
+    if root and path.startswith(root + os.sep):
+        return "~" + path[len(root):]
+    return path
 
 
 def cmd_up(args):
@@ -61,7 +113,7 @@ def cmd_up(args):
     engine = None
     if args.slots:
         try:
-            engine = Engine(config, graph_path=args.graph)
+            engine = Engine(config, graph_path=_graph_arg(args))
         except (OSError, ValueError) as e:
             # A --graph value is user input, so a bad one is said as a state, not
             # as a traceback: the reader has to see which path they handed over.
@@ -70,7 +122,10 @@ def cmd_up(args):
                               indent=style.INDENT, color=color))
             return 1
     srv = serve(config, telemetry, engine)
-    applied = os.environ.get("SUBPROTO_APPLY")
+    # The engine's own answer, not the environment's: `SUBPROTO_ENFORCE` turns the
+    # default pair on without naming them, and a banner that read only SUBPROTO_APPLY
+    # printed "observation mode" over a proxy that was rewriting the request.
+    applied = ",".join(engine.enforcing) if engine is not None else None
     print("")
     print(style.header("up", "listening on http://127.0.0.1:%d" % config.port,
                        color=color))
@@ -186,6 +241,12 @@ def _models_edit(args, config, manifest, target):
 
     lines = []
     if args.add:
+        if not (args.url or "").strip():
+            # Documented as required, and a version with no url can never answer: the
+            # page would list it and every decision would fall back with a reason.
+            raise ValueError("--add needs --url: "
+                             "subproto models --add %s --url http://127.0.0.1:8000 "
+                             "--tier personal" % args.add)
         manifest, entry = systemone.add(manifest, args.add, url=args.url, tier=args.tier,
                                         note=args.note)
         lines.append("registered %s (%s tier, added %s)"
@@ -257,8 +318,9 @@ def cmd_models(args):
                            "source": choice["source"], "notes": choice["notes"]}
         print(json.dumps(st, indent=1))
         return 0
-    print(style.header("models", "%d backends, %d versions" % (
-        len(st["adapters"]), len(desc["versions"])), color=color))
+    versions = len(desc["versions"])
+    print(style.header("models", "%d backends, %d version%s" % (
+        len(st["adapters"]), versions, "s" if versions != 1 else ""), color=color))
     print("")
     # The page's one answer, on the grid rather than as a sentence with a colon in it.
     print(style.row("backend", style.state(st["active"], color=color), styled=True,
@@ -348,6 +410,15 @@ def cmd_report(args):
     # the regret section re-derives the harvest from local bodies rather than reading
     # the last stored one, so what prints here is what the traffic says *now*
     harvest = None if args.no_learn else implicit.harvest(config, telemetry)
+    for name, value in (("--since", args.since), ("--until", args.until)):
+        if value and not _is_date(value):
+            # A window that cannot match anything is reported as "0 requests", which is
+            # the same dead end a wrong --home gives you. Say which bound is wrong.
+            print(style.header("report", "that is not a date", color=style.enabled()))
+            print(style.reason('%s %s — the form is --since 2026-09-25' % (name, value),
+                               indent=0, color=style.enabled()))
+            telemetry.close()
+            return 1
     summary = report.summarize(telemetry, since=args.since, until=args.until,
                                labels=labels, implicit=harvest)
     if args.json:
@@ -407,26 +478,33 @@ def cmd_graph(args):
 def cmd_where(args):
     from . import graph as graph_mod
 
-    path = args.graph or os.path.join(os.path.abspath(args.path or "."), ".subproto-graph.json")
-    if os.path.isdir(path):
-        # Everyone reads `--graph` as "the repo", and `subproto compile` takes a
-        # directory, so `where` must not die with IsADirectoryError on one.
-        root = os.path.abspath(path)
-        cached = graph_mod.index_path(root)
-        if os.path.exists(cached):
-            g = graph_mod.load(cached)
-        else:
-            # Not wrapped: both of these paths are things the reader copies out.
-            print(style.note("no index at %s — built one in memory (cache it: "
-                             "subproto graph %s)" % (cached, root),
-                             indent=0, color=style.enabled()), file=sys.stderr)
-            g = graph_mod.build(root)
+    root = None
+    if args.graph:
+        path = os.path.abspath(args.graph)
+        if os.path.isdir(path):
+            # Everyone reads `--graph` as "the repo", and `subproto compile` takes a
+            # directory, so `where` must not die with IsADirectoryError on one.
+            root = path
+            path = graph_mod.index_path(root)
     else:
-        if not os.path.exists(path):
-            print(style.prose("no graph at %s — run: subproto graph <repo>" % path,
-                              indent=0))
-            return 1
+        # `--path` names the repo, so a missing index under it is the same case as
+        # `--graph <repo>`: index it here and say so, rather than failing at a file
+        # path the reader never typed.
+        root = os.path.abspath(args.path or ".")
+        path = graph_mod.index_path(root)
+    if os.path.exists(path):
         g = graph_mod.load(path)
+    elif root is None:
+        # Only the reader knows which repo this file should have come from.
+        print(style.prose("no graph at %s — run: subproto graph <repo>" % path,
+                          indent=0), file=sys.stderr if args.json else sys.stdout)
+        return 1
+    else:
+        # Not wrapped: both of these paths are things the reader copies out.
+        print(style.note("no index at %s — built one in memory (cache it: "
+                         "subproto graph %s)" % (path, root),
+                         indent=0, color=style.enabled()), file=sys.stderr)
+        g = graph_mod.build(root)
     query = " ".join(args.query) if isinstance(args.query, list) else (args.query or "")
     if args.file:
         with open(args.file, encoding="utf-8", errors="replace") as f:
@@ -624,6 +702,33 @@ def _first_text(obj, depth=0):
     return ""
 
 
+def _drop_key(kind, pointer):
+    """One identity for one cut, whoever recorded it.
+
+    The compiled proof writes `tool:exitplanmode` and the slot's own candidate list
+    writes `KillShell`: a prefix and a case difference is how one item reached two rows
+    and how a row a reader wanted to match up could not be matched (S46/B2, B6).
+    """
+    return (kind, str(pointer).rsplit(":", 1)[-1].lower())
+
+
+def _owned_cuts(decision):
+    """The items this decision's own record scored as cuts, by identity.
+
+    Under the compiler each participating slot's record carries the *joint* proof, so
+    every slot lists every cut the one knapsack made — including the ones billed to
+    another slot. `tool_gate` printed 15 rows summing to 5,345 tok beside its own
+    `4,145 tok` label while `compact` printed 3 of those same messages, so a reader who
+    added the block got a different number than the block claims and the request looked
+    like it lost 18 items when it lost 15 (S46/B6).
+    """
+    names = {str(n).rsplit(":", 1)[-1].lower() for n in decision.get("dropped") or []}
+    for c in decision.get("candidates") or []:
+        if c.get("target") and not c.get("keep"):
+            names.add(str(c["target"]).rsplit(":", 1)[-1].lower())
+    return names
+
+
 def _decision_drops(decision):
     """[(kind, pointer, index, tokens, why)] for the cuts one decision actually made.
 
@@ -632,15 +737,46 @@ def _decision_drops(decision):
     the same thing about a cut whichever mechanism made it.
     """
     out = []
+    seen = {}
+
+    def add(kind, pointer, index, tokens, why):
+        """One row per item, not one per arm that happened to name it.
+
+        The per-slot record lists its cuts twice — once as `dropped` names and again as
+        the non-kept `candidates` — and printing both made a 24-tool request read as
+        `12 kept 24 cut`, with 24 rows for 12 tools (S46/B2).
+        """
+        key = _drop_key(kind, pointer)
+        if key in seen:
+            row = seen[key]
+            if row[2] is None and index is not None:
+                row[2] = index
+            if not row[3] and tokens:
+                row[3] = tokens
+            if not row[4] and why:
+                row[4] = why
+            return
+        row = [kind, pointer, index, tokens, why]
+        seen[key] = row
+        out.append(row)
+
     for d in (decision.get("proof") or {}).get("dropped") or []:
         rev = d.get("reversible") or {}
-        out.append((d.get("kind") or "message",
-                    rev.get("pointer") or d.get("id") or "",
-                    rev.get("index"), d.get("tokens", 0), d.get("reason") or ""))
+        add(d.get("kind") or "message",
+            rev.get("pointer") or d.get("id") or "",
+            rev.get("index"), d.get("tokens", 0), d.get("reason") or "")
     if out:
-        return out
+        # Keep the rows this slot paid for. The nameless record — a proof with no
+        # candidates beside it — keeps the whole list, because then the proof *is* the
+        # slot's own answer.
+        owned = _owned_cuts(decision)
+        if owned:
+            mine = [r for r in out if _drop_key(r[0], r[1])[1] in owned]
+            if mine:
+                return [tuple(r) for r in mine]
+        return [tuple(r) for r in out]
     for name in decision.get("dropped") or []:
-        out.append(("tool", "tool:%s" % name, None, 0, ""))
+        add("tool", "tool:%s" % name, None, 0, "")
     for c in decision.get("candidates") or []:
         target = c.get("target")
         if c.get("keep") or not target:
@@ -649,10 +785,10 @@ def _decision_drops(decision):
         tail = str(target).rsplit("#", 1)
         if index is None and len(tail) > 1 and tail[1].isdigit():
             index = int(tail[1])
-        out.append(("message" if "#" in str(target) else "tool",
-                    str(target), index, c.get("tokens", 0),
-                    ", ".join(str(w) for w in c.get("why") or [])))
-    return out
+        add("message" if "#" in str(target) else "tool",
+            str(target), index, c.get("tokens", 0),
+            ", ".join(str(w) for w in c.get("why") or []))
+    return [tuple(r) for r in out]
 
 
 def _head_counts(decision, drops):
@@ -663,11 +799,18 @@ def _head_counts(decision, drops):
     rather than the prompt, and the per-slot arm carries only `dropped_count` plus the
     scored candidates. Reading one field and calling it the count is how `12 kept`
     (tool specs) ended up beside 15 cuts (specs, messages, files).
+
+    `drops` is the rows the page is about to print, so a joint proof that covers another
+    slot's pool is counted down to this one before its numbers are printed beside it.
     """
     proof = decision.get("proof") or {}
     if isinstance(proof.get("kept"), list):
-        return (len(proof["kept"]),
-                len(proof.get("dropped") or []) or len(drops))
+        kept, dropped = proof["kept"], proof.get("dropped") or []
+        kinds = {d[0] for d in drops}
+        if kinds and {d.get("kind") for d in dropped} - kinds:
+            kept = [k for k in kept if k.get("kind") in kinds]
+            return (len(kept), len(drops))
+        return (len(kept), len(dropped) or len(drops))
     cands = decision.get("candidates") or []
     if decision.get("kept") is not None or cands:
         kept = decision.get("kept")
@@ -732,6 +875,10 @@ def cmd_show(args):
 
     if args.json:
         payload = dict(row or {"id": args.request_id})
+        if row is None:
+            # A script must not read "no such request" as "a request that made no
+            # decisions" — the empty lists below are otherwise identical either way.
+            payload["error"] = "no request %d in %s" % (args.request_id, config.db_path)
         payload["decisions"] = decisions
         payload["body_path"] = body_path
         payload["drops"] = [{"slot": d["slot"], "kind": k, "pointer": p,
@@ -762,12 +909,18 @@ def cmd_show(args):
                      row["err"] if row["err"] else None))
     say(style.detail("ttfb", "%s ms" % row["ttfb_ms"]))
     say(style.detail("latency", "%s ms" % row["latency_ms"]))
-    say(style.detail("billed input", row["in_tok"],
-                     "%s cached" % _fmt(row["cw_tok"] or 0)))
+    # `billed input` follows `report`'s convention: the uncached part plus the cache
+    # write, with the read named beside it. Reading the write column for the
+    # parenthetical said `0 cached` over a request that read 2,464 tokens from the
+    # provider's cache — only Anthropic ever writes a cache, and the mock does not
+    # (S46/B5).
+    say(style.detail("billed input", row["in_tok"] + (row["cw_tok"] or 0),
+                     "%s cached" % _fmt(row["cr_tok"] or 0)))
     say(style.detail("output", row["out_tok"]))
     say(style.detail("spend", "$%.4f" % (row["cost_usd"] or 0.0)))
     say(style.row("body", (style.state(style.PRESENT, color=color) + "  "
-                           + style.paint(body_path, style.DIM, color)) if body_path
+                           + style.paint(_shown_path(body_path), style.DIM, color))
+                  if body_path
                   else style.state(style.MISSING, color=color) + "  " + style.paint(
                       "never stored — subproto up --store-bodies records them",
                       style.DIM, color),
@@ -775,8 +928,11 @@ def cmd_show(args):
 
     saved = sum(d.get("savings_est_tok") or 0 for d in decisions)
     say("")
+    # "2, 0 tok" read as one number with a thousands separator. The count and the
+    # estimate are two facts, so they are joined with words, and this is a
+    # potential — the `delivered`/`potential` vocabulary below says which is which.
     say(style.section("decisions",
-                      "%d, %s tok headroom" % (len(decisions), _fmt(saved))
+                      "%d, and it could save %s tok" % (len(decisions), _fmt(saved))
                       if decisions else "none recorded for this request",
                       indent=style.INDENT, color=color))
     for d in decisions:
@@ -798,9 +954,17 @@ def cmd_show(args):
                      None, color))
         say(style.row(d["slot"], value, label_w=style.METRIC_W, color=color,
                       styled=True))
+        # A unit with no number in front of it reads as a missing value, so the column
+        # is only drawn when the arm measured one: the compiled path prices each cut,
+        # the per-slot path prices the decision as a whole and says so once.
+        priced = any(t for (_k, _p, _i, t, _w) in drops)
+        if drops and not priced:
+            say(style.note("priced as one decision, not per cut: the %s tok above is "
+                           "the sum" % _fmt(d.get("savings_est_tok") or 0),
+                           indent=style.SUB_INDENT + 2, color=color))
         for (kind, pointer, index, tokens, why) in drops[:8]:
             say(style.table(kind, (style.clip(pointer.rsplit(":", 1)[-1], 26), "", -26),
-                            (tokens or "", "tok", 5),
+                            ((tokens, "tok", 5) if priced else ("", "", 5)),
                             (style.clip(why, 46), "", 0),
                             name_w=style.METRIC_W - 9, indent=style.SUB_INDENT,
                             color=color))
@@ -834,7 +998,7 @@ def cmd_audit(args):
     config = Config.load(args.config, data_dir=args.home)
     telemetry = _open_telemetry(config)
     from .engine import Engine
-    engine = Engine(config, graph_path=args.graph)
+    engine = Engine(config, graph_path=_graph_arg(args))
     res = dataset.audit(config, telemetry, engine=engine, limit=args.limit,
                         verbose=args.verbose)
     print(json.dumps(res, indent=1, default=str))
@@ -946,6 +1110,20 @@ def cmd_label(args):
     from .engine import ALL_SLOTS
 
     config = Config.load(args.config, data_dir=args.home)
+    color = style.enabled()
+    telemetry = _open_telemetry(config)
+    try:
+        known = telemetry.query("SELECT 1 FROM requests WHERE id = ?",
+                                (args.request_id,))
+    finally:
+        telemetry.close()
+    if not known:
+        # `show` refuses the same id; a label that attaches to nothing would sit in the
+        # file forever and never reach a split.
+        print(style.header("label", "no such request", color=color))
+        print(style.reason("request %s is not in %s" % (args.request_id, config.db_path),
+                           indent=0, color=color))
+        return 1
     labels = dataset.load_labels(config)
     key = str(args.request_id)
     entry = labels.get(key, {})
@@ -958,7 +1136,6 @@ def cmd_label(args):
         entry["reason"] = args.reason
     labels[key] = entry
     path = dataset.save_labels(config, labels)
-    color = style.enabled()
     print(style.row("labelled", "%s → %s (%s)" % (key, args.slot, args.value),
                     label_w=9, color=color, styled=True))
     print(style.note(path, color=color))
@@ -1065,11 +1242,12 @@ def cmd_demo(args):
     config = Config.load(args.config, data_dir=home, port=args.port, store_bodies=True,
                          model=args.model)
     config.ensure_dirs()
+    previous = _count_requests(config.db_path)
     for p in [config.db_path] + glob.glob(os.path.join(config.bodies_dir, "*")):
         if os.path.exists(p):
             os.remove(p)
     telemetry = Telemetry(config.db_path)
-    engine = Engine(config, graph_path=args.graph or None)
+    engine = Engine(config, graph_path=_graph_arg(args))
     srv = ProxyServer(("127.0.0.1", config.port), config, telemetry,
                       engine if args.slots else None)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
@@ -1080,9 +1258,14 @@ def cmd_demo(args):
     print("")
     print("replayed %d synthetic agent requests through the proxy" % n)
     print("recorded bodies: %d" % len(dataset.record_bodies(config)))
+    if previous:
+        print(style.note("cleared %d earlier requests from this home — demo replays into "
+                         "an empty one" % previous))
     if sandbox:
-        print("sandbox: %s" % home)
-        print("         fresh for each run; --home names one you keep")
+        print("")
+        print(style.note("this run wrote to a fresh directory, so the next command has "
+                         "to name it:"))
+        print(style.action("subproto report --home %s" % home))
     if args.audit:
         print(json.dumps(dataset.audit(config, telemetry, engine=engine, limit=50), indent=1))
     srv.shutdown()
@@ -1290,4 +1473,10 @@ def main(argv=None):
           "learn": cmd_learn, "retrain": cmd_retrain,
           "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models,
           "doctor": cmd_doctor}[args.cmd]
-    return fn(args) or 0
+    try:
+        return fn(args) or 0
+    except HomeError as exc:
+        # The one place a bad `--home`/`SUBPROTO_HOME` is answered, so no command has to
+        # remember to check and none of them ends in a traceback over a typo.
+        print(style.reason(str(exc), indent=0, color=style.enabled()))
+        return 1

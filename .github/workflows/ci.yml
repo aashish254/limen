@@ -115,6 +115,32 @@ jobs:
           SUBPROTO_HOME="$WORK/home" "$BIN" report
           echo "--- doctor ---"; cat doctor.json
           echo "--- demo tail ---"; tail -5 demo.log
+      - name: The installed Router ranks on evidence that shipped with it
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$GITHUB_WORKSPACE/.verify-venv/bin/python"
+          # From a directory that is not the clone, twice over: inside the clone a
+          # `import subproto` answers from the source tree, so every assertion below
+          # would pass with nothing installed at all. A pip user has no source tree,
+          # and a Router that reads its ranking evidence out of one worked in CI and
+          # nowhere in their day — degrading to manual selection so quietly that no
+          # test fails (S46/M4).
+          cd "$(mktemp -d)"
+          "$PY" -c "import subproto; assert 'site-packages' in subproto.__file__, subproto.__file__"
+          "$PY" - <<'PYV'
+          import json, os, subproto
+          from subproto.systemone import router
+          path = router.DEFAULT_ABLATION_JSON
+          pkg = os.path.dirname(os.path.abspath(subproto.__file__))
+          assert path.startswith(pkg + os.sep), "%s is outside the package" % path
+          data = json.load(open(path))
+          assert {"heuristic", "adapters"} <= set(data), sorted(data)
+          assert "laya" in data["adapters"], sorted(data["adapters"])
+          ev = router.load_evidence()
+          assert {"heuristic", "laya"} <= set(ev), sorted(ev)
+          print("installed Router ranks on %s" % os.path.relpath(path, pkg))
+          PYV
       - name: Confirm the sdist carries what the docs tell people to run
         run: |
           python - <<'PYSMOKE'

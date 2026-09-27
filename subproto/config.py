@@ -17,6 +17,21 @@ def _env_flag(name, default=None):
     return os.environ[name].strip().lower() in TRUTHY
 
 
+class HomeError(OSError):
+    """The data directory a command was pointed at cannot be used.
+
+    `--home` and `SUBPROTO_HOME` are user input, and a stranger's typo in one of them
+    used to end in a `FileExistsError` traceback with no line they could act on
+    (S46/M3). One named error, raised at the boundary, printed by the dispatcher.
+    """
+
+    def __init__(self, path, cause):
+        detail = getattr(cause, "strerror", None) or cause
+        OSError.__init__(self, "%s: %s" % (path, detail))
+        self.path = path
+        self.cause = cause
+
+
 class Config:
     def __init__(self, source=None, **overrides):
         self.source = source or {}
@@ -121,7 +136,7 @@ class Config:
     def router_evidence(self):
         """Path to an ablation results file the Router ranks against.
 
-        Unset -> the committed `bench/ablation.json`. Point it at a fresh
+        Unset -> the committed `subproto/systemone/evidence/ablation.json`. Point it at a fresh
         `bench/ablation.py --write` output (or the labelled M4 corpus) to re-route
         without a code change.
         """
@@ -173,9 +188,15 @@ class Config:
 
     def ensure_dirs(self):
         for d in (self.data_dir, self.graph_dir):
-            os.makedirs(d, exist_ok=True)
+            try:
+                os.makedirs(d, exist_ok=True)
+            except OSError as exc:
+                raise HomeError(d, exc)
         if self.store_bodies:
-            os.makedirs(self.bodies_dir, exist_ok=True)
+            try:
+                os.makedirs(self.bodies_dir, exist_ok=True)
+            except OSError as exc:
+                raise HomeError(self.bodies_dir, exc)
 
     def to_dict(self):
         return {

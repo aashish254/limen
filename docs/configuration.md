@@ -124,7 +124,7 @@ Endpoint for a named backend that has no `*_URL` of its own. Default unset.
 | Var | Default | Meaning |
 |---|---|---|
 | `SUBPROTO_ROUTER_BUDGET_MS` | unset (no budget) | p50 decision-ms ceiling an adapter must fit to be routed to |
-| `SUBPROTO_ROUTER_EVIDENCE` | unset → committed `bench/ablation.json` | the ablation results file the Router ranks against; point it at a fresh `bench/ablation.py --write` output to re-route without a code change |
+| `SUBPROTO_ROUTER_EVIDENCE` | unset → committed `subproto/systemone/evidence/ablation.json` (inside the package, so a pip install has it) | the ablation results file the Router ranks against; point it at a fresh `bench/ablation.py --write` output to re-route without a code change |
 
 ## Proxy and telemetry
 

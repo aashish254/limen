@@ -392,6 +392,18 @@ def index_for(path):
     return path
 
 
+def ambient(root=None):
+    """The index this directory left for itself, or None.
+
+    Asked for by the command layer rather than sniffed by the engine: an engine that
+    reads the working directory on its own answers differently depending on where it
+    was called from, and that is ambient state a test room cannot see coming. `subproto
+    graph <repo> --install` used to redden the suite for exactly that reason.
+    """
+    path = index_path(root or os.getcwd())
+    return path if os.path.exists(path) else None
+
+
 def save(graph, path):
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)

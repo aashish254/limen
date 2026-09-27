@@ -176,6 +176,28 @@ def test_every_page_line_survives_a_paste(tmp_path, capsys):
         assert len(style.strip(line)) <= 100, "too wide: %r" % line
 
 
+def test_a_body_under_the_home_prints_as_a_tilde(tmp_path, monkeypatch, capsys):
+    """The one line allowed to run long is the one that no longer has to.
+
+    `show` prints the stored body's path so the reader can open it, and under a real home
+    that path broke the page's 100-column measure — in a screenshot, mid-token. Inside the
+    home it prints as `~/…`, which is shorter and still pastes into a shell; outside it,
+    and in `--json`, the absolute path stands.
+    """
+    home, rid, sha, _db = _session(tmp_path)
+    monkeypatch.setattr(cli.os.path, "expanduser", lambda p: str(home))
+    cli.main(["show", str(rid), "--home", home, "--no-color"])
+    line = [l for l in capsys.readouterr().out.splitlines() if "bodies/" in l][0]
+    assert "~/bodies/anthropic_%s.json.gz" % sha in line
+    assert len(style.strip(line)) <= 100, "too wide: %r" % line
+    # A store on another volume is not under the home, so nothing is elided.
+    assert cli._shown_path("/Volumes/scratch/bodies/a.json.gz",
+                           home=str(home)) == "/Volumes/scratch/bodies/a.json.gz"
+    # And a sibling directory whose name only starts with the home is not under it either.
+    assert cli._shown_path(str(home) + "x/bodies/a.json.gz",
+                           home=str(home)).startswith(str(home))
+
+
 def test_show_paints_colour_only_on_state_words(tmp_path, capsys):
     """The grid's rule, checked on this page: dim and bold are structure, colour is a
     verdict — so a chromatic escape may only appear where a state word says it."""
@@ -194,6 +216,141 @@ def test_show_paints_colour_only_on_state_words(tmp_path, capsys):
     cli.main(["show", str(rid), "--home", home, "--no-color"])
     assert stripped == capsys.readouterr().out.rstrip("\n"), \
         "the escapes must be the only difference between the two pages"
+
+
+def test_a_cut_the_slot_named_twice_is_printed_once():
+    """S46/B2 — the per-slot record lists a cut twice, and the page used to believe it.
+
+    `dropped` carries names and `candidates` carries the same tools with `keep: false`,
+    so a 12-tool request rendered 24 rows under `12 kept 24 cut`. The rows are also
+    merged rather than first-wins: the name arrives with no token count, and the price
+    and reason only live on the candidate.
+    """
+    decision = {
+        "slot": "tool_gate", "applied": True, "kept": 1,
+        "dropped": ["KillShell", "TodoWrite"],
+        "candidates": [
+            {"target": "Read", "keep": True, "tokens": 41, "why": ["core"]},
+            {"target": "KillShell", "keep": False, "tokens": 55, "why": ["off-topic"]},
+            {"target": "TodoWrite", "keep": False, "tokens": 60, "why": ["off-topic"]},
+        ],
+    }
+    drops = cli._decision_drops(decision)
+    assert sorted(d[1] for d in drops) == ["tool:KillShell", "tool:TodoWrite"]
+    assert cli._head_counts(decision, drops) == (1, 2)
+    todo = [d for d in drops if d[1] == "tool:TodoWrite"][0]
+    assert todo[3] == 60 and todo[4] == "off-topic", \
+        "the deduped row kept the poorer of the two records"
+
+
+def test_a_compiled_slot_prints_only_the_cuts_it_paid_for():
+    """S46/B6 — one record carries the whole joint proof, and the page listed all of it.
+
+    The compiler solves the request once and attaches that single result to the first
+    slot's record, so the slot that holds it also holds the cuts the other slots paid
+    for. On the demo corpus `tool_gate` printed 15 rows summing to 5,345 tok beside its
+    own `4,145 tok` label while `compact` listed 3 of those same messages a second time:
+    a reader who added the page got 18 items for a request that lost 15, and every block
+    disagreed with the number at the top of it.
+
+    The record is that shape — a joint proof spanning two kinds beside candidates that
+    name one of them — because no proof bought here buys an overlap: the fixture's
+    carrier slot owns every cut it lists.
+    """
+    message = {"kind": "message", "id": "tool_result#5", "tokens": 381, "reason": "stale",
+               "reversible": {"index": 5, "pointer": "message:tool_result#5"}}
+    specs = [{"kind": "tool", "id": name, "tokens": 300 + i, "reason": "off-topic",
+              "reversible": {"index": None, "pointer": "tool:%s" % name}}
+             for i, name in enumerate(("KillShell", "TodoWrite"))]
+    decision = {
+        "slot": "tool_gate", "applied": True, "compiled": True,
+        "savings_est_tok": sum(s["tokens"] for s in specs),
+        "proof": {"kept": [{"kind": "tool", "id": "Read", "tokens": 330},
+                           {"kind": "message", "id": "user#0", "tokens": 40}] + specs,
+                  "dropped": [message] + specs},
+        "candidates": [{"target": "Read", "keep": True, "tokens": 330, "why": ["core"]},
+                       {"target": "KillShell", "keep": False, "tokens": 300, "why": ["off"]},
+                       {"target": "TodoWrite", "keep": False, "tokens": 301, "why": ["off"]}],
+    }
+    drops = cli._decision_drops(decision)
+    assert [d[1] for d in drops] == ["tool:KillShell", "tool:TodoWrite"], \
+        "the block lists a cut another slot paid for"
+    assert sum(d[3] for d in drops) == decision["savings_est_tok"]
+    # 3 kept, not 4: the joint pool's other kind belongs to the sibling that paid for it.
+    assert cli._head_counts(decision, drops) == (3, 2), \
+        "the kept/cut pair is still the joint pool, not this slot's"
+    # The other slot's record of the same solve: it names the message, and it pays for it.
+    sibling = {"slot": "compact", "applied": True, "compiled": True,
+               "savings_est_tok": 381, "proof": {}, "dropped_count": 1,
+               "candidates": [{"target": "tool_result#5", "keep": False, "tokens": 381,
+                               "why": ["error"]}]}
+    sib_drops = cli._decision_drops(sibling)
+    assert [d[1] for d in sib_drops] == ["tool_result#5"]
+    keys = {cli._drop_key(*d[:2]) for d in drops + sib_drops}
+    assert len(keys) == 3, "one cut was claimed twice on one page"
+
+
+def test_every_block_adds_up_to_its_own_number(tmp_path):
+    """The invariant over a real proof: a block's rows sum to the figure beside its name.
+
+    Asserted against the records rather than the page, because all three of these held
+    on every demo request before S46/B6 was found — this is the guard that keeps the
+    projection true, and the witness that a new arm's record shape still agrees with the
+    page that reads it.
+    """
+    home, rid, _sha, _db = _session(tmp_path)
+    keys = []
+    for decision in _recorded_decisions(home, rid):
+        shown = cli._decision_drops(decision)
+        keys.extend(cli._drop_key(*row[:2]) for row in shown)
+        if shown and decision.get("savings_est_tok"):
+            assert sum(r[3] or 0 for r in shown) == decision["savings_est_tok"], \
+                "%s's rows do not add up to the figure beside its name" % decision["slot"]
+        head = cli._head_counts(decision, shown)
+        if head and head[1] is not None:
+            assert head[1] == len(shown), "%s says %d cut and prints %d rows" % (
+                decision["slot"], head[1], len(shown))
+    assert len(keys) == len(set(keys)), "one cut appeared under two slots"
+
+
+def test_the_cache_line_names_the_read_and_not_the_write(tmp_path, capsys):
+    """S46/B5 — `0 cached` printed over a request that read 2,464 tokens from cache.
+
+    `cw_tok` is the cache *write*, and only Anthropic's dialect ever has one; the mock
+    upstream (and OpenAI, Gemini, `responses`) leaves it at 0 while filling the read
+    column. The page read the write column and labelled it "cached", so the one figure
+    that shows the prefix cache working was always zero.
+    """
+    from subproto.telemetry import Telemetry
+
+    config = _home(tmp_path)
+    telemetry = _telemetry(config)
+    telemetry.record({"ts": 1700000000, "api": "openai", "path": "/v1/chat/completions",
+                      "client": "codex", "model": "gpt-5", "status": 200,
+                      "usage": {"input_uncached": 11935, "cache_write": 0,
+                                "cache_read": 2464, "output": 320},
+                      "latency_ms": 5, "ttfb_ms": 0})
+    rid = telemetry.query("SELECT id FROM requests")[0]["id"]
+    home = config.data_dir
+    telemetry.close()
+    assert cli.main(["show", str(rid), "--home", home, "--no-color"]) == 0
+    text = capsys.readouterr().out
+    assert "2,464 cached" in text, text
+    assert "0 cached" not in text, text
+    # And the header agrees with `report`: billed input is the uncached part plus
+    # the write, so the two pages cannot disagree about the same row.
+    assert "11,935" in text
+
+
+def _recorded_decisions(home, rid):
+    """The decision records exactly as the page reads them back out of telemetry."""
+    config = Config.load(data_dir=home)
+    telemetry = _telemetry(config)
+    row = telemetry.query("SELECT decisions FROM requests WHERE id = ?", (rid,))[0]
+    telemetry.close()
+    decisions = json.loads(row["decisions"] or "[]")
+    assert decisions, "the fixture recorded no decisions"
+    return decisions
 
 
 def _recorded_drops(home, rid):

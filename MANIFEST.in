@@ -15,6 +15,7 @@ recursive-include docs *.md
 # README carries the picture too — a relative image link that resolves in the clone and
 # 404s in the sdist is a broken page in the one place a stranger reads it.
 recursive-include docs/assets *.gif *.cast *.sh
+recursive-include subproto/systemone/evidence *.json
 recursive-include subproto/tests *.py
 recursive-include subproto/tests/fixtures *
 recursive-include .github *.md *.yml

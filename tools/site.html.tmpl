@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limen — the decision layer that answers before your agent pays</title>
+<meta name="description" content="Limen sits between a terminal coding agent and its model API and decides, before the call is made, what the request does not need. {{HEAD_PCT}}% fewer input tokens on measured traffic, task pass-rate held, running locally at zero spend.">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://aashish254.github.io/limen/">
+<meta property="og:title" content="Limen — the decision layer that answers before your agent pays">
+<meta property="og:description" content="{{HEAD_PCT}}% fewer input tokens with the pass-rate held, measured locally against a mock at $0. No key, no egress, Python 3.9+, zero runtime dependencies.">
+<meta property="og:type" content="website">
+<style>
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-400.woff2) format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-500.woff2) format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-700.woff2) format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Source Serif 4';src:url(assets/fonts/sourceserif4-var.woff2) format('woff2');font-weight:400 600;font-style:normal;font-display:swap}
+
+:root{
+  --paper:#fff; --band:#f4f5f7; --ink:#101317; --muted:#5b6472; --rule:#d5d9e0;
+  --graphite:#9aa1aa; --ok:#1e7a34; --warn:#a66a00; --bad:#b3261e;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:'Source Serif 4',Iowan Old Style,Georgia,serif;
+  --col:66rem;
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#0e1113;--band:#14181c;--ink:#e8ebef;--muted:#98a2b0;--rule:#262c34;
+        --graphite:#626d7b;--ok:#5fb878;--warn:#d7a44a;--bad:#e2705f}
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+     font-size:1.0625rem;line-height:1.62;font-variant-numeric:tabular-nums}
+.wrap{max-width:var(--col);margin:0 auto;padding:0 1.5rem}
+a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover{border-bottom-color:var(--ink)}
+a:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+code,kbd,.m{font-family:var(--mono);font-size:.875em}
+p{max-width:72ch}
+h1,h2,h3,.grid,.meter,.fig,.stamp,.routes,.ladder,pre{font-family:var(--mono)}
+
+/* the mark */
+header.mark{padding:3.2rem 0 1.6rem}
+.wordmark{font-size:clamp(2.5rem,6.5vw,4.1rem);font-weight:700;letter-spacing:-.055em;
+          line-height:.95;font-family:var(--mono)}
+.etym{font-family:var(--serif);font-style:italic;font-size:1.0625rem;color:var(--muted);margin:.5rem 0 0}
+.claim{font-size:clamp(1.15rem,2.4vw,1.4rem);line-height:1.5;max-width:44ch;margin:1.4rem 0 0;
+       font-family:var(--serif)}
+.claim b{font-family:var(--mono);font-weight:700;font-size:.92em}
+nav.top{margin:1.8rem 0 0;font-family:var(--mono);font-size:.8125rem;color:var(--muted);
+        display:flex;flex-wrap:wrap;gap:.35rem 1.6rem}
+nav.top a{border-bottom:0}
+nav.top a:hover{border-bottom:1px solid var(--ink)}
+
+/* sections: the CLI's own shape, 14ch of label then the content */
+section{border-top:1px solid var(--rule);padding:2.6rem 0 .4rem;margin-top:2.6rem}
+.sechead{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;margin:0 0 1.4rem;align-items:baseline}
+.sechead h2{grid-column:2;font-size:1.0625rem;font-weight:700;letter-spacing:-.01em;margin:0}
+.sechead .meta{grid-column:1;font-size:.8125rem;color:var(--muted);letter-spacing:.01em}
+@media (max-width:44rem){.sechead{grid-template-columns:1fr}.sechead h2,.sechead .meta{grid-column:1}}
+
+/* the hero printout */
+.printout{background:var(--band);border-left:2px solid var(--ink);padding:1.3rem 1.4rem;margin:0;
+          font-size:.8125rem;line-height:1.75;overflow-x:auto}
+.printout .ph{font-weight:700}
+.printout .pm{color:var(--muted);font-weight:400}
+.cut{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad);
+     text-decoration-thickness:1px}
+.kept{color:var(--ink)}
+.quote{color:var(--muted)}
+.state-ok{color:var(--ok);font-weight:500}
+.state-warn{color:var(--warn);font-weight:500}
+.state-bad{color:var(--bad);font-weight:500}
+.row{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
+.row .k{color:var(--muted)}
+.mrow{display:grid;grid-template-columns:25ch 12ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
+.mrow .v{text-align:right;font-weight:500}
+.mrow .u{color:var(--muted)}
+.beforeafter{border-left:2px solid var(--ok);background:var(--band);padding:.9rem 1.4rem 1rem;
+             margin:0 0 1.5rem}
+.beforeafter .mrow{grid-template-columns:30ch auto 1fr;padding-top:.4rem}
+.beforeafter .mrow .v{white-space:nowrap}
+.beforeafter .mrow:first-child>span:first-child{color:var(--ink)}
+@media (max-width:44rem){.mrow,.beforeafter .mrow{grid-template-columns:1fr 1fr}
+  .mrow .u{grid-column:1/-1}
+  .beforeafter .mrow{grid-template-columns:1fr}
+  .beforeafter .mrow .v{white-space:normal;text-align:left}}
+
+/* figures */
+.fig{margin:0 0 2.6rem}
+.figscroll{overflow-x:auto;overscroll-behavior-x:contain}
+.fig h3{font-size:.9375rem;margin:0 0 .2rem;font-weight:700}
+.fig p.cap{font-family:var(--serif);font-size:.9375rem;color:var(--muted);margin:.1rem 0 .8rem;max-width:64ch}
+.fig svg{width:100%;height:auto;display:block}
+.stamp{font-family:var(--mono);font-size:.6875rem;color:var(--muted);letter-spacing:.02em;
+       margin:.5rem 0 0;text-transform:none}
+.stamp b{font-weight:500;color:var(--ink)}
+/* A chart that shrinks to the phone is a chart nobody can read: below the column width it
+   keeps its own size and scrolls sideways instead. */
+@media (max-width:44rem){.figscroll svg{width:780px}}
+
+/* install routes */
+.routes{display:grid;grid-template-columns:1fr;gap:1.4rem;margin:0;min-width:0}
+.route{border-top:1px solid var(--rule);padding-top:.8rem;min-width:0}
+.route h3{font-size:.8125rem;margin:0 0 .5rem;color:var(--muted);font-weight:500}
+/* min-width:0 is what makes the scroll real: a grid item defaults to min-content, which
+   would widen the page instead of letting a long command line scroll inside the block. */
+pre{margin:0;font-size:.8125rem;line-height:1.85;overflow-x:auto;min-width:0;max-width:100%;
+    background:var(--band);padding:.85rem 1rem;border-left:2px solid var(--graphite)}
+pre .c{color:var(--muted)}
+
+/* tables in text, for the numbers a picture cannot carry */
+table{border-collapse:collapse;font-family:var(--mono);font-size:.8125rem;margin:.4rem 0 0;width:100%}
+th{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--rule);padding:.35rem .6rem .35rem 0}
+td{border-bottom:1px solid var(--band);padding:.35rem .6rem .35rem 0;overflow-wrap:anywhere}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+caption{text-align:left;font-family:var(--serif);font-size:.875rem;color:var(--muted);padding-bottom:.5rem}
+.slots td:first-child{white-space:nowrap}
+
+/* the ladder */
+.ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6rem;margin:0 0 .6rem}
+.ladder div{border-top:2px solid var(--ink);padding-top:.7rem}
+.ladder h3{font-size:.875rem;margin:0 0 .35rem}
+.ladder p{font-family:var(--serif);font-size:.9375rem;margin:0;color:var(--muted);max-width:32ch}
+@media (max-width:44rem){.ladder{grid-template-columns:1fr}}
+
+footer{border-top:1px solid var(--rule);margin-top:3rem;padding:1.6rem 0 4rem;
+       font-family:var(--mono);font-size:.75rem;color:var(--muted);line-height:2}
+footer b{color:var(--ink);font-weight:500}
+@media (prefers-reduced-motion:no-preference){
+  .printout{animation:settle .5s ease-out both}
+  @keyframes settle{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mark">
+  <div class="wordmark">Limen</div>
+  <p class="etym">līmen — the threshold. Everything below it never reaches the model.</p>
+  <p class="claim">A decision layer between your coding agent and its model API. It answers,
+    before the call is made, what the request does not need to carry:
+    <b>{{HEAD_PCT}}%</b> fewer input tokens on measured traffic, task pass-rate held, running
+    on your own machine at <b>$0</b>.</p>
+  <nav class="top">
+    <a href="#install">install</a>
+    <a href="#numbers">the numbers</a>
+    <a href="#use">how to use it</a>
+    <a href="#cost">what it costs</a>
+    <a href="#gates">what is not measured</a>
+    <a href="https://github.com/aashish254/limen">source</a>
+  </nav>
+</header>
+
+<section id="hero" aria-label="one real request, before and after">
+  <div class="sechead"><span class="meta">the product</span><h2>one request, and what goes away</h2></div>
+  <p>One request from the demo corpus, replayed twice: once with every slot observing,
+  once with two of them enforcing. Both numbers below are the input the provider was
+  billed for, and the printout is the enforcing run's — the command the tool itself
+  tells you to run. Struck columns are what Limen removed; the reason beside each cut is
+  <em>not</em> struck, because the reason is the part you audit.</p>
+  {{HERO}}
+  <p class="stamp">rendered verbatim from <b>{{CMD_HERO}}</b> at commit <b>{{SHA}}</b>.
+  <code>delivered</code> means the bytes never reached the model; <code>potential</code>
+  means the slot named a cut it was not switched on to make. Nothing left this machine:
+  the upstream is the in-repo mock.</p>
+</section>
+
+<section id="what">
+  <div class="sechead"><span class="meta">what it is</span><h2>four decisions, made locally, in the time of one regex</h2></div>
+  <p>Limen is a proxy you point your agent at. It speaks the OpenAI, Anthropic and Gemini
+  request shapes, records every decision it makes, and answers four questions before your
+  prompt is sent: which tool specs this task cannot use, which old turns have gone stale,
+  which file notes the graph says are irrelevant, and how much reasoning this step deserves.
+  It is a <em>System One</em> layer — fast, cheap, fallible — sitting under the model rather
+  than replacing it.</p>
+  <p>It ships with no third-party runtime dependencies, needs no account, and starts in
+  <span class="state-warn">observation</span>: it records what it would have dropped and
+  changes nothing until you name the slots you trust.</p>
+  <table class="slots">
+    <caption>The four slots. None of them is on until you name it in
+      <code>SUBPROTO_APPLY</code>, and each one is reversible on its own. The token column is
+      the offline projection <code>bench/ab.py --mock</code> prints — what the slot could take
+      from recorded prompt shapes, not yet what it took.</caption>
+    <tr><th>slot</th><th>what it decides</th><th class="n">tokens it would cut</th><th class="n">% of input</th></tr>
+    {{SLOT_TABLE}}
+  </table>
+</section>
+
+<section id="install">
+  <div class="sechead"><span class="meta">install</span><h2>three routes, no account at any of them</h2></div>
+  <div class="routes">
+    <div class="route">
+      <h3>from the source you just cloned</h3>
+      <pre>git clone https://github.com/aashish254/limen.git
+cd limen
+./install.sh                <span class="c"># puts `subproto` on PATH, no package index</span></pre>
+    </div>
+    <div class="route">
+      <h3>into a virtualenv you already use</h3>
+      <pre>python -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install .               <span class="c"># Python 3.9 or newer, zero dependencies</span></pre>
+    </div>
+    <div class="route">
+      <h3>without installing anything</h3>
+      <pre>python3 -m subproto demo --slots   <span class="c"># replays 17 agent turns through the proxy</span></pre>
+    </div>
+  </div>
+  <p>The package and the command are still named <code>subproto</code>; <b>Limen</b> is the
+  project. Point your agent at it and check the machine before you believe anything else:</p>
+  <pre>subproto doctor            <span class="c"># 6 measured checks: interpreter, data dir, port, keys, backends</span>
+subproto demo --slots      <span class="c"># 17 synthetic agent requests through the proxy, against the local mock</span>
+subproto report            <span class="c"># what those requests would have cost, and what the slots would have cut</span></pre>
+  <p class="stamp"><b>{{TESTS}}</b> tests and <b>{{MUTANTS}}</b> mutants are the gate:
+  <code>bash run_tests.sh</code> runs them, and CI runs that on Python {{PYVERSIONS}} on Linux
+  and macOS.</p>
+</section>
+
+<section id="numbers">
+  <div class="sechead"><span class="meta">the numbers</span><h2>the same traffic, with the system off and on</h2></div>
+  <p>Every figure below comes out of a run on this machine at $0 against the in-repo mock.
+  The corpus is {{NTASKS}} coding-agent tasks replayed {{ITERS}} times through three arms:
+  <em>observe</em> (nothing is changed), <em>enforce</em> (each slot spends its own budget),
+  and <em>compiled</em> (one joint budget over the whole request). Where a number is a
+  projection or has not been run, the caption says which.</p>
+  {{FIGURES}}
+  <table class="pool">
+    <caption>The pooled result, in text, so the figures are not the only record. Pooled
+      over every task and repeat; the change column is <em>observe → compiled</em> unless
+      the row says otherwise.</caption>
+    <tr><th>metric</th><th class="n">without</th><th class="n">per-slot</th><th class="n">compiled</th><th class="n">change</th></tr>
+    {{POOL_TABLE}}
+  </table>
+  <p class="stamp">all panels generated by <b>{{CMD}}</b> at commit <b>{{SHA}}</b> on
+  <b>{{HOST}}</b>, python <b>{{PYTHON}}</b>, load average <b>{{LOAD}}</b> at start.
+  Re-run that command and the page rebuilds from what it measures.</p>
+</section>
+
+<section id="use">
+  <div class="sechead"><span class="meta">how to use it</span><h2>the ladder, and where each rung earns its keep</h2></div>
+  <div class="ladder">
+    <div><h3>1 — observe</h3><p>Set the base URL and record. Nothing is rewritten, and the
+      first page you read is <code>subproto report</code>: what your own traffic carries that
+      it does not need.</p></div>
+    <div><h3>2 — enforce what you trust</h3><p>Name the slots, one at a time:
+      <code>SUBPROTO_APPLY=tool_gate</code>. Each one is reversible, and the pass-rate gate
+      is checked per arm, not pooled.</p></div>
+    <div><h3>3 — compile</h3><p><code>SUBPROTO_COMPILE=on</code> spends a single budget over
+      messages, tool specs and file notes together. Cheaper and more precise — and slower per
+      decision, which is stated below rather than hidden.</p></div>
+  </div>
+  <p>The cached prefix is never rewritten. That is the whole reason a token-saving proxy can
+  be worth anything: busting a provider's prompt cache costs more than the tokens it saves, so
+  Limen only ever edits the part of the request the cache does not hold, and there is an
+  invariant test that asserts byte equality on it.</p>
+</section>
+
+<section id="cost">
+  <div class="sechead"><span class="meta">the honest part</span><h2>what it costs when it is wrong</h2></div>
+  <p>{{COST_PROSE}}</p>
+  {{FIG_REGRET}}
+</section>
+
+<section id="gates">
+  <div class="sechead"><span class="meta">not measured</span><h2>the claims this page does not make</h2></div>
+  <table>
+    <caption>Every one of these is a human action or a spend decision, and each is written into
+      <code>TODO.md</code> as gated rather than checked off.</caption>
+    <tr><th>claim</th><th>what it would take</th></tr>
+    {{GATE_TABLE}}
+  </table>
+  <p>Against other systems: the published comparison for a decision layer of this kind is
+  TypeSafe AI's Jev, a hosted classifier at $0.042 per million tokens. Limen is local, Apache-2.0
+  and bills nothing. <b>We have never run Jev</b>, so this page carries no speed or accuracy
+  multiplier against it — only the axis we can stand on: what our own traffic costs with the
+  layer on and off.</p>
+</section>
+
+<footer>
+  <div><b>Limen</b> is the project; the package and the command are still
+  <code>subproto</code>. Apache-2.0, {{CMDS}} subcommands, no runtime dependencies, a
+  Python {{PYFLOOR}} floor.</div>
+  <div>This page is generated: <code>python3 bench/launch_stats.py --iters {{ITERS}} &amp;&amp;
+  python3 tools/make_site.py</code>. The numbers are not typed by hand, so they cannot drift
+  from the run that produced them.</div>
+  <div><a href="https://github.com/aashish254/limen">github.com/aashish254/limen</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/docs/commands.md">every command</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/docs/configuration.md">every variable</a> ·
+  <a href="https://github.com/aashish254/limen/blob/main/CHANGELOG.md">changelog</a></div>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: SECURITY.md — what subproto does and does not send anywhere
-    url: https://github.com/aashish254/subproto/blob/main/SECURITY.md
+    url: https://github.com/aashish254/limen/blob/main/SECURITY.md
     about: It is a local proxy with no telemetry and no update check. Read this before wiring it into an agent that handles private code.
   - name: WIRING.md — base_url per coding agent
-    url: https://github.com/aashish254/subproto/blob/main/WIRING.md
+    url: https://github.com/aashish254/limen/blob/main/WIRING.md
     about: Claude Code, Codex, Gemini CLI, Cline, aider, OpenCode. Open an issue if your agent or version is missing.
   - name: CONTRIBUTING.md — the invariants a PR has to keep
-    url: https://github.com/aashish254/subproto/blob/main/CONTRIBUTING.md
+    url: https://github.com/aashish254/limen/blob/main/CONTRIBUTING.md
     about: Zero dependencies, colour only on a state word, and a test that would have failed without your change.

@@ -52,10 +52,17 @@ subproto up --slots --store-bodies --for claude
 ```
 
 The banner prints the data dir, whether bodies are recorded, whether slots are on
-(otherwise "pure passthrough"), the enforcing state (`SUBPROTO_APPLY` unset = "observation
-mode — it records, it never rewrites"), the graph path, and — if a model answers — its
-label, version, per-slot backends and any "could not be used" reason. It closes with the
-`base_url` lines for the requested tools and `Ctrl-C to stop. Then run: subproto report`.
+(otherwise "pure passthrough"), the enforcing state, the graph path, and the model
+that answers: its label, version, per-slot backends, and a reason for anything that
+was named but not used. Both of those last two clauses are load-bearing. The
+enforcing state is asked of the engine rather than read out of `SUBPROTO_APPLY`, so
+`SUBPROTO_ENFORCE=1` prints the two slots it turned on instead of "observation mode
+— it records, it never rewrites". And a pin that resolved to nothing says so here —
+`--model openjev` with nothing behind `OPENJEV_URL` prints
+`openjev is not being served — set OPENJEV_URL, or name its URL in SUBPROTO_MODEL`,
+because a model that quietly fell back to the heuristics used to print no model row
+at all. It closes with the `base_url` lines for the requested tools and
+`Ctrl-C to stop. Then run: subproto report`.
 
 `up` is a long-running server. It was **not** run for this document.
 
@@ -66,7 +73,7 @@ label, version, per-slot backends and any "could not be used" reason. It closes 
 | Flag | Effect |
 |---|---|
 | `--no-learn` | skip the eviction-regret harvest (no bodies read) |
-| `--since DATE` / `--until DATE` | time window |
+| `--since DATE` / `--until DATE` | time window; a date that does not parse is refused with the form it wanted, exit 1 |
 | `--json` | machine-readable output |
 
 ```bash
@@ -74,7 +81,9 @@ subproto report
 ```
 
 **captured** (`demo --slots` traffic) — header `subproto report — 17 requests`, then
-billed/cached input, output, spend ($0.32), failures, slot decision latency (p50/p95),
+billed input (179,280 tok), cached input (38,817 tok, 17.8 % — read from the mock's
+prompt cache, which prices a shared prefix at its read rate), output, spend ($0.59 at
+the mock's tariff, so nothing is billed), failures, slot decision latency (p50/p95),
 cache hit rate, a "where the input tokens came from" breakdown by message category,
 `by model`, `by client`, `slot headroom`, and a `by model version` line naming which
 checkpoint answered. Empty DB instead prints `0 requests` and the point-an-agent hint.
@@ -191,7 +200,7 @@ prints `the tail is sacred (I3)` (exit 1) and cuts nothing.
 | Flag / arg | Effect |
 |---|---|
 | `REQUEST_ID` (positional, int) | the telemetry row to open |
-| `--json` | full payload incl. body path and every drop with its excerpt |
+| `--json` | full payload incl. body path and every drop with its excerpt; for an id that is not in the DB, the payload carries `"error"` — an empty `decisions` list alone cannot tell those two apart |
 
 ```bash
 subproto show 1
@@ -396,7 +405,7 @@ cadence cleared. Local state only (I4).
 | `--val-frac F` / `--seed N` | forwarded to the split builder |
 | `--epochs N` | default 3 |
 | `--rank N` | default 8 |
-| `--json` | `{state, command, recorded, exit}` |
+| `--json` | the readiness state flattened (`ready`, `reasons`, per-slot counts, `toolchain`, …) plus `{command, recorded, split_written, exit}` |
 
 ```bash
 subproto retrain
@@ -443,7 +452,7 @@ subproto doctor — 6 checks, 2 to fix
         data dir  ok  /Users/aashish/.subproto
                   a file was written here and removed — telemetry.db lands
                   in this directory
-            port  ok  62678  127.0.0.1
+            port  ok  63438  127.0.0.1
                   you asked for any free port, and that is the one it took
    provider keys  warn  none in this environment
                   export your provider's key (ANTHROPIC_API_KEY,
@@ -451,10 +460,10 @@ subproto doctor — 6 checks, 2 to fix
                   proxy forwards it and never stores it
 
   model backends
-    laya runtime  not ready  not importable here (python 3.11)
-                  the real checkpoint needs pip install "laya[serve]" on a
-                  Python >= 3.10 environment — subproto's lexical server
-                  runs anywhere and needs nothing
+    laya runtime  not ready  not installed in this interpreter (python 3.11)
+                  pip install "laya[serve]" here for the real checkpoint —
+                  subproto's lexical server answers without it and needs
+                  nothing
          backend  not configured — every slot answers with the in-process heuristics
 ```
 

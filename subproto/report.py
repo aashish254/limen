@@ -357,9 +357,11 @@ def render_text(summary, since=None, until=None, color=False):
     t = summary["totals"] or {}
     n = int(t.get("n") or 0)
     lines = []
-    lines.append(st.header("report", "%s requests" % n,
-                           *(["%s..%s" % (since, until)] if (since or until) else []),
-                           color=color))
+    # One bound is not a range: `2026-09-27..None` on a header line reads as a value
+    # the reader has to decode, and the unbounded end is simply not filtered (S46/m3).
+    window = ("%s..%s" % (since, until)) if (since and until) else (
+        ("from %s" % since) if since else (("until %s" % until) if until else ""))
+    lines.append(st.header("report", "%s requests" % n, window, color=color))
     if not n:
         lines.append("")
         lines.append(st.prose("No telemetry yet. Point an agent at the proxy:",

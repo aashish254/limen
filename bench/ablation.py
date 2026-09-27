@@ -407,9 +407,13 @@ def main():
     if args.write:
         with open(args.out, "w") as f:
             f.write(text + "\n")
-        with open(os.path.join(here, "ablation.json"), "w") as f:
+        # The Router reads its evidence out of the installed package, so that is where
+        # the measured file lives; `bench/` keeps only the human-readable page.
+        evidence = os.path.join(here, os.pardir, "subproto", "systemone",
+                                "evidence", "ablation.json")
+        with open(evidence, "w") as f:
             json.dump(m, f, indent=1)
-        print("\n-> wrote %s" % args.out)
+        print("\n-> wrote %s\n-> wrote %s" % (args.out, os.path.normpath(evidence)))
     return 0
 
 
