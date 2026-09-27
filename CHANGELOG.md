@@ -118,6 +118,31 @@ because none of these failures is in a code path.
   neither is read by the proxy — the budget check is opt-in because a wall-clock assertion
   measured while another process holds the machine is a false red.
 
+### Cloned and run on Linux, by the route a stranger takes
+
+The install claim on the front page said "macOS and Linux". Linux had not been run, so it
+was run, on `python:3.11-slim` and `python:3.9-slim` (Linux aarch64):
+
+- **410 passed, 3 skipped** on Python 3.11.16, the same on 3.9. The skips are all
+  environment, not defects: root can write anywhere, so the `doctor` permission check has
+  nothing to fail on, and the two live Laya legs skip because that container has no
+  `laya` install. Byte-compile under `-W error` is clean.
+- `python -m build` then `pip install --no-index --find-links dist subproto` into a fresh
+  venv, and the commands run from a directory that is not the clone: `--version`, `doctor`,
+  `demo --slots`, `report`, `show`. All five print on Linux, and `report` counts the 17
+  requests `demo` just pushed through the mock.
+- **One real bug surfaced, and it was in CI rather than in the product.** The
+  "does the sdist carry the bench and the mock" step computed the tarball's top-level
+  prefix as `dist/subproto-0.1.0`, while tar members are named
+  `subproto-0.1.0/bench/ablation.py`. Every file therefore read as missing: the step is a
+  false red that would have failed the first workflow run on a green artifact. Fixed to use
+  the basename, and re-run against the tarball the container built — 136 members, all six
+  required paths present.
+- Two earlier runs are reported as artifacts rather than hidden: the first Linux suite
+  failed one test because `python:*-slim` ships without `git` and the provenance check
+  needs the commit graph, and a read-only mount without `PYTHONDONTWRITEBYTECODE=1` made
+  `py_compile` raise on writing `__pycache__`.
+
 ### Still gated — not in this tree
 
 - **Version tag and PyPI.** `pyproject.toml` is at `0.1.0` and the entry point is wired,

@@ -118,10 +118,10 @@ jobs:
       - name: Confirm the sdist carries what the docs tell people to run
         run: |
           python - <<'PYSMOKE'
-          import glob, tarfile
+          import glob, os, tarfile
           name = glob.glob("dist/*.tar.gz")[0]
           names = set(tarfile.open(name).getnames())
-          top = name.split(".tar.gz")[0]
+          top = os.path.basename(name)[: -len(".tar.gz")]
           need = ["pyproject.toml", "run_tests.sh", "bench/ablation.py",
                   "bench/mutation_gate.py", "fakeup/server.py", "WIRING.md"]
           missing = [n for n in need if "%s/%s" % (top, n) not in names]
