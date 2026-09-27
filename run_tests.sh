@@ -1,23 +1,66 @@
 #!/usr/bin/env bash
 # One-command verification gate. Every task in TODO.md is checked against this.
-# Runs the whole suite + all benches under BOTH 3.11 and (when present) 3.9, then
-# the demo. Exits non-zero on the first failure (set -e). No API key, no spend.
+# Runs the whole suite + all benches under the primary interpreter and, when a second
+# one exists, under that too — each labelled with the version it actually ran, never
+# with the version this script hoped for. Exits non-zero on the first failure.
+# No API key, no spend.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-PY="${PYTHON:-python3.11}"
-# A "second" interpreter: prefer a real 3.9, else fall back to whatever `python3` is.
-PY2="python3.9"
-command -v "$PY2" >/dev/null 2>&1 || PY2="python3"
+
+# A short name for the script to print; the truth of which build ran comes from the
+# interpreter itself.
+ver() { "$1" -c 'import sys; print(".".join(str(n) for n in sys.version_info[:3]))' 2>/dev/null \
+        || echo missing; }
+supported() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' \
+              >/dev/null 2>&1; }
+
+# The primary: PYTHON if the caller named one, else the newest interpreter present.
+PY="${PYTHON:-}"
+if [ -n "$PY" ] && ! supported "$PY"; then
+  echo "PYTHON=$PY is not Python >= 3.9 (it reports $(ver "$PY"))" >&2
+  exit 1
+fi
+if [ -z "$PY" ]; then
+  for cand in python3.13 python3.12 python3.11 python3.10 python3 python3.9; do
+    if command -v "$cand" >/dev/null 2>&1 && supported "$cand"; then PY="$cand"; break; fi
+  done
+fi
+if [ -z "$PY" ]; then
+  echo "no Python >= 3.9 on PATH; run this with PYTHON=/path/to/python" >&2
+  exit 1
+fi
+# A second leg is only worth running if it is a *different* interpreter. `python3.9`
+# first, because that is the requires-python floor; anything else is a different
+# version, not the floor, and the note below says so out loud rather than labelling
+# the leg "3.9".
+PY2=""
+for cand in python3.9 python3; do
+  if command -v "$cand" >/dev/null 2>&1 && supported "$cand" \
+     && [ "$(ver "$cand")" != "$(ver "$PY")" ]; then PY2="$cand"; break; fi
+done
 
 pkg_compile() { "$1" -W error -m compileall -q subproto fakeup bench train; }
 
-port() { echo $(( (RANDOM % 500) + 8500 )); }
+# A port for the demo legs: asked of the kernel, not drawn from $RANDOM. Five hundred
+# slots and twenty draws per run collide with a neighbour — or with the other leg of
+# this same script — often enough to be a flake rather than a finding.
+port() { "${PYCUR:-$PY}" -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()'; }
 
 # expect <needle> <cmd...> — the command must print `needle`, or the gate fails loudly.
+# The output is captured first and searched after: `cmd | grep -q` under `pipefail`
+# turns a *matching* assertion into a red run the moment grep exits before the
+# producer finishes writing (SIGPIPE, exit 141).
 expect() {
   local needle="$1"; shift
-  if ! "$@" | grep -q "$needle"; then
+  local out
+  if ! out="$("$@" 2>&1)" || case "$out" in *"$needle"*) false ;; *) true ;; esac; then
     echo "GATE FAILED: expected \"$needle\" from: $*" >&2
+    echo "----- what it printed -----" >&2
+    echo "$out" >&2
     exit 1
   fi
   echo "ok: $* :: \"$needle\""
@@ -25,6 +68,7 @@ expect() {
 
 run_suite() {
   local py="$1" label="$2"
+  PYCUR="$py"
   echo "----- [$label] byte-compile (all packages) -----"
   pkg_compile "$py"
   echo "----- [$label] pytest -----"
@@ -140,6 +184,37 @@ PYGATE
   echo "ok: a rejected --use leaves the manifest alone"
   expect "by model version" "$py" -m subproto report --home "$RH"
 
+  echo "----- [$label] the stranger's two questions: what build is this, and is my machine ok -----"
+  # `--version` must agree with the module the package metadata carries, and `doctor`
+  # must be able to say *no* — a diagnostic that only ever prints ok is decoration.
+  WANT="$("$py" -c 'import subproto; print("subproto " + subproto.__version__)')"
+  expect "$WANT" "$py" -m subproto --version
+  expect "checks" "$py" -m subproto doctor --home "$(mktemp -d)" --port 0
+  if "$py" -m subproto doctor --home "$(mktemp -d)" --port 0 --json | grep -q '"ok": false'; then
+    echo "GATE FAILED: doctor called a clean machine red" >&2; exit 1
+  fi
+  echo "ok: doctor is green on a fresh home, and --port 0 asks the kernel"
+  RC3=0
+  "$py" - <<'PYGATE' || RC3=$?
+import socket, subprocess, sys
+port = None
+holder = socket.socket()
+holder.bind(("127.0.0.1", 0))
+holder.listen(1)
+port = holder.getsockname()[1]
+run = subprocess.run([sys.executable, "-m", "subproto", "doctor", "--port", str(port),
+                      "--home", "/tmp", "--json"], capture_output=True, text=True)
+holder.close()
+assert run.returncode == 1, "a taken port exited %s" % run.returncode
+assert '"ok": false' in run.stdout, run.stdout
+assert '"label": "port"' in run.stdout, run.stdout
+PYGATE
+  if [ "$RC3" -ne 0 ]; then
+    echo "GATE FAILED: doctor did not carry a red check out to its exit code" >&2
+    exit 1
+  fi
+  echo "ok: a held port is a red row and a non-zero exit"
+
   echo "----- [$label] mutation gate: every rule in the flywheel, compiler and versioning -----"
   expect "MUTATION GATE: OK" "$py" bench/mutation_gate.py
   echo "----- [$label] S32 paired decision-cost probe (both arms printed) -----"
@@ -160,15 +235,22 @@ PYGATE
     "$py" -m subproto demo --port "$(port)" --slots >/dev/null && echo "router demo ok"
 }
 
-echo "== PRIMARY INTERPRETER: $PY ($("$PY" --version 2>&1)) =="
-run_suite "$PY" "3.11"
+echo "== PRIMARY INTERPRETER: $PY ($(ver "$PY")) =="
+run_suite "$PY" "$(ver "$PY")"
 
 echo
-echo "== SECONDARY INTERPRETER: $PY2 ($("$PY2" --version 2>&1)) =="
-if [ "$PY2" = "$PY" ]; then
-  echo "only one interpreter available; skipping cross-version pass"
+if [ -z "$PY2" ]; then
+  echo "SECONDARY INTERPRETER: none distinct from $PY on this machine."
+  echo "The requires-python floor (3.9) is NOT exercised by this run. CI runs it on"
+  echo "ubuntu-latest and macos-latest; install python3.9 to reproduce that leg here."
 else
-  run_suite "$PY2" "3.9"
+  echo "== SECONDARY INTERPRETER: $PY2 ($(ver "$PY2")) =="
+  case "$(ver "$PY2")" in
+    3.9.*) ;;
+    *) echo "note: the second leg is $(ver "$PY2"), not 3.9 — the floor claim is not"
+       echo "      being tested here. It is a different-version pass, nothing more." ;;
+  esac
+  run_suite "$PY2" "$(ver "$PY2")"
 fi
 
 echo

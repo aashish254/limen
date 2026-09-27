@@ -1,0 +1,14 @@
+# Tests compare file bytes and hash fixture files, so a checkout must produce the same
+# bytes on every platform. Without this, `autocrlf` on Windows rewrites the fixtures and
+# a byte-equality test fails for a reason that has nothing to do with the code.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.mp4 binary
+*.duckdb binary
+*.db binary
+
+# GitHub rendering
+*.md text diff=markdown

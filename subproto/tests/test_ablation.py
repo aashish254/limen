@@ -83,3 +83,46 @@ def test_render_includes_both_backends():
     text = ablation.render(m)
     assert "heuristic" in text and "laya" in text and "precision" in text
     assert "Δprecision vs heuristic" in text and "stand-in" in text
+
+
+def test_a_backend_that_answered_nothing_gets_no_favourable_cell(monkeypatch):
+    """0/0/0 aggregates to precision 1.0 by convention, and `%.0f%%` of `None` is
+    a TypeError — both are the same mistake: the row was never designed for a
+    backend that never replied. It must print a row with no numbers."""
+    import subproto.systemone as systemone
+
+    class Silent(object):
+        last_latency_ms = None
+        last_error = "connection refused"
+
+        def __init__(self, url, **kw):
+            pass
+
+        def score(self, state, question, options):
+            return {}
+
+    monkeypatch.setattr(systemone, "HTTPScoreAdapter", Silent)
+    m = ablation.run_ablation(labels=["laya"])
+    a = m["adapters"][0]
+    assert a["answered"].startswith("0/"), "an unanswered case is not an answered one"
+    assert a["agreement"] is None and "precision" not in a and "f1" not in a
+    assert a["delta_vs_heuristic"] is None
+    text = ablation.render(m)
+    assert "not measured" in text
+    assert "| laya | — | — | — | not measured |" in text
+
+
+def test_the_corpus_reports_its_own_ceiling():
+    """The table's headline number is only as wide as the set's disagreement, so
+    the set has to say so."""
+    c = ablation.corpus_ceiling()
+    assert c["cases"] == len(ablation.GROUND_TRUTH)
+    assert c["decisions"] == sum(len(x["tools"]) for x in ablation.GROUND_TRUTH)
+    assert c["gold_equals_heuristic"] > c["cases"] // 2, (
+        "if the baseline stops matching the gold sets, this harness is measuring "
+        "something real again and the note below the table needs rewriting")
+    assert c["baseline_false_keeps"] + c["baseline_false_cuts"] == sum(
+        len(d["only_in_gold"]) + len(d["only_in_heuristic"])
+        for d in c["differing_cases"])
+    assert "cannot measure" in ablation.render(ablation.run_ablation(labels=["laya"]))
+

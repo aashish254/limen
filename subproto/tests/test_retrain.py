@@ -374,12 +374,28 @@ def test_the_page_distinguishes_no_trainer_from_no_weights(tmp_path):
     """Three different absences, three different next actions — merging them is
     how a machine looks "not ready" forever with nobody able to say what to fix."""
     state = _state(tmp_path, _rows(4))
-    state["toolchain"] = {"trainer": False, "mlx": False,
-                          "model_dir": "/x/laya-base", "model_present": False}
+    state["toolchain"] = {"trainer": False, "mlx": False, "model_dir": "/x/laya-base",
+                          "model_present": False,
+                          "trainer_path": "/opt/site-packages/train/finetune_mlx.py"}
     text = retrain.render_text(state, "cmd")
     assert "trainer  missing" in text
     assert "mlx + mlx-lm  missing" in text
     assert "missing (T16)" in text
+
+
+def test_a_missing_trainer_says_where_it_was_supposed_to_be(tmp_path):
+    """`trainer  missing` is two different jobs: `git clone` for a wheel install, and
+    "your checkout is broken" for a clone. Only the path it looked at tells them apart."""
+    state = _state(tmp_path, _rows(4))
+    state["toolchain"] = {"trainer": False, "mlx": False, "model_dir": "/x/laya-base",
+                          "model_present": False,
+                          "trainer_path": "/opt/site-packages/train/finetune_mlx.py"}
+    text = retrain.render_text(state, "cmd")
+    assert "the trainer comes with a source clone" in text
+    assert "pip install subproto" in text
+    # the path is the thing a reader copies, so it sits alone rather than mid-sentence
+    assert "/opt/site-packages/train/finetune_mlx.py" in [
+        line.strip() for line in text.splitlines()]
 
 
 # ---------------------------------------------------------------- what it must not do

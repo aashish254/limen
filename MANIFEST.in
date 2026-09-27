@@ -1,0 +1,24 @@
+# The sdist is what a contributor gets when they `pip install` from source or read the
+# GitHub "Source code (upstream)" tarball, and the docs tell them to run the benches and
+# `run_tests.sh` from it. Setuptools would ship only the installable packages plus the
+# top-level metadata, so the gates and the mock provider are named explicitly here.
+include README.md LICENSE run_tests.sh install.sh requirements-dev.txt
+include SPEC.md ROADMAP.md TODO.md WIRING.md CONTRIBUTING.md SECURITY.md CHANGELOG.md
+include .subproto.example.json
+include tools/check_install.sh
+
+recursive-include bench *.py *.md *.json *.jsonl
+recursive-include fakeup *.py
+recursive-include train *.py
+recursive-include docs *.md
+# README embeds docs/assets/first-30-seconds.gif, so the artifact that carries the
+# README carries the picture too — a relative image link that resolves in the clone and
+# 404s in the sdist is a broken page in the one place a stranger reads it.
+recursive-include docs/assets *.gif *.cast *.sh
+recursive-include subproto/tests *.py
+recursive-include subproto/tests/fixtures *
+recursive-include .github *.md *.yml
+
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store

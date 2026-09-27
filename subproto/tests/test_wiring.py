@@ -90,7 +90,7 @@ def _body_for(path):
     return {}
 
 
-def test_proxy_serves_every_documented_path(proxied):
+def test_proxy_serves_every_documented_path(proxied, settled):
     cfg, tel, srv = proxied
     base = "http://127.0.0.1:%d" % cfg.port
     seen = []
@@ -104,7 +104,7 @@ def test_proxy_serves_every_documented_path(proxied):
             assert r.status == 200, path
             r.read()
         seen.append(path)
-    time.sleep(0.2)
+    settled(tel, len(seen))
     rows = tel.query("SELECT api, status FROM requests ORDER BY id")
     assert len(rows) == len(seen)
     assert all(r["status"] == 200 for r in rows)

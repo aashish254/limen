@@ -2,6 +2,11 @@
 
 # subproto
 
+[![CI](https://github.com/aashish254/subproto/actions/workflows/ci.yml/badge.svg)](https://github.com/aashish254/subproto/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-informational)](pyproject.toml)
+[![Runtime dependencies: 0](https://img.shields.io/badge/dependencies-none-informational)](pyproject.toml)
+
 **A System One layer for coding agents — decide before you pay.**
 
 A local, OpenAI- / Anthropic- / Gemini-compatible proxy (chat, `messages`,
@@ -9,13 +14,23 @@ A local, OpenAI- / Anthropic- / Gemini-compatible proxy (chat, `messages`,
 Codex CLI, Gemini CLI, Cline, OpenCode, aider and anything else that honours a
 `base_url`. It measures exactly where your agent's tokens go, then — one routing
 decision at a time — removes them using a tiny, **swappable System One decision
-model** ([Laya](https://huggingface.co/convaiinnovations/laya) today; OpenJev, MLX
-LoRAs, GGUF or any `http://` classifier tomorrow) instead of your frontier model.
+model** ([Laya](https://huggingface.co/convaiinnovations/laya) today — the real
+checkpoint, on torch CPU; OpenJev, a GGUF server, any `http://` classifier), or the
+heuristics it ships with, instead of your frontier model.
 
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
 just by using it.*
 
-[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Benchmark](#benchmark) · [Roadmap v2→v13](ROADMAP.md)
+[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Reference docs](docs/index.md) · [Benchmark](#benchmark) · [Roadmap v2→v13](ROADMAP.md)
+
+![The first thirty seconds: doctor reads the machine, demo replays agent traffic, live prices the headroom](docs/assets/first-30-seconds.gif)
+
+*The first thirty seconds, on an installed wheel: `subproto --version`, then `doctor`
+reads the machine, `demo` replays 17 synthetic agent requests through the proxy against a
+local mock, and `live` prices the headroom those requests still carry — 32% here, while
+the slots are **observing**, not enforcing. No key, and nothing billed: the `$0.32` on
+screen is what the mock's pricing says the traffic *would* have cost.
+[How this was captured](docs/assets/first-30-seconds.sh).*
 
 The full product & engineering spec — goal, requirements, success criteria — lives in
 [`SPEC.md`](SPEC.md), and the forward plan (why there's no room to catch us for ~8
@@ -104,16 +119,29 @@ Enforce a slot explicitly with `SUBPROTO_APPLY=tool_gate,compact`.
 
 ## Install
 
-Works from source today; a PyPI/pipx package is pending the first tagged release.
+Python 3.9 or newer, **zero runtime dependencies**, stdlib only, no key, no network
+beyond the provider you point it at. Verified on macOS and Linux; Windows runs behind an
+explicit "not tested by us" (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 ```bash
-git clone https://github.com/<you>/subproto && cd subproto
-./install.sh                 # symlinks a `subproto` shim onto your PATH
-# or, without installing:  python3 -m subproto  (stdlib only, Python 3.9+)
+git clone https://github.com/aashish254/subproto && cd subproto
+./install.sh                 # puts a `subproto` shim on your PATH ($HOME/.local/bin)
+# or, without installing anything:  python3 -m subproto …
+# or, as a package:                 pip install .        (pipx-ready: it declares one console script)
 ```
 
+Then ask it what it can see:
+
+```bash
+subproto doctor              # python, data dir, a free port, which backends answer
+```
+
+There is no release tag and no PyPI upload yet — the name is still free (`pypi.org/pypi/subproto`
+→ 404, checked 2026-09-27) — so `bash run_tests.sh` from the clone is the verification path that
+works today. It takes about an hour, needs no key, and spends nothing.
+
 <details>
-<summary>Once published</summary>
+<summary>Once the first tag is pushed</summary>
 
 ```bash
 pipx install subproto        # or: pip install subproto
@@ -121,6 +149,22 @@ pipx install subproto        # or: pip install subproto
 </details>
 
 ## Quick start
+
+Two commands is the whole pitch, and neither spends anything:
+
+```bash
+subproto demo --slots --audit    # replays synthetic agent traffic through the proxy
+subproto report                  # where the tokens went, and what the slots cut
+```
+
+`demo` runs against `fakeup`, a local mock upstream, so you get the real report pages —
+tool counts, per-slot decisions, tokens kept vs cut, p50 decision latency — with no API
+key and no bill. Everything below is what you do after those two.
+
+Nothing on this list writes outside its own data directory: `SUBPROTO_HOME` moves it
+(any absolute path, created on first use), and `subproto doctor` prints what it found —
+the Python it is running under, where the data lives, whether the port is free, which
+backends answer. Run that first when a command surprises you.
 
 ```bash
 # 1. See the whole idea with zero setup — replays synthetic agent traffic
@@ -321,7 +365,9 @@ compiler's p50 on the mock is *still slower* (6.1 → 6.3 ms in the run behind
 than hide; the token and accuracy numbers are the claim. The overhead is profiled and
 partly paid back: a full-message regex scan of every candidate was 1.20 ms/decision and
 is now needle-anchored, cutting the paired decision gap from **+1.24 ms to +0.19 ms**
-(+0.26 when `run_tests.sh` runs it at 4 rounds with the suite competing for the CPU)
+(its best on a quiet host; **+0.32 ms** best / +0.37 median when `run_tests.sh` runs it at
+4 rounds with the suite competing for the CPU — measured 2026-09-27, and the gap is
+host-load-sensitive by more than its own effect size)
 (`python3.11 bench/s32_probe.py`, both arms in one process, minimum over rounds because
 a laptop's request latency drifts more than the effect). Parity was the goal and is not
 reached — what remains is the graph-coupling scan, which is the thing buying the
@@ -340,13 +386,26 @@ real provider billing:
 subproto ships with heuristics so it is useful on day zero, and the decision model is a
 **pluggable backend** — Laya is just adapter #1, so when a better small model lands you
 swap it, you don't fork the project (see [`ROADMAP.md`](ROADMAP.md) §1). It also ships a
-local scoring server that speaks the adapter's `/health` + `/score` contract (deterministic
-lexical scorer, with an MLX path guarded behind an import check):
+local scoring server that speaks the adapter's `/health` + `/score` contract. It has two
+backends: a deterministic lexical scorer (no weights, no torch, the same signal the
+heuristics use, and it says it is a stand-in), and **the real Laya checkpoint** —
+`pip install "laya[serve]"` in a Python ≥ 3.10 venv (the checkpoint requires it, which is
+what the HTTP boundary is for) and `--backend laya` answers each decision with one
+`choice` forward pass on torch CPU. Its probabilities are **not** calibrated confidence:
+the runtime itself reports the checkpoint's temperatures are invalid, and
+`bench/laya_latency.md` prints that warning rather than smoothing it over.
 
 ```bash
 subproto models                                   # what can I point it at, and what is active?
-python -m subproto.laya_server --port 8000        # the mock-verifiable backend
-subproto up --slots --model laya --laya-url http://localhost:8000
+python3 -m subproto.laya_server --port 8000       # the stand-in: no weights, no torch
+
+# The real checkpoint is the one part of this that is not stdlib: it needs torch and
+# Python >= 3.10, so it gets its own venv. Everything below runs from the clone.
+python3.11 -m venv .venv-laya && .venv-laya/bin/pip install "laya[serve]"
+.venv-laya/bin/python -m subproto.laya_server --backend laya --port 8000
+
+subproto up --slots --model laya --laya-url http://127.0.0.1:8000
+.venv-laya/bin/python -m bench.laya_latency --write   # the cost curve it earns
 ```
 
 The registry in `subproto/systemone/` is the only thing that knows about model
@@ -393,7 +452,7 @@ Naming a *family* is not enough to evaluate a fine-tune: `laya` today and
 has to tell them apart. `$SUBPROTO_HOME/models.json` is where a **version** lives:
 
 ```bash
-subproto models --add mlx-lora-v1 --url http://localhost:8010 --tier personal \
+subproto models --add mlx-lora-v1 --url http://127.0.0.1:8010 --tier personal \
                 --note "LoRA on 1.2k decisions, epoch 3"
 subproto models --use mlx-lora-v1      # whatever was active becomes `previous`
 subproto models --rollback             # and one command puts it back
@@ -419,12 +478,16 @@ Two rules keep the column worth reading:
   and `models --use` prints that warning rather than letting you believe you switched.
 
 `bench/ablation.py` scores **any registry label** through that same adapter
-interface against the heuristic baseline on labelled ground truth. Today the only
-endpoint in the repo is our deterministic lexical stand-in, so the columns agree
-and the report says exactly that — an adapter with no configured endpoint is
-reported as skipped instead of borrowing the stand-in's number. The delta becomes
-meaningful when a quantized checkpoint replaces the scorer. The full loop from
-usage to a specialised model is:
+interface against the heuristic baseline on labelled ground truth. The committed run
+scores **the real checkpoint** — `LAYA_URL` pointed at `laya_server --backend laya` —
+and it prints a negative result: precision **0.889 vs the heuristic's 0.972**, agreeing
+with the heuristic's answer on 27 % of options. An adapter with no configured endpoint
+is reported as skipped instead of borrowing the stand-in's number. Read the number
+with `corpus_ceiling()` beside it: **7 of this corpus's 10 cases have a gold set equal
+to the heuristic's own answer**, so 83 of its 86 decisions cannot move either way, and
+the delta that is left is a property of the set rather than a measurement of skill.
+That is why the accuracy gate is now about *labels* and not about models. The full loop
+from usage to a specialised model is:
 
 ```bash
 subproto learn    # the traffic judges yesterday's drops -> implicit_labels.json
@@ -472,8 +535,13 @@ clock:
 It runs nothing unless `--run` says so, `training_history.json` records every attempt —
 including the refusals, with their reasons — and only a run that *finished* becomes a version
 `subproto models --use lora-vN` can activate. Today the trainer it starts exits **3** with
-`mlx / mlx-lm not installed`: the weights are the external half (roadmap V2-D), and the
-command that cannot honour the run says so instead of pretending to train.
+`mlx / mlx-lm not installed`, and that refusal is one honest step short of the whole truth:
+`train/finetune_mlx.py` is a `mlx_lm` LoRA script, and the checkpoint we actually serve
+is an encoder with a classification head, which that script cannot fine-tune at all (the
+architecture was only read after the decision was locked — see [`SPEC.md`](SPEC.md) §11.1).
+Installing MLX would not open V2-D; a sequence-classification LoRA over torch/PEFT is the
+build that would, and it needs labels first (roadmap V2-A/V2-D). A command that cannot
+honour the run says so instead of pretending to train.
 
 ## Design tenets
 
@@ -521,11 +589,25 @@ integrations compound into an ~8-month lead — is its own spec:
 - [x] The Context Compiler: one joint budget over messages/tools/files + a retention
       proof (`subproto compile`, opt-in `SUBPROTO_COMPILE=on`; mock-measured
       +17.0 pp precision at −19.3% tokens vs per-slot)
-- [ ] Real quantized MLX Laya checkpoint on-device + published latency curve
-      (needs ~808MB HF weights + Apple MLX runtime — external)
+- [x] Real Laya checkpoint on-device (torch CPU — there is no MLX build of it) behind
+      `--backend laya`, plus the published per-decision curve (`bench/laya_latency.py`)
+- [ ] A fine-tune that fits the architecture: a sequence-classification LoRA over the
+      exported split (`train/finetune_mlx.py` is a causal-LM script and cannot train this
+      encoder). Needs labels — roadmap V2-A then V2-D
 - [ ] Hero metric on a real SWE-bench-style suite + billed provider savings
       (needs non-zero API spend — external; mock-measured number ships meanwhile)
-- [ ] Tagged PyPI release + launch post + demo GIF (external)
+- [ ] Tagged PyPI release + HN/PH launch post (external: human actions). The demo GIF
+      is done — the one at the top of this page was recorded from the installed wheel,
+      and [`docs/assets/first-30-seconds.sh`](docs/assets/first-30-seconds.sh) re-makes it
+
+## If it does not work
+
+[`docs/troubleshooting.md`](docs/troubleshooting.md) takes the failures a first run
+actually hits — symptom, meaning, fix — and [`docs/commands.md`](docs/commands.md) /
+[`docs/configuration.md`](docs/configuration.md) are the reference for every subcommand
+and every env var. For a diagnosis of *your* machine rather than a list of possibilities,
+run `subproto doctor`: it binds the port, writes and deletes a witness in the data dir,
+and probes each configured backend's `/health` with the shipped timeout.
 
 ## Contributing
 

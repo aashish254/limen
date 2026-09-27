@@ -1,10 +1,15 @@
-#!/usr/bin/env python3.11
+#!/usr/bin/env python3
 """Mutation gate: edit a rule in the source, and the suite must fail.
 
 `subproto/implicit.py` decides, from recorded traffic alone, that a drop was wrong;
 `subproto/dataset.py` decides whether that verdict reaches the training set;
 `subproto/graph.py`/`compiler.py` decide what evidence survives the budget;
-`subproto/systemone/versions.py` decides which model answered and what it is called.
+`subproto/systemone/versions.py` decides which model answered and what it is called;
+`subproto/laya_server.py` decides how a model is asked, and `bench/ablation.py` and
+`bench/laya_latency.py` decide what a measurement is allowed to say about itself.
+`subproto/doctor.py` decides whether *this machine* can run the thing at all,
+`subproto/cli.py` decides which command a typed name means and what stream it prints
+to, and `subproto/demo.py` decides when the traffic it replayed is finished arriving.
 Each is a file of *rules*, and a test suite over rules can pass while the rule is
 inverted — so each rule is broken here, one at a time, and must be caught.
 
@@ -20,6 +25,7 @@ Usage: `python3.11 bench/mutation_gate.py` (exit 1 if any mutant survives or pat
 """
 
 import hashlib
+import os
 import subprocess
 import sys
 
@@ -437,6 +443,196 @@ MUTANTS = [
      '                        "the text they name — that is what --store-bodies is for.",\n'
      '                        indent=style.INDENT, color=color))\n',
      ''),
+    # -------------------------------------- S39: the checkpoint's question shape
+    # `laya_server` translates between two vocabularies — the slot's option names and
+    # Laya's typed criteria — and every one of those translations can lose an option
+    # or invent a device that aborts the process. The stub runtime makes them gateable
+    # without 842 MB of weights.
+    ("S39-1 an option's underscores reach the encoder as part of the word",
+     "subproto/laya_server.py",
+     '    return " ".join(str(name).replace("_", " ").split())',
+     '    return str(name)'),
+    ("S39-2 two options with one name are asked about as one option",
+     "subproto/laya_server.py",
+     '            key = "%s#%d" % (label, i) if counts[label] > 1 else label',
+     '            key = label'),
+    ("S39-3 an empty option name is asked about as nothing",
+     "subproto/laya_server.py",
+     '        labels = [n if n.strip() else "option %d" % i for i, n in enumerate(names)]',
+     '        labels = list(names)'),
+    ("S39-4 the answer comes back keyed by the question, not the option",
+     "subproto/laya_server.py",
+     '        return dict((name, float(probs.get(key, 0.0))) for key, name in pairs)',
+     '        return dict((key, float(probs.get(key, 0.0))) for key, name in pairs)'),
+    ("S39-5 the per-option shape leaks its repaired key into the reply",
+     "subproto/laya_server.py",
+     '            probs[name] = float((ans.get("probabilities") or {}).get("keep", 0.0))',
+     '            probs[key] = float((ans.get("probabilities") or {}).get("keep", 0.0))'),
+    ("S39-6 the port opens before the weights are paid for",
+     "subproto/laya_server.py",
+     '        self.warm()\n', '        pass\n'),
+    ("S39-7 the default device is the one that aborts the process",
+     "subproto/laya_server.py",
+     '        self.device = device or os.environ.get("LAYA_DEVICE") or "cpu"',
+     '        self.device = device or os.environ.get("LAYA_DEVICE")'),
+    ("S39-8 mlx is answered with a stand-in instead of a refusal",
+     "subproto/laya_server.py",
+     '    if requested == "mlx":\n        raise RuntimeError(',
+     '    if requested == "mlx":\n        return "mlx"\n    if False:\n'
+     '        raise RuntimeError('),
+    # --------------------------------- S40: what the benches measured and printed
+    # The Router spends the median because the budget is a per-decision timeout, and
+    # both benches print verdicts computed from their own rows — so a row has to be
+    # able to contradict the sentence, and an unanswered backend has to be able to
+    # print nothing rather than a flattering nothing.
+    ("S40-1 the latency budget spends the tail instead of the median",
+     "subproto/systemone/router.py",
+     '        value = value.get("p50")', '        value = value.get("max")'),
+    ("S40-2 a latency curve is not something the Router can compare",
+     "subproto/systemone/router.py",
+     '    if isinstance(value, dict):\n        value = value.get("p50")',
+     '    if False:\n        value = value.get("p50")'),
+    ("S40-3 a backend that never replied is scored as keeping nothing",
+     "bench/ablation.py",
+     '            if not probs and getattr(adapter, "last_error", None):',
+     '            if False:'),
+    ("S40-4 an unanswered case is counted as an answered one", "bench/ablation.py",
+     '                no_answer[label] += 1\n', ''),
+    ("S40-5 an unmeasured metric prints as a measured one", "bench/ablation.py",
+     '    return "%.3f" % v if v is not None else "—"', '    return "%.3f" % v'),
+    ("S40-6 agreement is divided by a zero that was never checked",
+     "bench/ablation.py",
+     '                             "agreement": round(agree[label] / float(scored[label]), 4)\n'
+     '                                          if scored[label] else None,',
+     '                             "agreement": round(agree[label] / float(scored[label] or 1), 4),'),
+    ("S40-7 the corpus stops reporting its own ceiling", "bench/ablation.py",
+     '        if gold == hk:\n            identical += 1',
+     '        if gold != hk:\n            identical += 1'),
+    ("S40-8 the ceiling counts cases instead of decisions", "bench/ablation.py",
+     '        decided += len(case["tools"])', '        decided += 1'),
+    ("S40-9 the fits column reads a median the budget was not measured against",
+     "bench/laya_latency.py",
+     '                        "yes" if lt["p95"] <= budget else "no",',
+     '                        "yes" if lt["p50"] <= budget else "no",'),
+    ("S40-10 a shape that was never shipped is labelled as if it was",
+     "bench/laya_latency.py",
+     '                     % (row["shape"], "" if row["shipped"] else " (not shipped)",',
+     '                     % (row["shape"], " (not shipped)" if row["shipped"] else "",'),
+    ("S40-11 the cost ratio compares one shape's tail to the other's median",
+     "bench/laya_latency.py",
+     '                    round(m["shapes"][1]["ms"]["p50"] / choice["ms"]["p50"])',
+     '                    round(m["shapes"][1]["ms"]["p95"] / choice["ms"]["p50"])'),
+
+    # ---------------------------------------------------------------- S41: doctor
+    # A diagnostic earns its place by being able to say *no*. Every row it prints is
+    # a measurement (a bind, a write, a probe), so each of those is a rule here: a
+    # check that cannot fail is the same defect as a count that cannot be wrong.
+    ("T41-1 a red check still exits 0", "subproto/doctor.py",
+     '    return 1 if any(r["state"] in RED for r in rows) else 0\n',
+     '    return 0\n'),
+    ("T41-2 the data dir is judged by whether it exists, not by writing it",
+     "subproto/doctor.py",
+     '        with open(probe, "w") as handle:\n'
+     '            handle.write("witness")\n'
+     '        os.remove(probe)\n',
+     ''),
+    ("T41-3 a configured backend that will not answer reads as healthy",
+     "subproto/doctor.py",
+     '        rows.append(_row("model backends", names, style.DOWN, url,\n',
+     '        rows.append(_row("model backends", names, None, url,\n'),
+    ("T41-4 the key's material reaches the page a bug report pastes",
+     "subproto/doctor.py",
+     '                    ", ".join(present),\n',
+     '                    ", ".join("%s=%s" % (n, os.environ[n]) for n in present),\n'),
+    ("T41-5 asking for any free port falls through to the default",
+     "subproto/doctor.py",
+     '    rows = check_all(config, port=want if want is not None else config.port)',
+     '    rows = check_all(config, port=want or config.port)'),
+    ("T41-6 the json document asserts its own ok", "subproto/doctor.py",
+     '    return {"ok": not any(r["state"] in RED for r in rows),',
+     '    return {"ok": True,'),
+    ("T41-7 --json prints the page instead of the document", "subproto/doctor.py",
+     '    if getattr(ns, "json", False):\n', '    if False:\n'),
+    ("T41-8 a bind that failed is reported as a free port", "subproto/doctor.py",
+     '    except OSError:\n        return False, port\n',
+     '    except OSError:\n        return True, port\n'),
+    ("T41-9 --version prints a number and not the machine it ran on",
+     "subproto/cli.py",
+     '        print("subproto %s (python %s, %s %s)" % (\n'
+     '            __version__, ".".join(str(n) for n in sys.version_info[:3]),\n'
+     '            platform.system().lower(), platform.machine().lower()))\n',
+     '        print("subproto %s" % __version__)\n'),
+    ("T41-10 the documented command is not the one the parser answers",
+     "subproto/cli.py",
+     '          "doctor": cmd_doctor}[args.cmd]\n', '          }[args.cmd]\n'),
+    # S42: the demo is the first command a stranger runs, on a machine that already
+    # has services on it. Its two rules are that it does not collide (a port, a
+    # SQLite file) and that it says where it wrote.
+    #
+    # One more mutant was probed here and dropped: leaving the probe socket unclosed.
+    # Nothing catches it, because CPython's refcounting closes it when the helper
+    # returns — the defect describes itself away, so a test for it would only be a
+    # test of the implementation.
+    ("S42-1 a port someone else holds is the demo's problem to fail",
+     "subproto/cli.py",
+     '    except OSError:\n        sock.bind(("127.0.0.1", 0))\n'
+     '        return sock.getsockname()[1]\n',
+     '    except OSError:\n        return hint\n'),
+    ("S42-2 two demos share one fixed SQLite file", "subproto/cli.py",
+     '        home = tempfile.mkdtemp(prefix="subproto-demo-")\n',
+     '        home = "/tmp/subproto-demo"\n'),
+    ("S42-3 the demo hides the directory it wrote, so the run cannot be re-read",
+     "subproto/cli.py",
+     '    if sandbox:\n        print("sandbox: %s" % home)\n',
+     '    if False:\n        print("sandbox: %s" % home)\n'),
+    ("S42-4 the mock upstream takes port+1 without asking whether it is free",
+     "subproto/cli.py",
+     "    n = demo.replay(config, mock_port=_port_or_next(config.port + 1))\n",
+     "    n = demo.replay(config)\n"),
+    ("S42-5 the page dies on a console whose encoding is not this machine's",
+     "subproto/cli.py",
+     "def main(argv=None):\n    _utf8_streams()\n",
+     "def main(argv=None):\n"),
+    ("S42-6 an extension written in another case is no extension at all",
+     "subproto/graph.py",
+     "    return os.path.splitext(name)[1].lower()\n",
+     "    return os.path.splitext(name)[1]\n"),
+    ("S42-7 the demo reports its traffic before every row has landed",
+     "subproto/demo.py",
+     "        if seen >= n:\n            return seen\n",
+     "        if True:\n            return seen\n"),
+    ("S42-8 a host with no load average is printed as a load average of None",
+     "bench/laya_latency.py",
+     '    if c["load_avg_start"] and c["load_avg_end"]:\n',
+     "    if True:\n"),
+    ("S42-9 the curve stops reading its host and still claims one",
+     "bench/laya_latency.py",
+     "        return [round(x, 2) for x in os.getloadavg()]\n",
+     "        return None\n"),
+    ("S42-10 a host with no getloadavg at all crashes the bench",
+     "bench/laya_latency.py",
+     "    except (AttributeError, OSError):\n",
+     "    except OSError:\n"),
+    # S43: two pages that describe the machine rather than the traffic. `doctor` reads
+    # its Python floor out of a file that an installed wheel does not have, and
+    # `retrain` explains an absence by naming where it looked. Both claims are only
+    # worth printing if the page says where the fact came from.
+    ("S43-1 a missing trainer does not say where it was looked for",
+     "subproto/retrain.py",
+     '    if not tc["trainer"]:\n',
+     "    if False:\n"),
+    ("S43-2 the trainer note loses the path and keeps the sentence",
+     "subproto/retrain.py",
+     '        lines.append(st.note(tc["trainer_path"],\n',
+     '        lines.append(st.note("",\n'),
+    ("S43-3 the floor row claims it read a file it could not open",
+     "subproto/doctor.py",
+     '    except OSError:\n        return FLOOR, "the shipped default"\n',
+     '    except OSError:\n        return FLOOR, os.path.basename(PYPROJECT)\n'),
+    ("S43-4 the floor is quoted from the constant, not parsed from the file",
+     "subproto/doctor.py",
+     "    return (int(match.group(1)), int(match.group(2))), os.path.basename(PYPROJECT)\n",
+     "    return FLOOR, os.path.basename(PYPROJECT)\n"),
 ]
 
 TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
@@ -449,12 +645,42 @@ TESTS = ["subproto/tests/test_implicit.py", "subproto/tests/test_learn.py",
          "subproto/tests/test_style.py",
          # `show` is the surface that turns a retention proof back into bytes, so its
          # pointer resolution is a rule too (T38).
-         "subproto/tests/test_show.py"]
+         "subproto/tests/test_show.py",
+         # S39/S40: the checkpoint's question shape, the answer's keys, and the two
+         # benches whose prose is computed from their own rows.
+         "subproto/tests/test_laya.py", "subproto/tests/test_laya_real.py",
+         "subproto/tests/test_ablation.py", "subproto/tests/test_laya_latency.py",
+         # T41: the diagnostic. Its rows are claims about a machine, and each one is
+         # measured by a socket, a write or a probe that this file can break.
+         "subproto/tests/test_doctor.py",
+         # S42: the demo, which is the only rule file's subject that needs a live
+         # proxy. It costs a few seconds per mutant — worth it, because a stranger's
+         # first command failing on a busy port is exactly the defect this suite
+         # exists to keep out of a release.
+         "subproto/tests/test_cli_demo_home.py"]
+
+
+def _read(path):
+    # `newline=""` and an explicit encoding: this file's central claim is that the
+    # sources come back byte-identical, and Python's default text mode would rewrite
+    # line endings (and fail outright on a cp1252 locale) before a mutant ran.
+    with open(path, encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def _write(path, text):
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 def _run(label):
+    # The child is told to speak UTF-8 and the parent reads it as UTF-8: the sources
+    # under test carry em dashes and set words, and a cp1252 console would break on
+    # them before the mutant's own result was ever printed.
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     return subprocess.run([sys.executable, "-m", "pytest"] + TESTS + ["-q", "--no-header"],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=env)
 
 
 def _last(line_stdout):
@@ -479,7 +705,7 @@ def main():
 
     for _id, path, old, new in MUTANTS:
         if path not in originals:
-            originals[path] = open(path).read()
+            originals[path] = _read(path)
 
     base = _run("baseline")
     print("baseline over %d mutants: %s" % (len(MUTANTS), _last(base.stdout)))
@@ -488,7 +714,7 @@ def main():
               "would be vacuous.")
         return 2
 
-    failures, files = [], {}
+    failures = []
     for mid, path, old, new in MUTANTS:
         src = originals[path]
         n = src.count(old)
@@ -496,8 +722,7 @@ def main():
             print("%-12s %s  (anchor found %d times, need exactly 1)" % ("PATCH-MISS", mid, n))
             failures.append("anchor not unique: " + mid)
             continue
-        files[path] = files.get(path, src) or src
-        open(path, "w").write(src.replace(old, new, 1))
+        _write(path, src.replace(old, new, 1))
         r = _run(mid)
         killed = r.returncode != 0
         print("%-12s %s" % ("KILLED" if killed else "SURVIVED", mid))
@@ -505,7 +730,7 @@ def main():
             failures.append("survived: " + mid)
 
     for path, src in originals.items():
-        open(path, "w").write(src)
+        _write(path, src)
     dirty = [p for p, src in originals.items()
              if hashlib.sha256(open(p, "rb").read()).hexdigest()
              != hashlib.sha256(src.encode()).hexdigest()]

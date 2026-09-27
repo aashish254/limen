@@ -64,6 +64,27 @@ class Config:
         return self._get("model_url") or os.environ.get("SUBPROTO_MODEL_URL")
 
     @property
+    def model_timeout_ms(self):
+        """How long one System One answer may take before the slot falls back.
+
+        350 ms was set when the only endpoint in the repo answered in under a
+        millisecond. The real checkpoint costs 123 ms p50 and 133 ms p95 for a
+        9-tool decision on torch CPU (`bench/laya_latency.md`), so the shipped
+        default is a working budget for one decision and a tight one for a
+        12-option set — raise it to trade latency for the model.
+
+        Read as a number, not through `_get`'s env argument: that path calls
+        `_env_flag`, which answers "is this set to a truthy word?" and would turn
+        `1500` into `False` and the budget into zero.
+        """
+        raw = (self._get("model_timeout_ms")
+               or os.environ.get("SUBPROTO_MODEL_TIMEOUT_MS"))
+        try:
+            return max(1, int(str(raw).strip())) if raw is not None else 350
+        except ValueError:
+            return 350
+
+    @property
     def model_by_slot(self):
         """Per-slot overrides from the config file, e.g. {"compact": "djev"}.
 
@@ -141,7 +162,7 @@ class Config:
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
                 try:
-                    with open(candidate) as f:
+                    with open(candidate, encoding="utf-8", errors="replace") as f:
                         data = json.load(f)
                     if isinstance(data, dict):
                         src = data

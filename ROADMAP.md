@@ -72,14 +72,25 @@ Each entry: **theme → what ships → why a competitor can't match it (for ≥ 
 months) → the gate** (external resource required, if any). `gate:` items stay
 `[~]`-blocked until a human opens them (per SPEC §13 / locked decision #3).
 
-### v2 — Pluggable System One backend + real on-device inference
+### v2 — Pluggable System One backend + real on-device inference — **the model half shipped 2026-09-27; the accuracy half moved gate**
 - **Ships:** ✅ the SPI above; ✅ a model registry; ✅ per-slot model selection;
   ✅ `bench/ablation.py` upgraded to compare **adapters**, not just laya-vs-heuristic;
-  ⏳ three *real* adapters (`heuristic` ships, `http`/`mlx_lora` need an endpoint —
-  the interface is done, the weights are the gate); ⏳ a published CPU/MLX latency curve.
+  ✅ **the real Laya checkpoint** behind `laya_server --backend laya` (torch CPU, one
+  calibrated pass per decision, served over the same `/health`+`/score` contract the
+  engine already spoke); ✅ a published per-decision latency curve
+  (`bench/laya_latency.py` → `bench/laya_latency.md`); ⏳ four more real adapters
+  (`openjev`/`djev`/`semif` are URL entries — point them at an endpoint and the column
+  appears, no code change).
 - **Unfair:** a clone wired to one model must rewrite its core to add a second; we ship
   five. Riding OpenJev/djev/SemIf the day they trend *is* the marketing.
-- `gate:` quantised weight download + MLX/llama.cpp runtime for the ML path (no $).
+- `gate:` ~~quantised weight download + MLX runtime~~ — **that gate was a guess about
+  the architecture and it was wrong**: Laya is an encoder, there is no MLX build of it,
+  and the public weights loaded with no login and no spend. The measured result is a
+  *negative* one (the checkpoint loses to the shipped heuristic by Δprecision −0.083 on
+  the corpus we carry, and that corpus is structurally unable to express a large
+  positive delta for anyone — `bench/ablation.py::corpus_ceiling` prints why). So the
+  remaining gate is **labels whose origin is not the baseline's own rule** (V2-A), then
+  a fine-tune in the architecture that actually ships (V2-D).
 
 ### v3 — The trusted number: real-traffic + billed hero harness
 - **Ships:** V2-A/V2-B from SPEC §13 — real sessions across ≥3 agents; `bench/live.py`

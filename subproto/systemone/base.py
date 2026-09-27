@@ -12,6 +12,24 @@ import time
 import urllib.error
 import urllib.request
 
+# One answer's budget, in seconds. `Config.model_timeout_ms` overrides it; see
+# that property for why the shipped number starves a real checkpoint.
+DEFAULT_TIMEOUT_S = 0.35
+
+
+def timeout_for(config, default=DEFAULT_TIMEOUT_S):
+    """The adapter timeout a config asks for, in seconds.
+
+    Every `HTTPScoreAdapter` is built from here so one setting governs the whole
+    ladder — a versioned checkpoint, a registry name, and the bench's probe all
+    get the same budget, and a slow model degrades identically in each.
+    """
+    ms = getattr(config, "model_timeout_ms", None) if config is not None else None
+    try:
+        return max(0.001, float(ms) / 1000.0) if ms else default
+    except (TypeError, ValueError):
+        return default
+
 
 class ModelAdapter:
     """Base class: `score` returns {option: probability} or None when unavailable.
@@ -22,7 +40,7 @@ class ModelAdapter:
 
     label = "model"
 
-    def __init__(self, base_url=None, timeout=0.35):
+    def __init__(self, base_url=None, timeout=DEFAULT_TIMEOUT_S):
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
         self.last_error = None
@@ -49,7 +67,7 @@ class HTTPScoreAdapter(ModelAdapter):
     registered under any label without touching this code.
     """
 
-    def __init__(self, base_url, label="model", timeout=0.35):
+    def __init__(self, base_url, label="model", timeout=DEFAULT_TIMEOUT_S):
         ModelAdapter.__init__(self, base_url, timeout)
         if label:
             self.label = label

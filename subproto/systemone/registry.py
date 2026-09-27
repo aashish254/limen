@@ -22,7 +22,7 @@ only turns a name into an endpoint.
 
 import os
 
-from .base import HTTPScoreAdapter
+from .base import HTTPScoreAdapter, timeout_for
 
 HEURISTIC = "heuristic"
 
@@ -52,7 +52,8 @@ REGISTRY = {
     "mlx_lora": {
         "label": "mlx_lora",
         "env": "SUBPROTO_MLX_URL",
-        "about": "locally fine-tuned quantized adapter behind a local runner",
+        "about": "fine-tuned causal-LM adapter on a local runner "
+                 "(Laya is an encoder, so not a Laya LoRA)",
     },
 }
 
@@ -98,12 +99,14 @@ def _select(name, config):
     if not name:
         legacy = getattr(config, "laya_url", None)
         if legacy:
-            return HTTPScoreAdapter(legacy, label="laya"), "laya"
+            return (HTTPScoreAdapter(legacy, label="laya",
+                                   timeout=timeout_for(config)), "laya")
         return None, HEURISTIC
     if name.lower() in DISABLED:
         return None, HEURISTIC
     if "://" in name:
-        return HTTPScoreAdapter(name, label="model"), "model"
+        return (HTTPScoreAdapter(name, label="model", timeout=timeout_for(config)),
+                "model")
     key = name.lower()
     if key not in REGISTRY:
         return None, HEURISTIC
@@ -111,7 +114,7 @@ def _select(name, config):
     url = configured_url(key, config)
     if not url:
         return None, HEURISTIC
-    return HTTPScoreAdapter(url, label=label), label
+    return (HTTPScoreAdapter(url, label=label, timeout=timeout_for(config)), label)
 
 
 def resolve(config, slot=None):
@@ -137,7 +140,8 @@ def configured_adapters(config):
         url = configured_url(key, config)
         if url:
             label = REGISTRY[key]["label"]
-            out[label] = HTTPScoreAdapter(url, label=label)
+            out[label] = HTTPScoreAdapter(url, label=label,
+                                      timeout=timeout_for(config))
     return out
 
 

@@ -208,6 +208,10 @@ def make_handler(config, telemetry, engine):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "subproto/0.1"
+        # Deliberately no `timeout` here. A relayed stream can pause before its first
+        # token for longer than any bound this file could pick, and a socket timeout on
+        # the write would cut that stream off mid-answer. A stalled client instead holds
+        # one thread, and `daemon_threads` above means it cannot hold the process.
 
         def log_message(self, fmt, *args):
             if os.environ.get("SUBPROTO_VERBOSE"):

@@ -68,6 +68,24 @@ def test_the_index_covers_the_docs_and_sql_a_task_asks_about(tmp_path):
     assert g["nodes"]["docs/runbook.txt"]["symbols"], "a plain-text title still counts"
 
 
+def test_an_extension_written_in_another_case_is_still_an_extension(tmp_path):
+    """`SCHEMA.SQL` and `MIGRATIONS.MD` are ordinary files on a case-insensitive
+    filesystem, and an index that matched extensions byte for byte left every one
+    of them out — silently, which is the worst way for evidence to go missing."""
+    root = tmp_path / "repo"
+    (root / "db").mkdir(parents=True)
+    (root / "db" / "0008_GATEWAY.SQL").write_text(
+        "-- why the gateway keeps its own retry budget\n"
+        "CREATE TABLE public.gateway_budget (id serial primary key);\n")
+    (root / "db" / "NOTES.MD").write_text("# Gateway budget\n\nA 429 is a budget, not a bug.\n")
+    g = graph.build(str(root))
+    assert g["nodes"]["db/0008_GATEWAY.SQL"]["lang"] == "sql"
+    assert "gateway" in g["nodes"]["db/0008_GATEWAY.SQL"]["symbols"]
+    assert "budget" in g["nodes"]["db/NOTES.MD"]["symbols"]
+    hits = graph.search(g, "why does the gateway budget reject a 429", top_k=2)
+    assert [rel for rel, _, _ in hits][0] == "db/0008_GATEWAY.SQL", hits
+
+
 def test_a_schema_question_finds_the_migration_not_the_legacy_module(tmp_path):
     g = graph.build(_docs_repo(tmp_path))
     hits = graph.search(g, "why is the refund_ledger migration swallowing errors", top_k=5)

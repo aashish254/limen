@@ -48,7 +48,7 @@ TOOLS = [
 ]
 
 LOG_LINES = [
-    "DEBUG 2026-09-25 10:04:11 retrying payment_intent id=pi_3Qr token=sk_live_redacted",
+    "DEBUG 2026-09-25 10:04:11 retrying payment_intent id=pi_synthetic token=[redacted]",
     "INFO  connecting to postgres://db-primary:5432/app pool=12",
     "WARN  slow query 1843ms SELECT * FROM orders WHERE state='pending' ORDER BY id",
     "Traceback (most recent call last):   File app/payments/retry.py, line 88, in refund",
@@ -210,6 +210,27 @@ def post(url, obj, headers=None, timeout=30):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         r.read()
         return r.status
+
+
+def settled(telemetry, n, timeout=15.0):
+    """Wait until the last replayed request has reached the database, and return
+    how many rows are there.
+
+    The response is on the wire before its telemetry row is committed, so a report
+    printed straight after replaying can under-count its own traffic — the demo
+    would say it replayed 17 requests and show 16 in every figure above that line.
+    Asking the database is the only way to know; a fixed pause is a bet on the
+    machine being idle.
+    """
+    deadline = time.time() + timeout
+    seen = 0
+    while time.time() < deadline:
+        rows = telemetry.query("SELECT COUNT(*) AS n FROM requests")
+        seen = rows[0]["n"] if rows else 0
+        if seen >= n:
+            return seen
+        time.sleep(0.02)
+    return seen
 
 
 def replay(config, mock_port=None, n=14, jitter=True, host="127.0.0.1"):

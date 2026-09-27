@@ -1,0 +1,62 @@
+name: Bug report
+description: A command that does not do what its page says it does
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The single most useful thing you can paste here is the command and its real
+        output. Most "it does not work" reports are a Python version, a port in use,
+        or a slot that is observing rather than enforcing — `doctor` tells you which.
+  - type: textarea
+    id: command
+    attributes:
+      label: The command, exactly as you typed it
+      render: shell
+      placeholder: |
+        subproto demo --port 8000 --slots
+        subproto report
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what printed instead
+      description: Paste the output. Do not paraphrase a number.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `subproto doctor`
+      description: |
+        If that command does not exist in your version, paste instead:
+        `python3 --version`, `uname -sr` (or your Windows build), and
+        `echo "$SUBPROTO_HOME"`.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: slotstate
+    attributes:
+      label: Are any slots enforcing?
+      description: Observation-only is the default; a drop you did not turn on is a different bug.
+      options: [none, SUBPROTO_APPLY set, a config file, I do not know]
+    validations:
+      required: true
+  - type: textarea
+    id: noise
+    attributes:
+      label: Anything else running on this machine
+      description: >
+        A second proxy, an Ollama server, a training run or a laptop on battery changes
+        both the latency numbers and whether a model backend answers in time.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmations
+      options:
+        - label: I can reproduce this on a fresh `SUBPROTO_HOME` (or I say what is in mine)
+          required: true
+        - label: I redacted any API key or source code from the pasted output
+          required: true

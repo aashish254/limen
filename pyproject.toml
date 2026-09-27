@@ -1,21 +1,72 @@
 [build-system]
-requires = ["setuptools>=61"]
+# PEP 639 (string `license` + `license-files`) requires setuptools >= 77.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "subproto"
-version = "0.1.0"
+# One source of truth for the number: `subproto.__version__`, which `subproto
+# --version` also prints. Setuptools reads the assignment statically at build time.
+dynamic = ["version"]
 description = "A System One layer for coding agents: decide before you pay."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+# PEP 639 form, accepted by the setuptools the build isolated-env installs
+# (verified below with `python3 -m build`; requires setuptools >= 77).
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["llm", "proxy", "coding-agents", "cost", "latency"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    # No `License ::` trove: setuptools >= 77 rejects license classifiers when the
+    # PEP 639 `license` expression is present (verified with `python3 -m build`).
+    # POSIX only: the test suite has green runs on macOS and Linux. Do not
+    # claim Windows until CI proves it.
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    # Add further `:: 3.x` troves here as CI runs them green.
+    "Topic :: Software Development :: Debug Tools",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Utilities",
+]
 dependencies = []
+
+# PyPI renders the long description from README.md; the reference docs live with the code.
+[project.urls]
+Homepage = "https://github.com/aashish254/subproto"
+Repository = "https://github.com/aashish254/subproto"
+Issues = "https://github.com/aashish254/subproto/issues"
+Documentation = "https://github.com/aashish254/subproto#readme"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+# Verified against the PyPI JSON API (pypi.org/pypi/laya/json): the Laya serving
+# distribution is named `laya`, exposes a `serve` extra, and declares
+# requires_python >= 3.10. The marker keeps `pip install subproto[laya]`
+# installable-without-error semantics on 3.9 honest (extra resolves to nothing).
+laya = ["laya[serve]; python_version >= '3.10'"]
 
 [project.scripts]
 subproto = "subproto.cli:main"
 
 [tool.setuptools]
+# Explicit package list, so subproto/tests/ is never an importable package in the
+# wheel. It still reaches contributors through the sdist via MANIFEST.in.
 packages = ["subproto", "subproto.systemone", "fakeup"]
+# There are currently no non-.py files inside any installed package
+# (subproto/data/ does not exist), so ship no package data at all. If generated
+# or vendored data files are added later, set this true or add a
+# [tool.setuptools.package-data] table pointing at real paths.
+include-package-data = false
 
-[tool.setuptools.package-data]
-subproto = ["data/*.json"]
+[tool.setuptools.dynamic]
+version = {attr = "subproto.__version__"}
+
+[tool.pytest.ini_options]
+# `pytest` with no arguments means the suite, not whatever test_-named file a
+# contributor left in bench/ or train/ — and the benches are not collectable
+# (they take locks and rewrite sources), so collecting them would be a false failure.
+testpaths = ["subproto/tests"]

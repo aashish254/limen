@@ -27,7 +27,7 @@ import os
 import time
 
 from . import registry
-from .base import HTTPScoreAdapter
+from .base import HTTPScoreAdapter, timeout_for
 
 MANIFEST_NAME = "models.json"
 # Two tiers is the whole vocabulary today: a model you point at, and a model you trained.
@@ -225,7 +225,7 @@ def select_from_manifest(manifest, config, health=None):
         if not url:
             notes.append("%s has no endpoint to point at; not used" % label)
             continue
-        adapter = HTTPScoreAdapter(url, label=label)
+        adapter = HTTPScoreAdapter(url, label=label, timeout=timeout_for(config))
         ok, reason = _check_health(adapter, health)
         if ok:
             if i:
@@ -284,7 +284,8 @@ def configured_adapters(config, manifest=None):
     for entry in (manifest or {}).get("versions") or []:
         url = entry.get("url") or registry.configured_url(entry["label"], config)
         if url and entry["label"] not in out:
-            out[entry["label"]] = HTTPScoreAdapter(url, label=entry["label"])
+            out[entry["label"]] = HTTPScoreAdapter(
+                url, label=entry["label"], timeout=timeout_for(config))
     return out
 
 
@@ -297,7 +298,9 @@ def describe(manifest, config=None, health=None):
                                    if config else None)
         status = "no endpoint"
         if url:
-            ok, reason = _check_health(HTTPScoreAdapter(url, label=entry["label"]), health)
+            ok, reason = _check_health(
+                HTTPScoreAdapter(url, label=entry["label"],
+                                 timeout=timeout_for(config)), health)
             status = "health ok" if ok else "unreachable: %s" % reason
         rows.append(dict(entry, endpoint=url, health=status,
                          active=entry["label"] == manifest.get("active"),

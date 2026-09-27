@@ -14,16 +14,23 @@ holds the whole toolchain to:
   *sentence* may only run long when it is a path or a command, because those are
   the two things a reader copies out.
 
+A fifth rule is about this file: every subcommand either renders into `PAGES` or sits
+in `NOT_PAGES` with a reason, so a new surface cannot slip past the design layer by
+going unmentioned.
+
 Each surface is rendered twice, once with colour forced on, and the coloured text
 must reduce to the plain text character for character under `strip`. That one
 invariant catches the styling bugs that are invisible on a screen: a value wrapped
 in a second bold, a unit painted bright, a row whose escapes end early.
 """
 
+import argparse
 import contextlib
 import io
 import os
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -74,6 +81,32 @@ PAGES = {
 # rule and the margin — but a header on a line you are about to paste into a script
 # is noise, so the header rule names them instead of ignoring them.
 RECEIPTS = ("inject", "label")
+
+# The commands PAGES does not render, each with the reason. This table exists so that
+# adding a subcommand forces a decision about it: either it gets a page here, or it
+# gets a reason. An unlisted command fails the test below.
+NOT_PAGES = {
+    "up": "starts a listener and blocks; the pages it feeds are covered by the proxy e2e suite",
+    "demo": "replays traffic, then prints the report page, which is in PAGES",
+    "graph": "writes an index and prints one count",
+    "audit": "writes the audit JSON; its stdout is that document",
+    "export": "writes a JSONL file and prints where it went",
+    "split": "writes train/val and prints the counts",
+    "doctor": "names the machine — a real interpreter path, a port just chosen — so it "
+              "cannot render identically twice; its grid is asserted in test_doctor.py",
+}
+
+
+def test_every_command_is_a_page_or_carries_a_reason():
+    sub = [a for a in cli.build_parser()._actions
+           if isinstance(a, argparse._SubParsersAction)][0]
+    missing = sorted(set(sub.choices) - set(PAGES) - set(NOT_PAGES))
+    assert not missing, "new subcommand with no style decision: %s" % missing
+    for name, argv in PAGES.items():
+        assert name in sub.choices, "PAGES renders %r, which the parser has no such"
+    for name, why in NOT_PAGES.items():
+        assert name in sub.choices, "exempted command no longer exists: %s" % name
+        assert len(why) > 30, "%s is exempted without a real reason" % name
 
 
 def _run(home, color, name, argv, repo_graph=None):
@@ -211,11 +244,17 @@ def test_hue_is_only_ever_on_a_state_word(home, repo_graph):
 
 def test_stripping_the_coloured_page_gives_the_plain_page(home, repo_graph):
     """The strongest single check here: hue must be additive. A value wrapped
-    twice, or a unit painted bright, makes the two pages diverge."""
-    plain = _pages(home, repo_graph, False)
+    twice, or a unit painted bright, makes the two pages diverge.
+
+    The two passes are rendered a second apart, so the harvest clock is masked on both
+    sides — a wall clock crossing a second is not a divergence in the paint, and the
+    page that is allowed to move is already named by `test_a_page_is_the_same_page_twice`.
+    """
+    plain = dict((name, CLOCK.sub("<clock>", text))
+                 for name, text in _pages(home, repo_graph, False).items())
     for name in PAGES:
-        assert style.strip(_run(home, True, name, PAGES[name], repo_graph)) \
-            == plain[name], name
+        painted = CLOCK.sub("<clock>", _run(home, True, name, PAGES[name], repo_graph))
+        assert style.strip(painted) == plain[name], name
 
 
 def test_a_page_is_the_same_page_twice(home, repo_graph):
@@ -312,3 +351,32 @@ def test_the_command_name_leads_its_header(home, repo_graph):
     runs = ESCAPES.findall(line)
     assert [p for c, p in runs if c == "1"] == ["subproto report"], line
     assert [p for c, p in runs if c == "2"][0].strip() in ("—", "— "), line
+
+
+def test_a_console_that_cannot_encode_the_page_still_gets_one(tmp_path):
+    """The stream is part of the design layer, and it is not this tool's to choose.
+
+    Every page here opens with an em dash and can print back a string the user
+    typed — a version name, a path out of their repository. On a cp1252 console
+    (Windows' default, or `LANG=C` in a container) a Devanagari name raises
+    UnicodeEncodeError *inside print*, so the command dies after it had already
+    worked out the answer. This runs a real child under a real hostile
+    `PYTHONIOENCODING`, because the defect lives in the stream and no in-process
+    capture can see it: pytest's own stdout is UTF-8 whatever this machine says.
+    """
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    home = str(tmp_path / "home")
+    name = "personal-चरण"                     # not a character cp1252 owns
+
+    def child(*argv):
+        return subprocess.run([sys.executable, "-m", "subproto"] + list(argv),
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", cwd=root, env=env)
+
+    added = child("models", "--home", home, "--add", name, "--url", "http://127.0.0.1:1")
+    assert added.returncode == 0, added.stderr
+    assert "Traceback" not in added.stdout, added.stdout
+    shown = child("models", "--home", home)
+    assert shown.returncode == 0, shown.stderr
+    assert name in shown.stdout, shown.stdout

@@ -73,17 +73,22 @@ def test_engine_leaves_backends_untouched_when_router_off(tmp_path, monkeypatch,
     assert "router" not in gate               # no routing reason recorded
 
 
-# --- I6 honesty: the shipped evidence ties, so route to heuristic ------------
+# --- I6 honesty: the shipped evidence says the model loses, so no hop ---------
 
 def test_shipped_ablation_evidence_routes_to_heuristic(tmp_path, monkeypatch):
-    """bench/ablation.json has laya == heuristic at Δ0, so auto must NOT spend a hop."""
+    """bench/ablation.json is measured, not a stand-in: the real checkpoint lands below the heuristic here, so auto must NOT spend a hop."""
     monkeypatch.setenv("SUBPROTO_ROUTER", "on")
     monkeypatch.delenv("SUBPROTO_MODEL", raising=False)
     cfg = Config(source={"data_dir": str(tmp_path), "router": True,
                          "laya_url": "http://127.0.0.1:9"})
     r = systemone.Router(cfg)
     assert "heuristic" in r.evidence and "laya" in r.evidence
-    assert r.evidence["laya"]["precision"] == r.evidence["heuristic"]["precision"]
+    # measured, not a tie: the real checkpoint lands *below* the heuristic on this
+    # corpus, so a hop bought for it would be a hop bought for a worse answer.
+    assert r.evidence["laya"]["precision"] < r.evidence["heuristic"]["precision"]
+    # the artifact now carries a latency curve instead of one number; the router
+    # still has to see a number, or a budget would silently veto nothing.
+    assert r.evidence["laya"]["latency_ms"] == 131.0
     adapter, label, reason = r.select("tool_gate")
     assert adapter is None and label == "heuristic"
     assert "no endpoint hop" in reason or "beats the heuristics" in reason
@@ -233,6 +238,30 @@ def test_load_evidence_reads_precision_per_adapter(tmp_path):
     assert evidence["heuristic"]["precision"] == 0.9
     assert evidence["djev"]["precision"] == 0.97
     assert evidence["djev"]["latency_ms"] is None
+
+
+def test_load_evidence_reads_a_latency_curve_not_only_a_number(tmp_path):
+    """`bench/ablation.py` writes {n, p50, p95, max} per adapter. If the loader hands
+    the Router that dict, a budget comparison raises or silently vetoes nothing."""
+    p = tmp_path / "ablation.json"
+    p.write_text(json.dumps({
+        "heuristic": {"precision": 0.9},
+        "adapters": [
+            {"name": "laya", "precision": 0.95,
+             "latency_ms": {"n": 10, "p50": 131, "p95": 155, "max": 160}},
+            {"name": "openjev", "precision": 0.93, "latency_ms": 40},
+            {"name": "semif", "precision": 0.91, "latency_ms": "later"},
+        ],
+    }))
+    evidence = router_mod.load_evidence(str(p))
+    assert evidence["laya"]["latency_ms"] == 131.0
+    assert evidence["openjev"]["latency_ms"] == 40.0     # a plain number still works
+    assert evidence["semif"]["latency_ms"] is None       # unreadable: no latency, no veto
+
+    # and the budget actually uses the median rather than tripping over the curve
+    ranked = router_mod.rank(["laya", "heuristic"], evidence, budget_ms=150)
+    assert [x["label"] for x in ranked] == ["laya", "heuristic"]
+    assert router_mod.rank(["laya"], evidence, budget_ms=100) == []
 
 
 # --- CLI surface --------------------------------------------------------------

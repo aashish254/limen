@@ -10,9 +10,12 @@ telemetry + waste/slot-precision report, 4 decision slots (observation + opt-in
 enforce), code graph, dataset export + label loop + deterministic train/val split, a
 guarded MLX LoRA script, a local Laya scoring server + ablation harness, a live
 terminal savings meter, and a **mock-measured** pass-rate-held benchmark (−29.9%
-input tokens, pass-rate held, bootstrap CI, no key). The remaining gaps are gated on
-external resources — a real quantized checkpoint, non-zero API spend, and a public
-task suite — and stay labelled **BLOCKED(external)**, never falsely checked.
+input tokens, pass-rate held, bootstrap CI, no key). The real Laya checkpoint is
+wired and measured — and it is a torch-CPU encoder, not an MLX model (§11.1), and it
+did *not* beat the heuristic on the corpus this repo carries. The remaining gaps are
+gated on external resources — routing labels whose origin differs from the baseline's
+own rule, non-zero API spend, and a public task suite — and stay labelled
+**BLOCKED(external)**, never falsely checked.
 
 *The forward plan lives in [`ROADMAP.md`](ROADMAP.md): a v2→v13 spec that keeps a
 ~8-month lead, and it deliberately makes the tiny decision model a **pluggable System
@@ -212,13 +215,29 @@ Requirement IDs map to the shipped modules so progress is auditable.
   assignment; `--model` selects it on `up`/`demo`; `SUBPROTO_MODEL_<SLOT>` /
   `model_by_slot` override per slot (only `tool_gate`/`compact` ask a model, so only
   those are overridable). A local `/health`+`/score` server (deterministic lexical
-  scorer, MLX path behind an import guard) runs on an ephemeral port;
+  scorer, plus the real checkpoint behind `--backend laya` on a Python ≥ 3.10 venv)
+  runs on an ephemeral port;
   `bench/ablation.py` scores **any registry label** through the adapter interface and
-  reports precision vs the heuristic, listing an adapter with no endpoint as skipped
-  (both real columns are the lexical stand-in today → they agree, and the report says so).
-- **AC target (v2):** point the SPI at any quantized checkpoint (MLX/GGUF) and show a
-  real per-slot precision/latency trade-off across **adapters**. **BLOCKED(external):**
-  needs ~400–808MB HF weights + a runtime (MLX/llama.cpp).
+  reports precision vs the heuristic, listing an adapter with no endpoint as skipped.
+- **AC target (v2) — the checkpoint half is met, the runtime half was voided**
+  (2026-09-27): `LAYA_URL` at the real `convaiinnovations/laya` checkpoint answers the
+  shipped contract over HTTP and `bench/ablation.py` prints it as its own column, so
+  the SPI is proven against the actual 421M-parameter checkpoint (fp32, torch CPU —
+  there is no quantised MLX build of it to point at) rather than only a stand-in.
+  What the measurement *found* is the part worth locking: on the synthetic corpus the
+  checkpoint does not beat the heuristic (see `bench/ablation_results.md`'s
+  corpus-ceiling section — the gold sets were authored around the heuristic's own
+  rule, so the harness cannot express a large positive delta for anyone), and a
+  `choice` answer is a **distribution over the options** (it sums to 1) whose
+  confidence the runtime itself flags as uncalibrated,
+  which the slot's `p ≥ 0.5` keep rule reads as "keep one tool". That is an open
+  decision this spec now carries, not a bug to hide:
+  **FR-4a — does a decision slot threshold a probability or rank one?** Thresholding
+  is what ships and what guards correctness (I3); ranking is how the compiler spends
+  a token budget, and it scores materially better on the same answers. Clearing it
+  needs labelled data (V2-A/V2-D), not more instrumentation.
+  The remaining gate is **labels with a different origin than the baseline's**, not
+  weights or a runtime.
 
 ### FR-5 Dataset harvest & label loop — ✅ shipped
 `dataset.py`, `subproto export`, `subproto label`, `subproto split`, `train/finetune_mlx.py`
@@ -231,7 +250,11 @@ Requirement IDs map to the shipped modules so progress is auditable.
 - **AC:** `subproto split` emits a deterministic, seeded, body_sha-de-duplicated
   train/val split in the `{state,question,options,answer}` supervision format; no
   train/val leakage (tested). `train/finetune_mlx.py` is a guarded LoRA script that
-  exits honestly without MLX + weights.
+  exits honestly without MLX + weights. **Narrowed 2026-09-27:** it targets a causal
+  LM through `mlx_lm`, so it cannot fine-tune Laya — an encoder with a classification
+  head is trained with a sequence-classification LoRA (PEFT over torch), which is the
+  V2-D path this repo now documents; the script stays for a generative System One and
+  must not be pointed at the Laya base.
 
 ### FR-6 Benchmark harness — ✅ shipped (projection + mock-measured; billed hero BLOCKED(external))
 `bench/ab.py`, `bench/results.md`, `bench/live.py`, `bench/tasks.sample.jsonl`
@@ -447,9 +470,15 @@ it. All three are local, key-free, and gated on two interpreters.
   `bench/live.py` pass-rate-held harness against `fakeup` with a SWE-bench-shaped task
   adapter + mock grader, and per-decision latency plumbing. Report now carries
   cache-hit-rate, decision latency, and label-driven slot precision.
-- **M2 (partial — BLOCKED external)** — Local Laya scoring server + adapter + ablation
-  harness shipped and tested (lexical backend). The **real quantized MLX checkpoint**
-  and published CPU latency curve need ~808MB HF weights + MLX runtime.
+- **M2 (partial — the model half is met 2026-09-27)** — Local Laya scoring server +
+  adapter + ablation harness shipped and tested; `--backend laya` now serves the real
+  `convaiinnovations/laya` checkpoint over the same `/health`+`/score` contract and
+  `bench/ablation.py` scores it as its own column, with `bench/laya_latency.py`
+  publishing the per-decision CPU curve. **What was learned, not just shipped:** there
+  is no MLX runtime for this checkpoint (encoder, not causal LM — §11.1 corrected), the
+  checkpoint does not beat the heuristic on the synthetic corpus the harness carries,
+  and the corpus cannot express a large delta for anyone. The open gate is therefore
+  **labels whose origin is not the baseline's own rule** (V2-A/V2-D), not weights.
 - **M3 (harness shipped — billed number BLOCKED external)** — `bench/live.py` runs the
   pass-rate-held A/B with bootstrap CI and reports a mock-delivered −29.9% token
   reduction. The **public task suite + real grader + billed provider savings** need API
@@ -472,8 +501,9 @@ it. All three are local, key-free, and gated on two interpreters.
 
 | Risk | Reality | Mitigation |
 |---|---|---|
-| Laya zero-shot accuracy is weak | It's "a fast base to specialise" | Ship heuristics first; harvest labels; fine-tune is M4 |
-| CPU latency ≫ the 33ms GPU headline | Numbers are T4-GPU | Route decisions are sparse (5–20/turn); quantise (MLX); measure and publish honestly |
+| Laya zero-shot accuracy is weak | It's "a fast base to specialise" — **and measured weak on our corpus** (2026-09-27: `bench/ablation_results.md`, Δprecision −0.083 under the shipped rule) | Ship heuristics first; harvest labels; fine-tune is M4 |
+| CPU latency ≫ the 33ms GPU headline | Numbers are T4-GPU | Route decisions are sparse (5–20/turn); the curve is measured and published on torch CPU (`bench/laya_latency.md`) — one pass answers near the budget, the tail is host-dependent, and MLX is not available for this architecture to fix it with |
+| A `choice` answer is a distribution, not a keep probability | Real, and it changes the metric | `p ≥ 0.5` keeps one tool of nine; the slot's threshold-vs-rank rule is an open decision (FR-4a) and the report prints both readings instead of picking the flattering one. The runtime also flags these probabilities as uncalibrated, and the published curve carries that warning |
 | Prompt-cache break makes us *cost more* | Real, severe | Invariant I2; append-only context; compaction only past threshold; report cache-hit delta |
 | Dropping needed context breaks tasks | Worst failure mode | Invariant I3; tail protection; reversible; pass-rate guard ≥ −1% (M3) |
 | "another proxy/router" apathy | Crowded | Reframe as **System One decision layer**; the dataset moat; the measured hero number |
@@ -493,7 +523,10 @@ subproto is "perfect" when:
    harness and confidence intervals. **(mock-delivered −29.9% w/ CI is measured today;
    the billed/provider number is M3)**
 4. Laya (on-device) beats the heuristic baseline on slot precision in an ablation.
-   **(ablation harness + local scorer shipped; needs the quantized checkpoint — M2)**
+   **(measured 2026-09-27 against the real checkpoint: it does not — Δprecision −0.083
+   under the shipped rule, and `corpus_ceiling()` shows the corpus cannot express a
+   large positive delta for anyone. This item is now gated on V2-A labels, not on a
+   checkpoint or a runtime — `bench/ablation_results.md` is the print)**
 5. There is an open, versioned routing-decision dataset people can contribute labels
    to. **(export + label loop + seeded split pipeline shipped; publishing the corpus
    is external)**
@@ -510,6 +543,21 @@ Until all seven, "perfect" = "the claim is always at least as strong as the evid
 1. **On-device model backend → Apple MLX** (M2/M3/M4 first). M2 builds the Laya
    server on MLX, quantized, measured on Apple silicon. ONNX/CPU stays a documented
    fallback, not the default path.
+   **Corrected 2026-09-27 — this decision is void for Laya, and the checkpoint is
+   what voided it.** `convaiinnovations/laya` is a ModernBERT-large *encoder* with a
+   two-layer classification head (`pipeline_tag: text-classification`,
+   `usage.output_tokens: 0` on every answer): a non-autoregressive classifier that
+   never generates text. `mlx_lm` loads causal language models, so it has no path to
+   this architecture, and the `laya` package requires torch. The replacement is not a
+   downgrade: torch **CPU** meets this spec's own per-decision budget and the curve is
+   published (`bench/laya_latency.py` → `bench/laya_latency.md`), so MLX is
+   unnecessary here rather than merely awkward. MPS is not the default either —
+   `Router(device=None)` selects it and the process dies on a
+   MetalPerformanceGraph assertion (SIGABRT, exit 134) before the first answer.
+   `--backend mlx` now refuses with this explanation instead of serving a stand-in
+   and calling it a checkpoint. MLX stays the right target for a *generative* System
+   One (our own LoRA over a causal model), and `train/finetune_mlx.py` is honest that
+   it cannot fine-tune this checkpoint.
 2. **Live harness task suite → SWE-bench subset** (M3). We stand up `bench/live.py`
    against a SWE-bench-style subset with a grader; this is the source of the hero
    number's pass-rate claim.
@@ -533,8 +581,9 @@ stays fully reproducible:
    dialect-complete before any real key touches it.
 3. **Scaffold `bench/live.py` against `fakeup`** — pass-rate-held harness skeleton with
    a mock grader and a SWE-bench-shaped task adapter stub, so M3 is wiring, not design.
-4. **Latency measurement plumbing** — per-decision timing recorded so the M2 MLX number
-   has somewhere to land.
+4. **Latency measurement plumbing** — per-decision timing recorded so a real
+   per-decision number has somewhere to land. (What it was written for — "the M2 MLX
+   number" — was later voided: see the §11.1 correction.)
 
 Exit (met): every README claim is either (a) shipped + tested, or (b) explicitly
 labelled a projection with a one-command repro. The wiring docs, FR-8 dialect hardening,
@@ -572,16 +621,36 @@ gate** (invariant I6). No v2 item is silently assumed complete.
   tokens at ≤1% pass-rate delta**, reproducible. If the real number lands lower, the
   claim is narrowed to what was measured — never the reverse.
 
-### V2-C — Real Laya on-device · `gate: quantized weight download + Apple MLX runtime` (no $)
-- **V2-C1** `laya_server` MLX backend loads quantized `convaiinnovations/laya`; `/score`
-  returns real probabilities instead of the lexical stand-in.
-- **V2-C2** Re-run `bench/ablation.py` on the **real** scorer vs heuristic — this is what
-  makes the currently-zero precision delta non-zero and meaningful (T15).
-- **V2-C3** Publish the per-decision CPU/MLX latency curve (target ≤150 ms p50, ≤350 ms
-  p95 on Apple silicon). Acceptance: FR-4 target + **T16** check with a real scorer.
+### V2-C — Real Laya on-device · `gate: human-labelled routing decisions (V2-A) — not weights, not a runtime`
+- **V2-C1** ✅ **measured 2026-09-27.** `laya_server --backend laya` loads
+  `convaiinnovations/laya` on **torch CPU** (there is no MLX path to it — §11.1) and
+  answers the shipped `/health` + `/score` contract with real probabilities, which the
+  production `HTTPScoreAdapter` consumes. The witness is the opt-in live leg of
+  `subproto/tests/test_laya_real.py`: `SUBPROTO_LAYA_PYTHON=<a ≥3.10 interpreter with
+  `pip install "laya[serve]"`>` starts the real server and asserts the option set comes
+  back answered. Without that env var the leg skips, so the gate stays cheap and the
+  claim stays honest.
+- **V2-C2** ✅ **measured, and the answer is negative.** The real checkpoint is *below*
+  the heuristic on this corpus: precision **0.889 vs 0.972** (Δ −0.083) under the shipped
+  `p ≥ 0.5` keep rule, **0.873** (Δ −0.099) read as a ranking, and it agrees with the
+  heuristic's answer on **27 %** of options. `corpus_ceiling()` explains why the number
+  cannot be read as skill: **7 of 10 cases have a gold set equal to the heuristic's own
+  answer**, so 83 of 86 decisions cannot move either way and the whole harness can only
+  express disagreement across 3 cases (2 false keeps, 1 false cut). What this gate needed
+  was never a better scorer on this set — it is labels that were not written around the
+  baseline's rule (V2-A).
+- **V2-C3** ✅ **published.** `bench/laya_latency.py` → `bench/laya_latency.md` prints the
+  per-decision CPU curve with its host conditions (device, threads, cores, load average
+  before and after, the runtime's own calibration warning): the shipped `choice` shape
+  costs **123 ms p50 / 133 p95 / 139 max** and fits the shipped 350 ms budget, while
+  `keep_drop` (**800/1250/1383**) and `noul` (**1097/1581/2386**) do not. The §11 target
+  of ≤150 ms p50 is met on `choice`; ≤350 ms p95 is met on `choice` only. HTTP-side
+  corroboration: 131/155/160 ms over the real `/score` endpoint.
 
 ### V2-D — Close the data flywheel · `gate: V2-A labels + a training run`
-- **V2-D1** Run `train/finetune_mlx.py` LoRA on `subproto split` output (real labels).
+- **V2-D1** Fine-tune a scorer on `subproto split` output (real labels) — with a
+  **sequence-classification** LoRA over torch/PEFT. `train/finetune_mlx.py` cannot do
+  this job: it drives `mlx_lm`, which trains causal LMs, and Laya is an encoder (§11.1).
 - **V2-D2** Ship a v0 routing model; re-run V2-B with it; show **learned > heuristic**
   precision at equal-or-better pass-rate — the moat earning its keep.
 - **V2-D3** Publish a versioned slice of the dataset; open a `good first issue` that is a

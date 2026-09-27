@@ -1,11 +1,14 @@
 import argparse
 import json
 import os
+import platform
+import socket
 import sys
+import tempfile
 import threading
 import time
 
-from . import style
+from . import __version__, style
 from .config import Config
 from .engine import ALL_SLOTS
 from .telemetry import Telemetry
@@ -392,9 +395,9 @@ def cmd_graph(args):
         config.ensure_dirs()
         key = os.path.basename(root)
         link = os.path.join(config.graph_dir, key + ".json")
-        with open(target) as f:
+        with open(target, "rb") as f:
             data = f.read()
-        with open(link, "w") as f:
+        with open(link, "wb") as f:
             f.write(data)
         print(style.row("installed", link, label_w=12, color=color))
         print(style.note("point any command at it with --graph %s" % key,
@@ -426,7 +429,7 @@ def cmd_where(args):
         g = graph_mod.load(path)
     query = " ".join(args.query) if isinstance(args.query, list) else (args.query or "")
     if args.file:
-        with open(args.file) as f:
+        with open(args.file, encoding="utf-8", errors="replace") as f:
             query = f.read() + "\n" + query
     elif not query and not sys.stdin.isatty():
         query = sys.stdin.read()
@@ -1023,6 +1026,26 @@ def cmd_inject(args):
         print(line.format(port=config.port))
 
 
+def _port_or_next(hint):
+    """`hint` unless something already holds it — then whatever the kernel offers.
+
+    The demo needs two ports: the proxy's, and the mock upstream's behind it. The
+    proxy keeps the port the user can see (`--port`, and `subproto inject` prints
+    it); the mock is internal, so a collision there is not worth failing the run
+    for — a second service already holding `port + 1` is an ordinary machine, not
+    a broken one.
+    """
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", hint))
+    except OSError:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+    finally:
+        sock.close()
+    return hint
+
+
 def cmd_demo(args):
     """End-to-end demo against a local mock upstream: no API key, no spend."""
     import glob
@@ -1031,9 +1054,14 @@ def cmd_demo(args):
     from .engine import Engine
     from .proxy import ProxyServer
 
-    # Honour --home, then SUBPROTO_HOME (so `demo` then `report` share a dir, as every
-    # other command does); otherwise isolate the demo in its own wiped sandbox.
-    home = args.home or os.environ.get("SUBPROTO_HOME") or "/tmp/subproto-demo"
+    # Honour --home, then SUBPROTO_HOME, so `demo` then `report` share a dir as every
+    # other command does. With neither, the demo gets a fresh temp dir per run: a
+    # fixed sandbox made two runs share one SQLite file, and the second one reported
+    # the first one's traffic as its own result.
+    home = args.home or os.environ.get("SUBPROTO_HOME")
+    sandbox = home is None
+    if sandbox:
+        home = tempfile.mkdtemp(prefix="subproto-demo-")
     config = Config.load(args.config, data_dir=home, port=args.port, store_bodies=True,
                          model=args.model)
     config.ensure_dirs()
@@ -1046,16 +1074,25 @@ def cmd_demo(args):
                       engine if args.slots else None)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
-    n = demo.replay(config, mock_port=args.port + 1)
-    time.sleep(0.2)
+    n = demo.replay(config, mock_port=_port_or_next(config.port + 1))
+    demo.settled(telemetry, n)
     print(report.render_text(report.summarize(telemetry), color=style.enabled()))
     print("")
     print("replayed %d synthetic agent requests through the proxy" % n)
     print("recorded bodies: %d" % len(dataset.record_bodies(config)))
+    if sandbox:
+        print("sandbox: %s" % home)
+        print("         fresh for each run; --home names one you keep")
     if args.audit:
         print(json.dumps(dataset.audit(config, telemetry, engine=engine, limit=50), indent=1))
     srv.shutdown()
     telemetry.close()
+
+
+def cmd_doctor(args):
+    """Diagnose this machine: interpreter, data dir, port, keys, backends."""
+    from . import doctor
+    return doctor.run(args)
 
 
 def build_parser():
@@ -1072,6 +1109,8 @@ def build_parser():
     p = argparse.ArgumentParser(
         prog="subproto",
         description="A System One layer for coding agents: decide before you pay.")
+    p.add_argument("--version", action="store_true",
+                   help="print the version, the interpreter and the platform, then exit")
     sub = p.add_subparsers(dest="cmd")
 
     up = sub.add_parser("up", parents=[common], help="run the local proxy")
@@ -1203,11 +1242,42 @@ def build_parser():
     rt.add_argument("--epochs", type=int, default=3)
     rt.add_argument("--rank", type=int, default=8)
     rt.add_argument("--json", action="store_true")
+
+    dc = sub.add_parser("doctor", parents=[common],
+                        help="diagnose this machine: python, data dir, port, backends")
+    dc.add_argument("--port", type=int,
+                    help="the port to test (0 asks the kernel for any free one)")
+    dc.add_argument("--json", action="store_true",
+                    help="print the checks as one document, for a bug report")
     return p
 
 
+def _utf8_streams():
+    """Put the program's streams in UTF-8, whatever the machine's locale claims.
+
+    A page here can echo text out of a repository or out of a manifest — a path, a
+    version name, a note — and a console that declares cp1252 (Windows' default, or
+    `LANG=C` in a container) raises UnicodeEncodeError on a character that is not
+    its own. The command would die answering a question it was able to answer.
+    `errors="replace"` is for the *input* streams: a byte that is not UTF-8 becomes
+    one replacement character, not a traceback.
+    """
+    for name in ("stdout", "stderr", "stdin"):
+        reconfigure = getattr(getattr(sys, name, None), "reconfigure", None)
+        if reconfigure is not None:      # a capture object is not a text stream
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv=None):
+    _utf8_streams()
     args = build_parser().parse_args(argv)
+    if getattr(args, "version", False) and not getattr(args, "cmd", None):
+        # One line, safe to paste into a bug report: which build, which interpreter,
+        # which platform. `subproto doctor` is the page that diagnoses the machine.
+        print("subproto %s (python %s, %s %s)" % (
+            __version__, ".".join(str(n) for n in sys.version_info[:3]),
+            platform.system().lower(), platform.machine().lower()))
+        return 0
     if not getattr(args, "cmd", None):
         build_parser().print_help()
         return 0
@@ -1218,5 +1288,6 @@ def main(argv=None):
           "where": cmd_where, "compile": cmd_compile, "show": cmd_show,
           "audit": cmd_audit, "export": cmd_export, "split": cmd_split, "label": cmd_label,
           "learn": cmd_learn, "retrain": cmd_retrain,
-          "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models}[args.cmd]
+          "inject": cmd_inject, "demo": cmd_demo, "models": cmd_models,
+          "doctor": cmd_doctor}[args.cmd]
     return fn(args) or 0

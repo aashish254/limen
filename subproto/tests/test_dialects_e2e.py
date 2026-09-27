@@ -134,13 +134,13 @@ def _post_stream(base, path, body, headers):
         return r.status
 
 
-def test_gemini_streamed_e2e_records_usage(proxied):
+def test_gemini_streamed_e2e_records_usage(proxied, settled):
     cfg, tel, srv = proxied
     base = "http://127.0.0.1:%d" % cfg.port
     body = demo.gemini_synthetic(1)
     assert _post_stream(base, "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
                         body, {"x-goog-api-key": "mock"}) == 200
-    time.sleep(0.2)
+    settled(tel, 1)
     row = tel.query("SELECT api, model, in_tok, cr_tok, out_tok, reasoning_tok, usage_source "
                     "FROM requests ORDER BY id DESC LIMIT 1")[0]
     assert row["api"] == "gemini" and row["usage_source"] == "gemini"
@@ -148,26 +148,26 @@ def test_gemini_streamed_e2e_records_usage(proxied):
     assert row["out_tok"] == 410 and row["reasoning_tok"] == 90
 
 
-def test_gemini_non_stream_e2e(proxied):
+def test_gemini_non_stream_e2e(proxied, settled):
     cfg, tel, srv = proxied
     base = "http://127.0.0.1:%d" % cfg.port
     body = demo.gemini_synthetic(2)
     assert _post_stream(base, "/v1beta/models/gemini-2.5-flash:generateContent",
                         body, {"x-goog-api-key": "mock"}) == 200
-    time.sleep(0.2)
+    settled(tel, 1)
     row = tel.query("SELECT in_tok, out_tok, usage_source FROM requests "
                     "ORDER BY id DESC LIMIT 1")[0]
     assert row["usage_source"] == "gemini"
     assert row["in_tok"] == 220 and row["out_tok"] == 410
 
 
-def test_responses_streamed_e2e_records_usage(proxied):
+def test_responses_streamed_e2e_records_usage(proxied, settled):
     cfg, tel, srv = proxied
     base = "http://127.0.0.1:%d" % cfg.port
     body = demo.responses_synthetic(1)
     assert _post_stream(base, "/v1/responses", body,
                         {"Authorization": "Bearer mock", "user-agent": "openai-python/1.0"}) == 200
-    time.sleep(0.2)
+    settled(tel, 1)
     row = tel.query("SELECT api, in_tok, cr_tok, out_tok, reasoning_tok, usage_source "
                     "FROM requests ORDER BY id DESC LIMIT 1")[0]
     assert row["api"] == "responses" and row["usage_source"] == "responses"

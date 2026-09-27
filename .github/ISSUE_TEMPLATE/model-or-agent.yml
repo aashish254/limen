@@ -1,0 +1,59 @@
+name: Wiring a model or an agent
+description: Add a model backend to the registry, or document an agent's base_url setup
+labels: ["good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two kinds of contribution live here, and both are small:
+
+        **A model backend.** `subproto/systemone/registry.py` is the only file that
+        knows model families. If your server already answers `GET /health` and
+        `POST /score` (`{"state", "question", "options"}` in, `{option: probability}`
+        out), you can point at it today with `SUBPROTO_MODEL=http://host:port` and no
+        code change — a registry entry is only needed to give it a name in the report
+        and the ablation.
+
+        **An agent's wiring.** `WIRING.md` holds the exact `base_url` / env setup per
+        coding agent. A missing agent, or a setup that changed upstream, is an issue
+        worth opening.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which one is this?
+      options: [a model backend / adapter, an agent's wiring page, something else]
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: For a backend — what does it answer?
+      description: >
+        Paste a real `curl` of `/health` and of one `/score` request and response. If
+        it answers a different shape, say so: the adapter seam is in
+        `subproto/systemone/base.py`, and a translation layer there is a reasonable
+        change if the question it answers is genuinely the same question.
+      render: shell
+  - type: textarea
+    id: evidence
+    attributes:
+      label: For a wiring page — how did you verify it?
+      description: The command you ran, and the line in `subproto report` that proves traffic reached the proxy.
+  - type: textarea
+    id: numbers
+    attributes:
+      label: What it scores on the labelled set (optional, and never required to open this)
+      description: >
+        `LAYA_URL=http://127.0.0.1:8000 python3 -m bench.ablation --adapters laya` prints
+        precision against the shipped heuristic and an `answered N/M` column. A backend
+        that answered nothing must print `—`, not a number: if your run shows a number
+        for an unreachable endpoint, that is a bug, please open it separately.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmations
+      options:
+        - label: I read CONTRIBUTING.md, including the invariants
+          required: true
+        - label: No API key or proprietary prompt data is pasted above
+          required: true

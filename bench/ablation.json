@@ -8,14 +8,64 @@
  "adapters": [
   {
    "name": "laya",
-   "source": "bundled lexical stand-in",
-   "agreement": 1.0,
-   "delta_vs_heuristic": 0.0,
-   "precision": 0.9722,
-   "recall": 0.9859,
-   "f1": 0.979
+   "source": "configured",
+   "answered": "10/10",
+   "budget_ms": 350,
+   "agreement": 0.2674,
+   "delta_vs_heuristic": -0.0833,
+   "precision": 0.8889,
+   "recall": 0.1127,
+   "f1": 0.2,
+   "rules": {
+    "threshold": {
+     "precision": 0.8889,
+     "recall": 0.1127,
+     "f1": 0.2
+    },
+    "rank": {
+     "precision": 0.8732,
+     "recall": 0.8732,
+     "f1": 0.8732
+    }
+   },
+   "latency_ms": {
+    "n": 10,
+    "p50": 131,
+    "p95": 155,
+    "max": 160
+   }
   }
  ],
+ "corpus": {
+  "cases": 10,
+  "gold_equals_heuristic": 7,
+  "decisions": 86,
+  "baseline_false_keeps": 2,
+  "baseline_false_cuts": 1,
+  "differing_cases": [
+   {
+    "query": "read app/config.py and run the failing tests",
+    "only_in_gold": [],
+    "only_in_heuristic": [
+     "mcp__figma__read"
+    ]
+   },
+   {
+    "query": "open a pull request and fetch review comment",
+    "only_in_gold": [
+     "mcp__github__pr"
+    ],
+    "only_in_heuristic": []
+   },
+   {
+    "query": "refactor the retry loop, keep interfaces sta",
+    "only_in_gold": [],
+    "only_in_heuristic": [
+     "mcp__figma__read"
+    ]
+   }
+  ]
+ },
  "skipped": [],
  "per_case": [
   {
@@ -38,11 +88,13 @@
     "write"
    ],
    "laya": [
+    "read"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
-    "glob",
-    "grep",
     "mcp__figma__read",
+    "mcp__jira__comment",
     "read",
     "write"
    ]
@@ -68,10 +120,13 @@
     "write"
    ],
    "laya": [
+    "mcp__slack__post"
+   ],
+   "laya_ranked": [
     "bash",
-    "edit",
     "glob",
-    "grep",
+    "mcp__github__pr",
+    "mcp__sentry__list",
     "mcp__slack__post",
     "read",
     "write"
@@ -98,12 +153,14 @@
     "read",
     "write"
    ],
-   "laya": [
+   "laya": [],
+   "laya_ranked": [
     "bash",
     "edit",
     "glob",
-    "grep",
+    "mcp__github__pr",
     "mcp__github__review",
+    "mcp__linear__create",
     "read",
     "write"
    ]
@@ -131,6 +188,9 @@
     "write"
    ],
    "laya": [
+    "mcp__browser__screenshot"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
     "glob",
@@ -164,6 +224,9 @@
     "write"
    ],
    "laya": [
+    "mcp__db__query"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
     "glob",
@@ -194,11 +257,13 @@
     "write"
    ],
    "laya": [
-    "bash",
+    "mcp__figma__read"
+   ],
+   "laya_ranked": [
     "edit",
     "glob",
-    "grep",
     "mcp__figma__read",
+    "mcp__slack__post",
     "read",
     "write"
    ]
@@ -224,11 +289,14 @@
     "write"
    ],
    "laya": [
+    "mcp__linear__create"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
-    "glob",
     "grep",
     "mcp__linear__create",
+    "mcp__webfetch",
     "read",
     "write"
    ]
@@ -254,10 +322,13 @@
     "write"
    ],
    "laya": [
+    "mcp__sentry__list"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
-    "glob",
     "grep",
+    "mcp__notion__page",
     "mcp__sentry__list",
     "read",
     "write"
@@ -282,6 +353,9 @@
     "write"
    ],
    "laya": [
+    "edit"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
     "glob",
@@ -313,6 +387,9 @@
     "write"
    ],
    "laya": [
+    "mcp__browser__navigate"
+   ],
+   "laya_ranked": [
     "bash",
     "edit",
     "glob",

@@ -266,9 +266,14 @@ def _read_jsonl(path):
 
 
 def toolchain(trainer, trainer_path, model_dir=BASE_MODEL):
-    """What the machine can do right now, named the way the trainer names it."""
+    """What the machine can do right now, named the way the trainer names it.
+
+    The path is carried along with the verdict: `trainer  missing` means something
+    different to someone who cloned the repo and has not run the setup yet than to
+    someone who `pip install`ed it, and only the path says which of the two it is.
+    """
     out = {"trainer": os.path.exists(trainer_path), "mlx": False, "model_dir": model_dir,
-           "model_present": os.path.isdir(model_dir)}
+           "model_present": os.path.isdir(model_dir), "trainer_path": trainer_path}
     if trainer is not None:
         out["mlx"] = bool(trainer.mlx_available())
     return out
@@ -491,6 +496,15 @@ def render_text(state, command_line, ran=None, color=False):
     lines.append(st.row("trainer", st.state(st.PRESENT if tc["trainer"]
                                             else st.MISSING, color=color),
                         color=color, styled=True))
+    if not tc["trainer"]:
+        # Which absence this is, said out loud: the file lives in the clone, so the
+        # fix is a clone, not a `pip install --force`. The path gets a line of its
+        # own — a reader selects it, and a wrapped path is a path that does not run.
+        lines.append(st.prose("the trainer comes with a source clone, not with "
+                              "`pip install subproto`. It was looked for at:",
+                              indent=style.METRIC_CONTENT, color=color))
+        lines.append(st.note(tc["trainer_path"],
+                             indent=style.METRIC_CONTENT, color=color))
     lines.append(st.row("mlx + mlx-lm", st.state(st.INSTALLED if tc["mlx"]
                                                  else st.MISSING, color=color),
                         color=color, styled=True))

@@ -23,12 +23,30 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **T11** `WIRING.md`: exact base_url/env per tool (Claude Code, Codex, Gemini CLI, Cline, aider, OpenCode, Antigravity) + a test that the proxy serves every documented path.
 - [x] **T12** Invariant tests: I5 byte-for-byte passthrough (no-slot proxy request bytes == response forwarded); I2 context slot appends only (never deletes/reorders prefix) when applied; I3 tail-protection holds under tiny budgets.
 
-## FR-4 / M2 — Laya backend (mock-verifiable adapter; real MLX weights = external)
+## FR-4 / M2 — Laya backend (adapter + real checkpoint shipped; accuracy gate moved to labels)
 
 - [x] **T13** `subproto/laya_server.py`: HTTP scoring server implementing the `/health` + `/score` contract `laya.py` expects; deterministic lexical scorer, with an MLX path guarded behind `if importlib.util.find_spec("mlx")`.
+  - **Corrected 2026-09-27 (S39):** there is no MLX path to guard — Laya is a
+    ModernBERT encoder with a classification head and `mlx_lm` loads causal LMs, so
+    `--backend mlx` now *refuses with that explanation* (`RuntimeError`, exit 2)
+    instead of falling through to a stand-in. The second backend is the real
+    checkpoint: `LayaScorer` over `laya.Router`, CPU by default because
+    `Router(device=None)` → MPS aborts (SIGABRT, 134), one `choice` pass per
+    decision, weights loaded before the port opens.
 - [x] **T14** test: start `laya_server` on an ephemeral port, point engine `laya_url` at it, assert `backend == "laya"` is recorded for tool_gate and laya scores drive keep/drop.
 - [x] **T15** `bench/ablation.py`: laya-vs-heuristic precision/agreement on a labelled synthetic ground-truth set; integrates into the report's "slot precision".
-- [~] **T16** Real quantized MLX Laya checkpoint on-device + published CPU/MLX latency curve — BLOCKED(external): needs ~808MB HF weights + Apple MLX runtime.
+  - **Extended (S40):** a configured endpoint is scored as its own column, each case
+    is read under both the shipped `p ≥ 0.5` rule and the compiler's ranking rule, an
+    unanswered case is excluded rather than scored as an empty keep-set, and
+    `corpus_ceiling()` prints how few decisions this set is even open to.
+- [x] **T16** Real checkpoint on-device + published latency curve — **met 2026-09-27**,
+  and it is a *negative* result on accuracy. `convaiinnovations/laya` (Apache-2.0, no
+  login, already in the HF cache) answers `/score` through the production adapter;
+  `bench/laya_latency.py` publishes the per-decision CPU curve with its conditions.
+  Against the shipped corpus the checkpoint scores Δprecision **−0.083** vs the
+  heuristic, and the corpus cannot express much positive delta for anyone
+  (`corpus_ceiling`: 7 of 10 cases have gold == the heuristic's own answer). So the
+  gate is now **labels** (V2-A), not weights or a runtime.
 
 ## FR-9 / M5 — the shareable surface (TUI is testable; publish/post = external)
 
@@ -41,6 +59,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 - [x] **T20** `dataset.py`: `build_training_split(cfg, val_frac)` → deterministic, seeded train/val split; export to a Laya-compatible supervision format (`{"state","question","options","answer"}`) with de-dup by body_sha.
 - [x] **T21** tests: split is stable across runs, no leakage (val∩train empty), de-dup works, format validated.
 - [x] **T22** `train/finetune_mlx.py`: documented LoRA script that consumes the exported split; import-guarded so it is honest about needing MLX + weights to run (not executed here).
+  - **Narrowed 2026-09-27:** its docstring told the reader to "point `--model` at a
+    Laya-compatible checkpoint", and no such thing exists for `mlx_lm` — an encoder is
+    not a causal LM. The script now says what it trains (a generative System One over
+    the same split format) and refuses to imply it can fine-tune the served model. The
+    V2-D build that *does* fit is a sequence-classification LoRA over torch/PEFT.
 
 ## Report completeness (SPEC §6) + docs sync
 
@@ -359,13 +382,13 @@ subproto retrain  ·  cadence policy  ·  2026-09-26
 
   toolchain     trainer present
                 mlx + mlx-lm not installed
-                base /Users/aashish/.subproto/laya-base  absent (T16)
+                base <author-home>/.subproto/laya-base  absent (T16)
   note          no completed run on record, so the 7-day wait cannot apply
 
   decision      READY
 
   the command this would run:
-    /opt/homebrew/opt/python@3.11/bin/python3.11 '/Users/aashish/llm faster /train/finetune_mlx.py' --train /tmp/s35.Eb1ApC/training/train.jsonl --val /tmp/s35.Eb1ApC/training/val.jsonl --model /Users/aashish/.subproto/laya-base --out /Users/aashish/.subproto/laya-router-lora --epochs 3 --rank 8
+    <python3.11> '<repo>'/train/finetune_mlx.py --train <tmp>/training/train.jsonl --val <tmp>/training/val.jsonl --model <author-home>/.subproto/laya-base --out <author-home>/.subproto/laya-router-lora --epochs 3 --rank 8
 
   nothing was run. --run starts the trainer once READY.
 ```
@@ -398,11 +421,37 @@ subproto retrain  ·  cadence policy  ·  2026-09-26
   - **`bash run_tests.sh` is green on both interpreters with nothing edited while it ran.** **347 passed on Python 3.11.15 and on 3.9.6**, `ab.py`, `live.py`, `live.py --require-better` on the hard set (**`live.py hard set: BETTER`** on both), `ablation.py`, `demo`, the S30 flywheel leg, the S33 versioning leg, the S34 cadence leg including the `--record wrote the log it named` witness, `models`, the Router leg, and **`MUTATION GATE: OK`** on both — the list re-audited read-only as **113 mutants, 113 unique ids, 113 unique (file, anchor, replacement) triples, every anchor found exactly once** across 11 source files, with the working tree `git diff`-empty against the staged state afterwards (so every mutant was restored byte-identical). The S32 leg still prints `gate (compiled <= per-slot): NOT MET` (+0.322 best / +0.358 median ms per decision on 3.11, +0.327 / +0.354 on 3.9) — the reported residual, unchanged by a print surface, and still the reason it is a report rather than a green tick.
   - **Nothing is pushed.** Local-only, per the standing instruction. `show` reads; it writes nothing, sends nothing, and leaves I5 (observation mode byte-transparent) and I4 (local, private, no egress) untouched — the whole verification ran against the in-repo mock at `$0` spend with no API key.
 
+- [x] **S39–S44** The release-readiness pass: the real checkpoint behind the server, its curve published with its negative result, then every surface a *stranger* touches — install, packaging, CI, docs, the front page. Code-only, mock-only, no spend.
+  - **S39 — `laya_server --backend laya` answers with real weights.** `convaiinnovations/laya` loads on **torch CPU** and serves the shipped `/health` + POST `/score` contract, which the production `HTTPScoreAdapter` consumes unchanged (V2-C1 ✅). The witness is an opt-in live leg (`subproto/tests/test_laya_real.py`) that boots the real server under `SUBPROTO_LAYA_PYTHON` and asserts the option set comes back answered; unset, the leg skips. **The MLX premise was the wrong shape and is corrected everywhere it was claimed:** Laya is a ModernBERT *encoder*, so there is no MLX path to load, `--backend mlx` refuses with the reason, and `train/finetune_mlx.py` is a causal-LM script that cannot fine-tune it — a future LoRA is a new script, not a config change.
+  - **S40 — the curve and the ablation, both mutation-gated.** `bench/laya_latency.py` publishes 30 decisions per shape with the host's load average at start and end and the runtime's own warning: `choice` costs **123 ms p50 / 133 p95 / 139 max** (spread 106–139 over 9-tool option sets) and fits the 350 ms budget; `keep_drop` costs **800 ms p50** and does not. `bench/ablation.py` then scores the real checkpoint against the in-process heuristic and the answer is **negative**: Δprecision **−0.083** under the engine's `p ≥ 0.5` rule, **−0.099** read as a ranking, agreeing on **27 %** of options. `corpus_ceiling()` says why the number cannot be read as skill — **7 of 10 cases have gold sets equal to the heuristic's own answer**, so 83 of 86 decisions cannot move either way. The gate is now `S40-*` mutants over the curve writer and the `no_answer` accounting.
+  - **S41–S42 — the machine gets a page, and a stranger gets an install.** `subproto doctor` (6 measured checks: interpreter, a file really written and removed in the data dir, the port really bound, provider key *variables* only, each configured backend probed over HTTP, `--json` for a bug report) and `subproto --version` (the line to paste into an issue). `install.sh` puts the entry point on `PATH` with no package index; `tools/check_install.sh` re-runs the reviewer's checks from outside the clone; `pyproject.toml` is PEP 621 with PEP 639 licensing and `testpaths`; `MANIFEST.in`/`.gitattributes` carry the docs, benches and fixtures. CI is three jobs answering three questions (`pytest` on ubuntu/macos × 3.9/3.11 with windows-latest informational, `bash run_tests.sh`, and a wheel installed into a clean offline venv **run from `/tmp`**). The cross-platform audit's fixes: the CLI reconfigures its own streams to UTF-8 (verified by running two real children under `PYTHONIOENCODING=cp1252`), every text read names its encoding, `0008_GATEWAY.SQL` indexes as SQL, a host with no `getloadavg` prints an absent figure rather than `None`, the docs say `127.0.0.1` not `localhost`, `conftest.py` scrubs `SUBPROTO_*`/`LAYA_*` off the host, and `demo` stopped colliding on `port + 1`, stopped sharing one SQLite file, and started waiting for its own telemetry rows. **142 → 156 mutants.**
+  - **S43 — a fact on a page must say where it came from.** The `python` row prints `>= 3.9, read from pyproject.toml` or `… read from the shipped default`, because an installed wheel carries no `pyproject.toml` and a bare "3.9" printed either way is a claim about a file that may not exist; `retrain` distinguishes its three absences and prints the trainer's searched path alone on its own line, so a `pip install` reader is told to clone and a clone reader is told their checkout is short. Both claims are witnessed against a `pyproject.toml` that *disagrees* (says 3.12), because this checkout's value equals the shipped constant and cannot tell reading from quoting. Four mutants (`S43-1…4`), each pre-probed in ~3 s by applying one anchor and running two test files rather than starting the gate.
+  - **S44 — a read-only audit of the release surface, which found four blockers no test can see.** 42 links and images resolve; all 81 `subproto <cmd>` citations match the 17 subcommands parsed from `--help`; every in-page and cross-file `#anchor` resolves; the env-var sets diff clean in both directions once `SUBPROTO_LAYA_PYTHON` and `SUBPROTO_LAYA_BUDGET` were documented. The findings: **`LICENSE` was a 17-line Apache *excerpt*, not the license text** — GitHub's detector reads the body, so the repo would have shipped unlabelled despite the badge and the `pyproject` metadata; replaced with the canonical 202 lines (verified byte-identical against apache.org, sha256 `cfc7749b…`) plus the one-line copyright. **`install.sh` was mode 644** while README's install block types `./install.sh` — a permission-denied first command. **The hero GIF caption said "No key, no spend" over a frame that visibly prints `spend $0.32`**; it now names the mock price and says the 32 % is headroom while slots *observe*. Two badges linked to `(#)`. And `docs/configuration.md` claimed the real checkpoint "measures 110–141 ms" where its own artifact says p50 123 / spread 106–139 — corrected, which is what S10's residual clause finally became.
+  - **Gate state, 2026-09-27, measured on this host at load ~4.** **`411 passed, 2 skipped`** in 37.28 s on Python 3.11.15 and 38.44 s on 3.9.6; `ab.py`, `ablation.py` (`ablation --adapters ok`), `live.py`, **`live.py hard set: BETTER`** on both interpreters, `demo`, the S30 flywheel leg, the S33 versioning leg, the S34 cadence leg, the stranger's-two-questions leg, `models` and the Router leg all `ok:` — **59 `ok:` assertions**. **`MUTATION GATE: OK` on 3.11** (156 mutants, ~65 min at ~25 s each). The 3.9 mutation-gate leg was **stopped deliberately** after its header: it is 65 more minutes of cross-version redundancy that CI does not reproduce (its `gates` job pins 3.11; the 3.9 coverage CI does run is pytest + byte-compile on both OSes). The tree was verified clean two ways before anything was committed — the 25 snapshotted gate-target files match their recorded SHA-256, and a read-only sweep of all 156 `(id, file, anchor, replacement)` triples found **no leftover mutant and every anchor exactly once**. `bench/ablation.json` and `bench/ablation_results.md` came back **byte-identical to the pre-run snapshot**, so nothing had to be substituted. The S32 leg still prints **`gate (compiled <= per-slot): NOT MET`** (paired best **+0.315** / median +0.373 / worst +0.414 ms per decision today, against +0.19 best on a quiet host) — reported, and now quoted in README with both numbers because the gap moves more than its own effect.
+  - **Nothing is pushed.** Local-only, per the standing instruction, and no remote is configured. Spend: `$0` — every run above used the in-repo mock, no API key, no network beyond loopback. I2/I3/I4/I5 are untouched by this pass; I6 is the one it was *about*.
+
+
 
 
 ## v2 — gated backlog (SPEC §13). `BLOCKED(gate)`: each needs a human/external action first; never falsely checked.
 - [~] **V2-A** Real-traffic validation across ≥2 vendors + cache-hit (I2) check — gate: user runs their own agents (no incremental $). Upgrades projections → measured.
 - [~] **V2-B** Billed hero number: `bench/live.py` vs the real provider over a public 20-task SWE-bench set, model held constant, with CI — gate: approved API budget + public task suite.
-- [~] **V2-C** Real quantized MLX Laya on-device + non-zero ablation precision delta + CPU latency curve — gate: weight download + Apple MLX runtime (no $). (Closes **T16**.)
+- [~] **V2-C** Real checkpoint on-device + published latency curve + the ablation column
+  it earns — **met except its precision-delta clause, 2026-09-27 (T16 closed)**, with
+  the outcome reported honestly: the
+  checkpoint *loses* to the shipped heuristic on the corpus we carry (Δprecision
+  −0.083 under the engine's `p ≥ 0.5` rule), and `corpus_ceiling()` shows the set cannot
+  express a large positive delta for anyone. The "MLX"/"quantised weights"/"runtime"
+  gates in the original wording were a guess about an encoder's architecture; the curve
+  is torch CPU (`bench/laya_latency.py` → `bench/laya_latency.md`) because there is no
+  MLX path to load. **The precision delta was not met, and no more instrumentation can
+  manufacture it: it is gated on V2-A labels**, not on anything installable here.
+- [ ] **V2-C′** (new, from the above) Decide FR-4a: does a slot threshold a probability
+  or rank one? A calibrated `choice` answer sums to 1, so `p ≥ 0.5` keeps one tool of
+  nine and reads f1 0.200 where the same answers ranked read 0.873. Both numbers are in
+  the published curve; choosing between them needs labels, and today the engine keeps
+  the conservative rule (I3). `BLOCKED(gate: V2-A labels)` — this is a decision to be
+  evidenced, not an implementation to be written; the wiring for both rules already
+  exists (`bench/ablation.py` scores each, `adapter_keeps(..., rule=)` takes either).
 - [~] **V2-D** LoRA fine-tune on the split + ship v0 routing model + publish a dataset slice — gate: V2-A labels + a training run.
-- [~] **V2-E** Tagged PyPI release + demo GIF + HN/PH launch post positioned per SPEC §1.3 — gate: human launch actions. (Closes **T19**.)
+- [~] **V2-E** Tagged PyPI release + HN/PH launch post positioned per SPEC §1.3 — gate: human launch actions. (Closes **T19**.) The demo GIF half is **done 2026-09-27**: `docs/assets/first-30-seconds.gif`, recorded from the *installed wheel* (not the checkout) with the capture recipe and the `.cast` beside it, and embedded in README's header. What is left here is the tag, the upload, and the post.

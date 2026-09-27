@@ -11,7 +11,7 @@ rather than a family, so a fine-tune can be selected, health-gated, rolled back,
 and told apart from its predecessor in the telemetry.
 """
 
-from .base import HTTPScoreAdapter, ModelAdapter
+from .base import DEFAULT_TIMEOUT_S, HTTPScoreAdapter, ModelAdapter, timeout_for
 from .registry import (ADAPTERS, MODEL_SLOTS, REGISTRY, configured_adapters,
                        configured_url, is_pinned, resolve, slot_env, status)
 from .router import Router, load_evidence, rank
@@ -19,7 +19,8 @@ from .versions import (MANIFEST_NAME, TIERS, add, by_label, describe, load, path
                        rollback, save, select, select_from_manifest, select_slots,
                        use, version_of)
 
-__all__ = ["ModelAdapter", "HTTPScoreAdapter", "REGISTRY", "ADAPTERS", "MODEL_SLOTS",
+__all__ = ["ModelAdapter", "HTTPScoreAdapter", "DEFAULT_TIMEOUT_S", "timeout_for",
+           "REGISTRY", "ADAPTERS", "MODEL_SLOTS",
            "resolve", "status", "configured_url", "configured_adapters",
            "slot_env", "is_pinned", "Router", "load_evidence", "rank",
            "MANIFEST_NAME", "TIERS", "add", "by_label", "describe", "load", "path",

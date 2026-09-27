@@ -203,14 +203,24 @@ def parse_data(src, lang, delim=None):
     return syms, doc, names
 
 
+def _ext(name):
+    """A file's extension, in the only case the language table is keyed by.
+
+    `SCHEMA.SQL` is as real a file as `schema.sql`, and on the case-insensitive
+    filesystems most users run on it is the *same* file — an index that compared
+    extensions byte for byte left every one of them out. `walk` and `build` have to
+    agree here: a path one lets through and the other cannot name is a KeyError.
+    """
+    return os.path.splitext(name)[1].lower()
+
+
 def walk(root, max_files=20000):
     files = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames
                              if d not in SKIP_DIRS and not d.endswith((".egg-info",)))
         for name in sorted(filenames):
-            ext = os.path.splitext(name)[1]
-            if ext not in LANG_BY_EXT:
+            if _ext(name) not in LANG_BY_EXT:
                 continue
             path = os.path.join(dirpath, name)
             try:
@@ -316,7 +326,7 @@ def build(root):
     edges = []
     for p in paths:
         rel = _rel(root, p)
-        lang = LANG_BY_EXT[os.path.splitext(p)[1]]
+        lang = LANG_BY_EXT[_ext(p)]
         src = _read(p)
         lines = src.count("\n") + 1
         if lang == "python":

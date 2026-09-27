@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
-"""LoRA fine-tune of a Laya base on subproto's routing split (M4 / SPEC §1.2).
+"""LoRA fine-tune of a *causal LM* on subproto's routing split (M4 / SPEC §1.2).
 
 This is the training half of the dataset moat: it consumes the JSONL produced by
 `subproto split` (train.jsonl / val.jsonl, one narrow keep/drop question per
 line) and adapts a small decision model with LoRA on Apple MLX.
 
+**Read the architecture before using this.** `convaiinnovations/laya` — the
+checkpoint subproto serves today — is a ModernBERT-large *encoder* with a
+classification head (`pipeline_tag: text-classification`, zero output tokens), and
+`mlx_lm` loads causal language models. So this script **cannot fine-tune Laya**;
+that needs a sequence-classification LoRA over torch/PEFT, which is the open V2-D
+build. What this file is for is the other half of the plan: a generative System One
+(a small causal LM asked the same `{state, question, options, answer}` question),
+for which the split format is already the contract and the tests here already hold.
+SPEC §11.1 records how the locked MLX decision was found void.
+
 It is intentionally honest about its dependencies. The split loader and the
 format check run anywhere (and are unit-tested without any heavy install), but
-training needs Apple MLX *and* a quantized Laya checkpoint, neither of which is
-vendored here — that is the external step tracked as TODO T16. Run without them
-and it tells you exactly what is missing instead of silently no-oping.
+training needs Apple MLX *and* a loadable causal checkpoint, neither of which is
+vendored here. Run without them and it tells you exactly what is missing instead
+of silently no-oping.
 
 Usage (when the deps are present):
     pip install mlx mlx-lm
-    # place a Laya-compatible model dir at ~/.subproto/laya-base (or --model)
+    # place a causal-LM model dir at ~/.subproto/laya-base (or --model);
+    # note that a *Laya* directory there is not fine-tunable by this script
     python train/finetune_mlx.py --train ~/.subproto/training/train.jsonl \\
         --val ~/.subproto/training/val.jsonl --out ~/.subproto/laya-router-lora
 """
@@ -69,11 +80,12 @@ def train(args):  # pragma: no cover - requires MLX + a real checkpoint
     if not mlx_available():
         sys.stderr.write(
             "mlx / mlx-lm not installed. `pip install mlx mlx-lm` on Apple "
-            "silicon, and point --model at a Laya-compatible checkpoint.\n")
+            "silicon, and point --model at a *causal LM* checkpoint — this script "
+            "cannot fine-tune Laya, which is an encoder (see the module docstring).\n")
         return 3
     if not os.path.isdir(args.model):
-        sys.stderr.write("no model dir at %s (T16: fetch the quantized Laya base)\n"
-                         % args.model)
+        sys.stderr.write("no model dir at %s (a causal-LM dir is required; dropping "
+                         "Laya's weights here will not load)\n" % args.model)
         return 3
     # Guarded import: only reached when the heavy deps are present.
     import mlx.core as mx  # noqa: F401

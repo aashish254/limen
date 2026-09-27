@@ -8,9 +8,10 @@ precision (`bench/ablation.py`) and, when supplied, per-backend decision latency
 
 Honesty (invariant I6): an adapter with no measured precision is never auto-picked
 as "best", and precision ties route to `heuristic` (in-process, no endpoint, no
-network hop). On today's synthetic evidence — where the bundled stand-in ties the
-heuristic at Δ0 — that means the Router correctly stays on heuristics instead of
-inventing an edge for a model we have not actually measured beating the baseline.
+network hop). On the evidence shipped today — `bench/ablation.json` scored against
+the real Laya checkpoint, which lands *below* the heuristic on this corpus — that
+means the Router correctly stays on heuristics instead of inventing an edge for a
+model we have not measured beating the baseline.
 
 Opt-in via `SUBPROTO_ROUTER=on`; explicit per-slot pins are always respected, and a
 Router with nothing to rank degrades to the manual registry path rather than failing.
@@ -52,13 +53,28 @@ def load_evidence(path=None):
     for adapter in data.get("adapters") or []:
         if adapter.get("precision") is None or not adapter.get("name"):
             continue
-        latency = adapter.get("latency_ms")
+        latency = _latency_ms(adapter.get("latency_ms"))
         evidence[adapter["name"]] = {
             "precision": float(adapter["precision"]),
-            "latency_ms": float(latency) if latency is not None else None,
+            "latency_ms": latency,
             "source": "ablation:%s" % (adapter.get("source") or "measured"),
         }
     return evidence
+
+
+def _latency_ms(value):
+    """The measured round trip, whether the bench wrote a number or a curve.
+
+    `bench/ablation.py` records `{n, p50, p95, max}` per adapter, and the Router
+    spends the median: a budget is met or missed on the typical decision, and the
+    tail is the bench's business, not a routing input.
+    """
+    if isinstance(value, dict):
+        value = value.get("p50")
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def rank(candidates, evidence, budget_ms=None):

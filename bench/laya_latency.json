@@ -1,0 +1,423 @@
+{
+ "budget_ms": 350,
+ "conditions": {
+  "cores": 10,
+  "device": "cpu",
+  "laya": "0.3.20",
+  "load_avg_end": [
+   10.16,
+   8.17,
+   7.98
+  ],
+  "load_avg_start": [
+   7.79,
+   7.47,
+   7.74
+  ],
+  "model": "convaiinnovations/laya",
+  "os": "Darwin 27.0.0",
+  "python": "3.11.15",
+  "runtime_warnings": [
+   "laya: this checkpoint ships invalid temperatures or values outside [0.5, 5]; using choice:11+=0.10058280825614929 -> 0.5. Treat confidence from the affected entries as uncalibrated."
+  ],
+  "threads": 4,
+  "torch": "2.6.0"
+ },
+ "heuristic": {
+  "f1": 0.979,
+  "precision": 0.9722,
+  "recall": 0.9859
+ },
+ "shapes": [
+  {
+   "ms": {
+    "max": 139.0,
+    "n": 30,
+    "p50": 123.0,
+    "p95": 133.0
+   },
+   "passes": 1,
+   "per_case": [
+    {
+     "f1": {
+      "rank": 0.6667,
+      "relative": 0.2857,
+      "threshold": 0.2857
+     },
+     "ms": 125.0,
+     "options": 9,
+     "query": "read app/config.py and run the failing t"
+    },
+    {
+     "f1": {
+      "rank": 0.7143,
+      "relative": 0.25,
+      "threshold": 0.25
+     },
+     "ms": 128.0,
+     "options": 9,
+     "query": "post the nightly build status to the #re"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.4,
+      "threshold": 0.0
+     },
+     "ms": 116.0,
+     "options": 9,
+     "query": "open a pull request and fetch review com"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.2222,
+      "threshold": 0.2222
+     },
+     "ms": 127.0,
+     "options": 9,
+     "query": "screenshot the checkout page and click t"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.2222,
+      "threshold": 0.2222
+     },
+     "ms": 133.0,
+     "options": 9,
+     "query": "query the orders table for pending rows "
+    },
+    {
+     "f1": {
+      "rank": 0.6667,
+      "relative": 0.0,
+      "threshold": 0.0
+     },
+     "ms": 130.0,
+     "options": 8,
+     "query": "refactor the retry loop, keep interfaces"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.25,
+      "threshold": 0.25
+     },
+     "ms": 110.0,
+     "options": 8,
+     "query": "create a linear issue for the tracked re"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.25,
+      "threshold": 0.25
+     },
+     "ms": 112.0,
+     "options": 8,
+     "query": "list recent sentry errors for the releas"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.2857,
+      "threshold": 0.2857
+     },
+     "ms": 106.0,
+     "options": 8,
+     "query": "search the codebase for the deprecated h"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.2222,
+      "threshold": 0.2222
+     },
+     "ms": 123.0,
+     "options": 9,
+     "query": "navigate the browser to staging and fill"
+    }
+   ],
+   "rules": {
+    "rank": {
+     "f1": 0.8732,
+     "precision": 0.8732,
+     "recall": 0.8732
+    },
+    "relative": {
+     "f1": 0.2439,
+     "precision": 0.9091,
+     "recall": 0.1408
+    },
+    "threshold": {
+     "f1": 0.2,
+     "precision": 0.8889,
+     "recall": 0.1127
+    }
+   },
+   "shape": "choice",
+   "shipped": true
+  },
+  {
+   "ms": {
+    "max": 1383.0,
+    "n": 30,
+    "p50": 800.0,
+    "p95": 1250.0
+   },
+   "passes": "one per option",
+   "per_case": [
+    {
+     "f1": {
+      "rank": 0.5,
+      "relative": 0.7143,
+      "threshold": 0.5
+     },
+     "ms": 781.0,
+     "options": 9,
+     "query": "read app/config.py and run the failing t"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.875,
+      "threshold": 0.875
+     },
+     "ms": 817.0,
+     "options": 9,
+     "query": "post the nightly build status to the #re"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.9412,
+      "threshold": 0.9412
+     },
+     "ms": 802.0,
+     "options": 9,
+     "query": "open a pull request and fetch review com"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.6667,
+      "threshold": 0.4
+     },
+     "ms": 753.0,
+     "options": 9,
+     "query": "screenshot the checkout page and click t"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.8,
+      "threshold": 0.5
+     },
+     "ms": 755.0,
+     "options": 9,
+     "query": "query the orders table for pending rows "
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.8571,
+      "threshold": 0.8571
+     },
+     "ms": 691.0,
+     "options": 8,
+     "query": "refactor the retry loop, keep interfaces"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.9333,
+      "threshold": 0.9333
+     },
+     "ms": 670.0,
+     "options": 8,
+     "query": "create a linear issue for the tracked re"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 1.0,
+      "threshold": 0.9231
+     },
+     "ms": 1383.0,
+     "options": 8,
+     "query": "list recent sentry errors for the releas"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.9231,
+      "threshold": 0.0
+     },
+     "ms": 962.0,
+     "options": 8,
+     "query": "search the codebase for the deprecated h"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.4,
+      "threshold": 0.4
+     },
+     "ms": 1222.0,
+     "options": 9,
+     "query": "navigate the browser to staging and fill"
+    }
+   ],
+   "rules": {
+    "rank": {
+     "f1": 0.8732,
+     "precision": 0.8732,
+     "recall": 0.8732
+    },
+    "relative": {
+     "f1": 0.8286,
+     "precision": 0.8406,
+     "recall": 0.8169
+    },
+    "threshold": {
+     "f1": 0.704,
+     "precision": 0.8148,
+     "recall": 0.6197
+    }
+   },
+   "shape": "keep_drop",
+   "shipped": true
+  },
+  {
+   "ms": {
+    "max": 2385.8,
+    "n": 30,
+    "p50": 1096.7,
+    "p95": 1581.0
+   },
+   "passes": "one per option",
+   "per_case": [
+    {
+     "f1": {
+      "rank": 0.6667,
+      "relative": 0.4444,
+      "threshold": 0.0
+     },
+     "ms": 1085.8,
+     "options": 9,
+     "query": "read app/config.py and run the failing t"
+    },
+    {
+     "f1": {
+      "rank": 0.7143,
+      "relative": 0.8,
+      "threshold": 0.0
+     },
+     "ms": 1096.7,
+     "options": 9,
+     "query": "post the nightly build status to the #re"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.9412,
+      "threshold": 0.0
+     },
+     "ms": 1085.0,
+     "options": 9,
+     "query": "open a pull request and fetch review com"
+    },
+    {
+     "f1": {
+      "rank": 1.0,
+      "relative": 0.7692,
+      "threshold": 0.0
+     },
+     "ms": 1142.1,
+     "options": 9,
+     "query": "screenshot the checkout page and click t"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.875,
+      "threshold": 0.0
+     },
+     "ms": 1091.9,
+     "options": 9,
+     "query": "query the orders table for pending rows "
+    },
+    {
+     "f1": {
+      "rank": 0.8333,
+      "relative": 0.8333,
+      "threshold": 0.0
+     },
+     "ms": 1284.3,
+     "options": 8,
+     "query": "refactor the retry loop, keep interfaces"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.4444,
+      "threshold": 0.25
+     },
+     "ms": 1014.1,
+     "options": 8,
+     "query": "create a linear issue for the tracked re"
+    },
+    {
+     "f1": {
+      "rank": 0.8571,
+      "relative": 0.25,
+      "threshold": 0.0
+     },
+     "ms": 1153.4,
+     "options": 8,
+     "query": "list recent sentry errors for the releas"
+    },
+    {
+     "f1": {
+      "rank": 0.8333,
+      "relative": 0.6667,
+      "threshold": 0.0
+     },
+     "ms": 1087.0,
+     "options": 8,
+     "query": "search the codebase for the deprecated h"
+    },
+    {
+     "f1": {
+      "rank": 0.875,
+      "relative": 0.4,
+      "threshold": 0.4
+     },
+     "ms": 1206.9,
+     "options": 9,
+     "query": "navigate the browser to staging and fill"
+    }
+   ],
+   "rules": {
+    "rank": {
+     "f1": 0.8592,
+     "precision": 0.8592,
+     "recall": 0.8592
+    },
+    "relative": {
+     "f1": 0.6949,
+     "precision": 0.8723,
+     "recall": 0.5775
+    },
+    "threshold": {
+     "f1": 0.0811,
+     "precision": 1.0,
+     "recall": 0.0423
+    }
+   },
+   "shape": "noul",
+   "shipped": false
+  }
+ ]
+}

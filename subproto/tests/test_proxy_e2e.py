@@ -35,11 +35,11 @@ def proxied(tmp_path):
     tel.close()
 
 
-def test_streamed_passthrough_and_telemetry(proxied):
+def test_streamed_passthrough_and_telemetry(proxied, settled):
     cfg, tel, srv, eng = proxied
     n = demo.replay(cfg, mock_port=free_port(), n=6, jitter=True)
     assert n == 7
-    time.sleep(0.2)
+    settled(tel, 7)
     rows = tel.query("SELECT api, model, in_tok, cr_tok, out_tok, cost_usd, stream "
                      "FROM requests ORDER BY id")
     assert len(rows) == 7
@@ -49,10 +49,10 @@ def test_streamed_passthrough_and_telemetry(proxied):
     assert all(r["stream"] == 1 for r in rows)
 
 
-def test_report_has_cache_headroom(proxied):
+def test_report_has_cache_headroom(proxied, settled):
     cfg, tel, srv, eng = proxied
     demo.replay(cfg, mock_port=free_port(), n=6)
-    time.sleep(0.2)
+    settled(tel, 6)
     summary = report.summarize(tel)
     assert summary["totals"]["n"] >= 6
     txt = report.render_text(summary)
@@ -60,20 +60,21 @@ def test_report_has_cache_headroom(proxied):
     assert report.render_json(summary)["slot_headroom"]
 
 
-def test_enforce_path_returns_200_and_records_interventions(proxied, monkeypatch):
+def test_enforce_path_returns_200_and_records_interventions(proxied, monkeypatch,
+                                                     settled):
     cfg, tel, srv, eng = proxied
     monkeypatch.setenv("SUBPROTO_APPLY", "tool_gate,compact")
     n = demo.replay(cfg, mock_port=free_port(), n=5)
-    time.sleep(0.2)
+    settled(tel, n)
     rows = tel.query("SELECT status, interventions FROM requests ORDER BY id")
     assert n == 6 and all(r["status"] == 200 for r in rows)
     assert all(r["interventions"] for r in rows), "enforcement should tag every request"
 
 
-def test_dataset_export_and_label_roundtrip(proxied, tmp_path):
+def test_dataset_export_and_label_roundtrip(proxied, tmp_path, settled):
     cfg, tel, srv, eng = proxied
     demo.replay(cfg, mock_port=free_port(), n=6)
-    time.sleep(0.2)
+    settled(tel, 6)
     from subproto import dataset
     audit = dataset.audit(cfg, tel, engine=eng, limit=10)
     assert audit["requests_scanned"] >= 6
