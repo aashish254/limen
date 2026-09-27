@@ -32,6 +32,15 @@ STATS_JSON = os.path.join(ROOT, "bench", "launch_stats.json")
 TEMPLATE = os.path.join(HERE, "site.html.tmpl")
 FIGDIR = os.path.join(ROOT, "docs", "assets", "figures")
 FONTS = os.path.join(ROOT, "docs", "assets", "fonts")
+ASSETS = os.path.join(ROOT, "docs", "assets")
+
+# One plate for every figure. The widest canvas the bench draws today is 976 units
+# across; anything that outgrows the plate stops the build rather than gets cropped.
+PLATE_W, PLATE_H = 976, 320
+
+# Files the page's <meta> tags promise a crawler. Checked, not globbed: a glob lets a
+# deleted card pass the build and fail the launch post.
+SOCIAL = ["og.png"]
 
 # The two homes the hero replay writes. Fixed names so the path the page prints is the
 # path a reader can reproduce, and so a re-run replaces them instead of stacking.
@@ -205,6 +214,7 @@ def hero():
         body.append(html_line(parts))
     cut = off["in_tok"] - on["in_tok"]
     spend = (off["cost_usd"] or 0.0) - (on["cost_usd"] or 0.0)
+    pct = 100.0 * cut / off["in_tok"]
     compare = ["<div class=\"mrow compare\"><span>the request the client sent</span>"
                "<span class=\"v\">%s</span><span class=\"u\">tok input</span></div>"
                % fmt(off["in_tok"])]
@@ -222,7 +232,12 @@ def hero():
     cmd = ("subproto demo --slots --home /tmp/limen-off; SUBPROTO_APPLY=tool_gate,compact "
            "SUBPROTO_COMPILE=on subproto demo --slots --home /tmp/limen-on; "
            "subproto show %d --home /tmp/limen-on" % HERO_REQUEST)
-    return html, cmd
+    # The hero's own three numbers, handed to the template as tokens. The threshold bar in
+    # the page header is the same pair the printout below it shows, so it has to come from
+    # the same replay — a bar typed by hand is a bar that can disagree with its own printout.
+    nums = {"request": HERO_REQUEST, "off_tok": off["in_tok"], "on_tok": on["in_tok"],
+            "pct": pct}
+    return html, cmd, nums
 
 
 # ---------------------------------------------------------------------- the figures
@@ -308,12 +323,33 @@ def stamp(stats, kind="measured"):
 
 
 def figure_svg(name):
-    """The inline SVG, stripped of the XML prologue so it can sit inside HTML."""
+    """The inline SVG, stripped of the XML prologue and normalised onto one plate.
+
+    The bench draws each figure at whatever width its own title needs, so the nine
+    canvases differ. On the page they sit in identical frames, and a frame that fits
+    each canvas to its own box fits each *font* to its own size — eight plates, eight
+    type sizes. So every canvas is moved onto the same plate and centred in it, which
+    leaves the margins to vary and the type to hold still.
+    """
     text = read(os.path.join(FIGDIR, name + ".svg")).strip()
     text = re.sub(r"^<\?xml[^>]*\?>\s*", "", text)
     if not text.startswith("<svg"):
         raise SystemExit("%s.svg does not start with an <svg> element" % name)
-    return text
+    match = re.match(r'^(<svg\b[^>]*?)viewBox="0 0 (\d+) (\d+)"([^>]*)>(.*)</svg>\s*$',
+                     text, re.S)
+    if not match:
+        raise SystemExit("%s.svg is not one svg element with a viewBox" % name)
+    head, wide, high, tail, body = (match.group(1), int(match.group(2)),
+                                    int(match.group(3)), match.group(4), match.group(5))
+    if wide > PLATE_W or high > PLATE_H:
+        raise SystemExit("%s.svg is %d×%d and the plate is %d×%d — shrink the canvas "
+                         "in bench/launch_stats.py rather than crop the drawing"
+                         % (name, wide, high, PLATE_W, PLATE_H))
+    tail = re.sub(r'\b(width|height)="\d+"', lambda m: '%s="%d"'
+                  % (m.group(1), {"width": PLATE_W, "height": PLATE_H}[m.group(1)]), tail)
+    return ('%sviewBox="0 0 %d %d"%s><g transform="translate(%d,%d)">%s</g></svg>'
+            % (head, PLATE_W, PLATE_H, tail,
+               (PLATE_W - wide) // 2, (PLATE_H - high) // 2, body))
 
 
 def figures(stats):
@@ -331,14 +367,14 @@ def figures(stats):
         if not os.path.exists(path):
             raise SystemExit("missing figure %s — run: python3 bench/launch_stats.py"
                              % path)
-        out.append('<div class="fig"><div class="figscroll">%s</div><p class="cap">%s</p>%s</div>'
+        out.append('<div class="fig"><div class="figscroll scroller">%s</div><p class="cap">%s</p>%s</div>'
                    % (figure_svg(name), esc(cap), stamp(stats, kind)))
     return "\n".join(out)
 
 
 def regret_figure(stats):
     r = stats["regret"]
-    return ('<div class="fig"><div class="figscroll">%s</div><p class="cap">%s of the %s '
+    return ('<div class="fig"><div class="figscroll scroller">%s</div><p class="cap">%s of the %s '
             'requests that carried a decision still had their body on disk when the harvest '
             'ran, which is what lets the payback be counted rather than estimated.</p>%s</div>'
             % (figure_svg("regret-bill"), r["bodies_readable"],
@@ -518,6 +554,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "_site"))
     ap.add_argument("--skip-hero", action="store_true",
                     help="reuse docs/assets/hero.json instead of replaying the demo")
+    ap.add_argument("--design", choices=["original", "professional"], default="professional",
+                    help="use professional redesign (default) or original layout")
     args = ap.parse_args()
 
     if not os.path.exists(STATS_JSON):
@@ -532,17 +570,22 @@ def main():
     if args.skip_hero:
         cached = json.loads(read(hero_path))
         hero_html, hero_cmd = cached["html"], cached["cmd"]
+        hero_nums = cached.get("nums")
+        if not hero_nums:
+            raise SystemExit("%s predates the hero numbers — drop --skip-hero and let the "
+                             "build replay the demo once" % os.path.relpath(hero_path, ROOT))
     else:
-        hero_html, hero_cmd = hero()
+        hero_html, hero_cmd, hero_nums = hero()
         with open(hero_path, "w", encoding="utf-8") as handle:
-            json.dump({"html": hero_html, "cmd": hero_cmd}, handle, indent=1)
+            json.dump({"html": hero_html, "cmd": hero_cmd, "nums": hero_nums},
+                      handle, indent=1)
 
     py_floor = python_floor()
     py_lo, py_hi = py_versions()
     head_pct = "%.1f" % stats["overall"]["reduction_pct"]
     todo = read(os.path.join(ROOT, "TODO.md"))
 
-    page = read(TEMPLATE)
+    page = read(TEMPLATE) if args.design == "original" else read(os.path.join(HERE, "site.professional.tmpl"))
     tokens = {
         "HEAD_PCT": head_pct,
         "SHA": run(["git", "rev-parse", "--short", "HEAD"]).strip(),
@@ -558,6 +601,11 @@ def main():
         "LOAD": "%.1f" % stats["host"]["load_average"][0],
         "HOST": "%s, %s cores" % (stats["host"]["platform"], os.cpu_count()),
         "HERO": hero_html,
+        "TH_REQ": str(hero_nums["request"]),
+        "TH_OFF": fmt(hero_nums["off_tok"]),
+        "TH_ON": fmt(hero_nums["on_tok"]),
+        "TH_PCT": "%.1f" % hero_nums["pct"],
+        "TH_W": "%.1f" % (100.0 - hero_nums["pct"]),
         "FIGURES": figures(stats),
         "FIG_REGRET": regret_figure(stats),
         "COST_PROSE": cost_prose(stats),
@@ -576,6 +624,14 @@ def main():
     os.makedirs(os.path.join(out, "assets", "fonts"), exist_ok=True)
     for name in sorted(os.listdir(FONTS)):
         shutil.copy2(os.path.join(FONTS, name), os.path.join(out, "assets", "fonts", name))
+    # The social card is a screenshot of this page, so it is shipped with it: a link
+    # preview that 40s is a launch post that shows nothing.
+    for name in SOCIAL:
+        src = os.path.join(ASSETS, name)
+        if not os.path.exists(src):
+            raise SystemExit("missing %s — the page's og:image points at it. Re-shoot the "
+                             "1200x630 hero and save it there" % os.path.relpath(src, ROOT))
+        shutil.copy2(src, os.path.join(out, "assets", name))
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as handle:
         handle.write(page)
     # GitHub Pages serves a bare directory; a 404 on /favicon.ico is noise on a page

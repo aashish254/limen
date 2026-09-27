@@ -183,6 +183,67 @@ was run, on `python:3.11-slim` and `python:3.9-slim` (Linux aarch64):
   (156 → **157**). Both were probed in seconds by applying one anchor, running the two
   covering test files, and restoring, rather than 65 minutes into the gate.
 
+### The landing page, redesigned: what a reveal actually hides
+
+The first generated page was honest about its numbers and ugly to look at — a dark
+background, one accent, and sections that faded in on scroll. Rebuilding it from the token
+system up turned into an audit of *when the page is allowed to show its content*, and most
+of the fixes were about motion that could fail.
+
+- **A reveal that hides a section until an observer fires is a section that can stay
+  hidden.** The scroll-in animation set `opacity: 0` on every `section` and un-hid it from
+  JavaScript, so with scripting off, on a deep link, or in a full-page capture the page was
+  blank below the fold. The reveal is deleted; what is left is a decorative hairline that
+  animates itself and no content. Every entrance on the page now **animates *from* a
+  start state rather than *to* an end state** — the finished value is the declared style
+  (`width: var(--w)`, `transform: scaleX(1)`) and the keyframe runs with `backwards` fill,
+  so a browser that never executes it still shows the design as designed.
+- **The same bug in the counters.** `data-count` spans began at `0`, so a non-executing
+  reader got a page whose headline number was zero. The markup now carries the real value as
+  its text content and `countUp` ends by writing that same string — the animation is an
+  ornament on the number, not the source of it.
+- **A 100-column printout does not fit a 530-pixel column.** In the two-column hero the
+  terminal was clipped mid-word, which is the exact defect `MAX_W = 100` exists to prevent.
+  The terminal, the threshold bars and the stat strip are now full page width; only the
+  headline and the lede share a row. A `.term-hint` tells a narrow reader the block scrolls.
+- **Nine figures, nine type sizes.** Each inline SVG scaled to its own `viewBox`, so a
+  768-wide panel and a 976-wide panel rendered the same 12px label at different sizes on the
+  same screen. `figure_svg()` now normalises every canvas onto one **976×320 plate** and
+  centres it in it — margins vary, type holds still — and *fails the build* if a future
+  canvas exceeds the plate, because the alternative is a silently cropped drawing.
+- **A rule that never matched its own markup.** The plate styling was written as
+  `.figscroll.scroller`, and the builder emitted `<div class="figscroll">` — so the white
+  ground, the radius, the shadow and the mobile scroll affordance were all dead declarations
+  while the page still *looked* roughly right, because the SVG's own `width`/`height`
+  attributes happened to give the box the plate's ratio. Found by measuring each plate's
+  computed background in the browser rather than reading the CSS: it was `rgba(0,0,0,0)`. The
+  selector is now `.figscroll`, the builder emits `scroller` too so the overflow hint applies,
+  and the drawings (white ground from `launch_stats.py`) sit on a mat that is the same paper
+  rather than the page's cream.
+- **Overflow is now signposted, not silent.** Below 900px the wide tables and plates scroll
+  sideways; a sticky `slide sideways to read the rest →` strip appears only while there is
+  actually more to the right, measured on scroll and resize rather than guessed from the
+  breakpoint. URLs wrap at slashes again — `word-break: break-all` had been breaking hosts
+  mid-name, which turns a copyable command into a wrong one.
+- **The mark.** Limen is the threshold a stimulus has to cross: a dim bar with its lit
+  portion, cut by a crimson rule at the crossing point. It is drawn once, in three sizes
+  (nav, footer, favicon), and the same geometry as the hero's threshold bars — the logo and
+  the argument are the same picture.
+- **`og.png` is part of the build.** The social card is a screenshot of this page, so a link
+  preview that 404s is a launch post that shows nothing. The builder copies
+  `docs/assets/og.png` into `_site/assets/` and exits non-zero if it is missing.
+- **Re-verified after the rebuild:** two `--skip-hero` builds are byte-identical; **436
+  passed / 2 skipped** on both Python 3.11.15 and 3.9.6; the secret sweep over the pending
+  diff and the tracked tree returns no key-shaped string — and the surviving bare `sk-`
+  substrings were read rather than waved through: two `WIRING.md` placeholders that end in an
+  ellipsis, the word `task-file`, two CSS `mask-image` lines, and one canary in
+  `test_doctor.py` whose whole purpose is to assert `doctor` never prints a key's value. At 1440, 1024, 820 and 390 the document has no horizontal
+  scroll, no section renders empty, and every element that overflows its box was checked to
+  sit inside a scroll container — 7 at 820px and 73 at 390px, all contained. Captures were
+  re-shot and read, because a screenshot is the only witness that a layout change laid out.
+- **No gate re-run is owed:** nothing under `subproto/` or `bench/` changed, so no mutant
+  anchor moved and no print contract moved. The page's numbers are the S46 numbers.
+
 ### What the first-time-user run got wrong
 
 Each of these is a surface that said something the code did not do, and each now has a

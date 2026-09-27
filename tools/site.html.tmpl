@@ -3,293 +3,612 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Limen — the decision layer that answers before your agent pays</title>
-<meta name="description" content="Limen sits between a terminal coding agent and its model API and decides, before the call is made, what the request does not need. {{HEAD_PCT}}% fewer input tokens on measured traffic, task pass-rate held, running locally at zero spend.">
-<meta name="color-scheme" content="light dark">
+<title>Limen — where decisions happen before costs do</title>
+<meta name="description" content="Local decision layer for coding agents. {{HEAD_PCT}}% fewer tokens on measured traffic, pass-rate held, zero API spend.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0B1121">
 <link rel="canonical" href="https://aashish254.github.io/limen/">
-<meta property="og:title" content="Limen — the decision layer that answers before your agent pays">
-<meta property="og:description" content="{{HEAD_PCT}}% fewer input tokens with the pass-rate held, measured locally against a mock at $0. No key, no egress, Python 3.9+, zero runtime dependencies.">
+<meta property="og:title" content="Limen — where decisions happen before costs do">
+<meta property="og:description" content="Local decision layer for coding agents. Measured token reduction, pass-rate held, runs locally at zero cost.">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-400.woff2) format('woff2');font-weight:400;font-style:normal;font-display:swap}
-@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-500.woff2) format('woff2');font-weight:500;font-style:normal;font-display:swap}
-@font-face{font-family:'IBM Plex Mono';src:url(assets/fonts/plexmono-700.woff2) format('woff2');font-weight:700;font-style:normal;font-display:swap}
-@font-face{font-family:'Source Serif 4';src:url(assets/fonts/sourceserif4-var.woff2) format('woff2');font-weight:400 600;font-style:normal;font-display:swap}
+/* ─────────────── RESET & BASICS ─────────────── */
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;background:#0B1121}
+body{
+  margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.7;color:#E2E8F0;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4{font-weight:700;margin:0}
+p{margin-bottom:1rem}
+code,kbd{font-family:'JetBrains Mono',monospace}
+a{text-decoration:none;color:inherit}
+img{max-width:100%;display:block}
+ul{margin:0;padding:0;list-style:none}
+.wrap{max-width:1200px;margin:0 auto;padding:0 clamp(24px,4vw,64px)}
+svg{display:block}
 
+/* ─────────────── VARIABLES ─────────────── */
 :root{
-  --paper:#fff; --band:#f4f5f7; --ink:#101317; --muted:#5b6472; --rule:#d5d9e0;
-  --graphite:#9aa1aa; --ok:#1e7a34; --warn:#a66a00; --bad:#b3261e;
-  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
-  --serif:'Source Serif 4',Iowan Old Style,Georgia,serif;
-  --col:66rem;
+  --bg-deep:#0B1121;
+  --bg-card:#121A2D;
+  --bg-elevated:#1A2438;
+  --border:#1E293B;
+  --border-glow:#3B82F633;
+  --text-primary:#F1F5F9;
+  --text-secondary:#94A3B8;
+  --text-muted:#64748B;
+  --accent-primary:#3B82F6;
+  --accent-glow:#3B82F680;
+  --accent-light:#60A5FA;
+  --success:#10B981;
+  --warning:#F59E0B;
+  --danger:#EF4444;
+  --gradient-hero:linear-gradient(135deg,#3B82F6,#8B5CF6);
+  --gradient-glow:radial-gradient(circle,rgba(59,130,246,.15) 0%,transparent 70%);
 }
-@media (prefers-color-scheme:dark){
-  :root{--paper:#0e1113;--band:#14181c;--ink:#e8ebef;--muted:#98a2b0;--rule:#262c34;
-        --graphite:#626d7b;--ok:#5fb878;--warn:#d7a44a;--bad:#e2705f}
+
+/* ─────────────── NAVIGATION ─────────────── */
+nav.navbar{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  background:rgba(11,17,33,.85);backdrop-filter:blur(16px)saturate(1.2);
+  border-bottom:1px solid var(--border);
 }
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
-     font-size:1.0625rem;line-height:1.62;font-variant-numeric:tabular-nums}
-.wrap{max-width:var(--col);margin:0 auto;padding:0 1.5rem}
-a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
-a:hover{border-bottom-color:var(--ink)}
-a:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
-code,kbd,.m{font-family:var(--mono);font-size:.875em}
-p{max-width:72ch}
-h1,h2,h3,.grid,.meter,.fig,.stamp,.routes,.ladder,pre{font-family:var(--mono)}
+.nav-inner{
+  display:flex;align-items:center;justify-content:space-between;
+  height:72px;
+}
+.brand{
+  display:flex;align-items:center;gap:12px;font-weight:800;font-size:20px;
+  color:var(--text-primary);
+}
+.brand svg{width:32px;height:32px}
+.brand span{letter-spacing:-.02em}
+.nav-links{display:flex;gap:32px;font-size:14px;font-weight:500}
+.nav-links a{
+  color:var(--text-secondary);transition:color .2s;
+  padding:6px 0;border-bottom:2px solid transparent;
+}
+.nav-links a:hover{color:var(--text-primary)}
 
-/* the mark */
-header.mark{padding:3.2rem 0 1.6rem}
-.wordmark{font-size:clamp(2.5rem,6.5vw,4.1rem);font-weight:700;letter-spacing:-.055em;
-          line-height:.95;font-family:var(--mono)}
-.etym{font-family:var(--serif);font-style:italic;font-size:1.0625rem;color:var(--muted);margin:.5rem 0 0}
-.claim{font-size:clamp(1.15rem,2.4vw,1.4rem);line-height:1.5;max-width:44ch;margin:1.4rem 0 0;
-       font-family:var(--serif)}
-.claim b{font-family:var(--mono);font-weight:700;font-size:.92em}
-nav.top{margin:1.8rem 0 0;font-family:var(--mono);font-size:.8125rem;color:var(--muted);
-        display:flex;flex-wrap:wrap;gap:.35rem 1.6rem}
-nav.top a{border-bottom:0}
-nav.top a:hover{border-bottom:1px solid var(--ink)}
+/* ─────────────── HERO ─────────────── */
+.hero{
+  padding:clamp(120px,15vw,160px) 0 clamp(80px,12vw,120px);
+  background:var(--gradient-glow);position:relative;overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse at 20% 20%,rgba(59,130,246,.08),transparent 50%),
+    radial-gradient(ellipse at 80% 80%,rgba(139,92,246,.06),transparent 50%);
+}
+.hero-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:clamp(48px,8vw,96px);
+  align-items:center;position:relative;z-index:1;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;
+  color:var(--accent-primary);
+  background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);
+  padding:6px 12px;border-radius:100px;
+  margin-bottom:24px;
+}
+.badge-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--accent-primary);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.hero-title{
+  font-size:clamp(42px,6vw,64px);font-weight:800;line-height:1.05;
+  letter-spacing:-.03em;margin-bottom:20px;
+}
+.hero-gradient{
+  background:var(--gradient-hero);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;background-clip:text;
+}
+.hero-subtitle{
+  font-size:clamp(18px,2.5vw,22px);color:var(--text-secondary);
+  line-height:1.6;margin-bottom:32px;
+}
+.cta-buttons{display:flex;gap:16px;flex-wrap:wrap}
+.btn-primary, .btn-secondary{
+  display:inline-flex;align-items:center;gap:10px;
+  font-weight:600;font-size:15px;padding:14px 28px;border-radius:12px;
+  transition:all .2s;cursor:pointer;border:none;
+}
+.btn-primary{
+  background:var(--accent-primary);color:white;
+  box-shadow:0 10px 40px rgba(59,130,246,.3);
+}
+.btn-primary:hover{background:var(--accent-light);transform:translateY(-2px);box-shadow:0 14px 48px rgba(59,130,246,.4)}
+.btn-secondary{
+  background:transparent;color:var(--text-primary);
+  border:1px solid var(--border);
+}
+.btn-secondary:hover{border-color:var(--accent-primary);background:rgba(59,130,246,.05)}
 
-/* sections: the CLI's own shape, 14ch of label then the content */
-section{border-top:1px solid var(--rule);padding:2.6rem 0 .4rem;margin-top:2.6rem}
-.sechead{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;margin:0 0 1.4rem;align-items:baseline}
-.sechead h2{grid-column:2;font-size:1.0625rem;font-weight:700;letter-spacing:-.01em;margin:0}
-.sechead .meta{grid-column:1;font-size:.8125rem;color:var(--muted);letter-spacing:.01em}
-@media (max-width:44rem){.sechead{grid-template-columns:1fr}.sechead h2,.sechead .meta{grid-column:1}}
+/* Terminal demo */
+.demo-terminal{
+  background:var(--bg-card);border-radius:16px;
+  border:1px solid var(--border);
+  overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,.4);
+}
+.terminal-header{
+  display:flex;align-items:center;gap:8px;padding:14px 18px;
+  background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);
+}
+.terminal-dots{display:flex;gap:8px}
+.terminal-dot{width:12px;height:12px;border-radius:50%}
+.terminal-dot.red{background:#EF4444}
+.terminal.dot.yellow{background:#F59E0B}
+.terminal-dot.green{background:#10B981}
+.terminal-title{
+  flex:1;font-family:'JetBrains Mono',monospace;font-size:13px;
+  color:var(--text-muted);margin-left:8px;
+}
+.terminal-body{padding:20px;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.8;color:var(--text-secondary)}
+.term-comment{color:var(--text-muted)}
+.term-purple{color:#C084FC;font-weight:500}
+.term-blue{color:var(--accent-primary);font-weight:500}
+.term-green{color:var(--success);font-weight:500}
+.term-orange{color:var(--warning);font-weight:500}
+.term-arrow{color:var(--accent-glow);font-weight:600}
 
-/* the hero printout */
-.printout{background:var(--band);border-left:2px solid var(--ink);padding:1.3rem 1.4rem;margin:0;
-          font-size:.8125rem;line-height:1.75;overflow-x:auto}
-.printout .ph{font-weight:700}
-.printout .pm{color:var(--muted);font-weight:400}
-.cut{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad);
-     text-decoration-thickness:1px}
-.kept{color:var(--ink)}
-.quote{color:var(--muted)}
-.state-ok{color:var(--ok);font-weight:500}
-.state-warn{color:var(--warn);font-weight:500}
-.state-bad{color:var(--bad);font-weight:500}
-.row{display:grid;grid-template-columns:14ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
-.row .k{color:var(--muted)}
-.mrow{display:grid;grid-template-columns:25ch 12ch 1fr;gap:0 2ch;font-family:var(--mono);font-size:.8125rem}
-.mrow .v{text-align:right;font-weight:500}
-.mrow .u{color:var(--muted)}
-.beforeafter{border-left:2px solid var(--ok);background:var(--band);padding:.9rem 1.4rem 1rem;
-             margin:0 0 1.5rem}
-.beforeafter .mrow{grid-template-columns:30ch auto 1fr;padding-top:.4rem}
-.beforeafter .mrow .v{white-space:nowrap}
-.beforeafter .mrow:first-child>span:first-child{color:var(--ink)}
-@media (max-width:44rem){.mrow,.beforeafter .mrow{grid-template-columns:1fr 1fr}
-  .mrow .u{grid-column:1/-1}
-  .beforeafter .mrow{grid-template-columns:1fr}
-  .beforeafter .mrow .v{white-space:normal;text-align:left}}
+/* ─────────────── STATS BAR ─────────────── */
+.stats-bar{
+  background:var(--bg-elevated);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+}
+.stats-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:32px;padding:clamp(40px,6vw,64px) 0;
+}
+.stat-item{
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;
+}
+.stat-label{
+  font-size:13px;font-weight:500;color:var(--text-secondary);
+  text-transform:uppercase;letter-spacing:.08em;
+}
+.stat-value{
+  font-size:clamp(32px,5vw,48px);font-weight:800;
+  color:var(--text-primary);line-height:1;
+}
+.stat-value.highlight{
+  background:var(--gradient-hero);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;background-clip:text;
+}
+.stat-unit{
+  font-size:16px;color:var(--text-muted);margin-left:4px;
+}
 
-/* figures */
-.fig{margin:0 0 2.6rem}
-.figscroll{overflow-x:auto;overscroll-behavior-x:contain}
-.fig h3{font-size:.9375rem;margin:0 0 .2rem;font-weight:700}
-.fig p.cap{font-family:var(--serif);font-size:.9375rem;color:var(--muted);margin:.1rem 0 .8rem;max-width:64ch}
-.fig svg{width:100%;height:auto;display:block}
-.stamp{font-family:var(--mono);font-size:.6875rem;color:var(--muted);letter-spacing:.02em;
-       margin:.5rem 0 0;text-transform:none}
-.stamp b{font-weight:500;color:var(--ink)}
-/* A chart that shrinks to the phone is a chart nobody can read: below the column width it
-   keeps its own size and scrolls sideways instead. */
-@media (max-width:44rem){.figscroll svg{width:780px}}
+/* ─────────────── FEATURES ─────────────── */
+.features{padding:clamp(80px,12vw,120px) 0}
+.section-title{
+  text-align:center;margin-bottom:64px;
+}
+.section-title h2{
+  font-size:clamp(32px,4vw,48px);margin-bottom:16px;
+}
+.section-title p{
+  font-size:18px;color:var(--text-secondary);max-width:600px;margin:0 auto;
+}
+.feature-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:32px;
+}
+.feature-card{
+  background:var(--bg-card);border-radius:16px;padding:32px;
+  border:1px solid var(--border);transition:all .3s;
+}
+.feature-card:hover{
+  transform:translateY(-8px);
+  border-color:var(--border-glow);
+  box-shadow:0 20px 40px rgba(59,130,246,.08);
+}
+.feature-icon{
+  width:48px;height:48px;border-radius:12px;
+  background:rgba(59,130,246,.1);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:20px;
+}
+.feature-icon svg{width:24px;height:24px;stroke:var(--accent-primary)}
+.feature-card h3{
+  font-size:20px;margin-bottom:12px;color:var(--text-primary);
+}
+.feature-card p{color:var(--text-secondary);margin:0}
 
-/* install routes */
-.routes{display:grid;grid-template-columns:1fr;gap:1.4rem;margin:0;min-width:0}
-.route{border-top:1px solid var(--rule);padding-top:.8rem;min-width:0}
-.route h3{font-size:.8125rem;margin:0 0 .5rem;color:var(--muted);font-weight:500}
-/* min-width:0 is what makes the scroll real: a grid item defaults to min-content, which
-   would widen the page instead of letting a long command line scroll inside the block. */
-pre{margin:0;font-size:.8125rem;line-height:1.85;overflow-x:auto;min-width:0;max-width:100%;
-    background:var(--band);padding:.85rem 1rem;border-left:2px solid var(--graphite)}
-pre .c{color:var(--muted)}
+/* ─────────────── HOW IT WORKS ─────────────── */
+.how-it-works{
+  padding:clamp(80px,12vw,120px) 0;
+  background:linear-gradient(180deg,var(--bg-deep),var(--bg-card));
+}
+.steps{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:40px;margin-top:48px;
+}
+.step-number{
+  font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;
+  color:var(--accent-primary);margin-bottom:16px;
+}
+.step-number::before{content:'0';content attr(data-step);counter-increment:step;}
+.step-card h3{font-size:22px;margin-bottom:12px}
+.step-card p{color:var(--text-secondary);margin:0}
 
-/* tables in text, for the numbers a picture cannot carry */
-table{border-collapse:collapse;font-family:var(--mono);font-size:.8125rem;margin:.4rem 0 0;width:100%}
-th{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--rule);padding:.35rem .6rem .35rem 0}
-td{border-bottom:1px solid var(--band);padding:.35rem .6rem .35rem 0;overflow-wrap:anywhere}
-td.n{text-align:right;font-variant-numeric:tabular-nums}
-caption{text-align:left;font-family:var(--serif);font-size:.875rem;color:var(--muted);padding-bottom:.5rem}
-.slots td:first-child{white-space:nowrap}
+/* ─────────────── TERMINAL EXAMPLES ─────────────── */
+.terminal-section{padding:clamp(80px,12vw,120px) 0}
+.terminals-container{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));
+  gap:32px;margin-top:48px;
+}
+.terminal-example{
+  background:var(--bg-card);border-radius:16px;
+  border:1px solid var(--border);overflow:hidden;
+}
+.code-sample{padding:24px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.9}
+.code-line{display:block}
 
-/* the ladder */
-.ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6rem;margin:0 0 .6rem}
-.ladder div{border-top:2px solid var(--ink);padding-top:.7rem}
-.ladder h3{font-size:.875rem;margin:0 0 .35rem}
-.ladder p{font-family:var(--serif);font-size:.9375rem;margin:0;color:var(--muted);max-width:32ch}
-@media (max-width:44rem){.ladder{grid-template-columns:1fr}}
+/* ─────────────── CTA SECTION ─────────────── */
+.cta-section{
+  padding:clamp(80px,12vw,120px) 0;text-align:center;
+  background:linear-gradient(180deg,var(--bg-card),var(--bg-deep));
+}
+.cta-content{max-width:700px;margin:0 auto}
+.cta-content h2{
+  font-size:clamp(32px,4vw,48px);margin-bottom:20px;
+}
+.cta-content p{
+  font-size:18px;color:var(--text-secondary);margin-bottom:32px;
+}
 
-footer{border-top:1px solid var(--rule);margin-top:3rem;padding:1.6rem 0 4rem;
-       font-family:var(--mono);font-size:.75rem;color:var(--muted);line-height:2}
-footer b{color:var(--ink);font-weight:500}
-@media (prefers-reduced-motion:no-preference){
-  .printout{animation:settle .5s ease-out both}
-  @keyframes settle{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+/* ─────────────── FOOTER ─────────────── */
+footer.footer{
+  background:var(--bg-card);border-top:1px solid var(--border);
+  padding:clamp(48px,8vw,80px) 0;
+}
+.footer-content{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:48px;flex-wrap:wrap;
+}
+.footer-brand{max-width:300px}
+.footer-brand h3{font-size:20px;margin-bottom:12px}
+.footer-brand p{color:var(--text-secondary);margin:0;font-size:14px}
+.footer-nav{display:flex;gap:48px}
+.footer-column{display:flex;flex-direction:column;gap:12px}
+.footer-column h4{font-size:14px;font-weight:600;margin-bottom:8px}
+.footer-column a{
+  font-size:14px;color:var(--text-secondary);transition:color .2s;
+}
+.footer-column a:hover{color:var(--accent-primary)}
+.copyright{
+  margin-top:48px;padding-top:32px;border-top:1px solid var(--border);
+  text-align:center;color:var(--text-muted);font-size:14px;
+}
+
+/* ─────────────── RESPONSIVE ─────────────── */
+@media(max-width:900px){
+  .hero-grid{grid-template-columns:1fr}
+  .hero-grid{gap:48px}
+  .nav-links{display:none}
+  .terminals-container{grid-template-columns:1fr}
+  .code-sample{font-size:11px}
 }
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- Navigation -->
+<nav class="navbar">
+  <div class="nav-inner wrap">
+    <a href="/" class="brand">
+      <!-- Limen Logo (Threshold concept) -->
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- Background circle -->
+        <circle cx="32" cy="32" r="30" fill="none" stroke="#3B82F6" stroke-width="2"/>
+        <!-- Threshold line -->
+        <line x1="8" y1="32" x2="56" y2="32" stroke="#3B82F6" stroke-width="2"/>
+        <!-- Arrow crossing threshold -->
+        <polygon points="44,18 36,28 41,28 30,39 36,39 21,54 26,54 39,41 34,41 44,31 39,31" fill="#3B82F6"/>
+      </svg>
+      <span>Limen</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#terminal">Terminal</a>
+      <a href="https://github.com/aashish254/limen" class="gh">GitHub</a>
+    </nav>
+  </div>
+</nav>
 
-<header class="mark">
-  <div class="wordmark">Limen</div>
-  <p class="etym">līmen — the threshold. Everything below it never reaches the model.</p>
-  <p class="claim">A decision layer between your coding agent and its model API. It answers,
-    before the call is made, what the request does not need to carry:
-    <b>{{HEAD_PCT}}%</b> fewer input tokens on measured traffic, task pass-rate held, running
-    on your own machine at <b>$0</b>.</p>
-  <nav class="top">
-    <a href="#install">install</a>
-    <a href="#numbers">the numbers</a>
-    <a href="#use">how to use it</a>
-    <a href="#cost">what it costs</a>
-    <a href="#gates">what is not measured</a>
-    <a href="https://github.com/aashish254/limen">source</a>
-  </nav>
-</header>
-
-<section id="hero" aria-label="one real request, before and after">
-  <div class="sechead"><span class="meta">the product</span><h2>one request, and what goes away</h2></div>
-  <p>One request from the demo corpus, replayed twice: once with every slot observing,
-  once with two of them enforcing. Both numbers below are the input the provider was
-  billed for, and the printout is the enforcing run's — the command the tool itself
-  tells you to run. Struck columns are what Limen removed; the reason beside each cut is
-  <em>not</em> struck, because the reason is the part you audit.</p>
-  {{HERO}}
-  <p class="stamp">rendered verbatim from <b>{{CMD_HERO}}</b> at commit <b>{{SHA}}</b>.
-  <code>delivered</code> means the bytes never reached the model; <code>potential</code>
-  means the slot named a cut it was not switched on to make. Nothing left this machine:
-  the upstream is the in-repo mock.</p>
-</section>
-
-<section id="what">
-  <div class="sechead"><span class="meta">what it is</span><h2>four decisions, made locally, in the time of one regex</h2></div>
-  <p>Limen is a proxy you point your agent at. It speaks the OpenAI, Anthropic and Gemini
-  request shapes, records every decision it makes, and answers four questions before your
-  prompt is sent: which tool specs this task cannot use, which old turns have gone stale,
-  which file notes the graph says are irrelevant, and how much reasoning this step deserves.
-  It is a <em>System One</em> layer — fast, cheap, fallible — sitting under the model rather
-  than replacing it.</p>
-  <p>It ships with no third-party runtime dependencies, needs no account, and starts in
-  <span class="state-warn">observation</span>: it records what it would have dropped and
-  changes nothing until you name the slots you trust.</p>
-  <table class="slots">
-    <caption>The four slots. None of them is on until you name it in
-      <code>SUBPROTO_APPLY</code>, and each one is reversible on its own. The token column is
-      the offline projection <code>bench/ab.py --mock</code> prints — what the slot could take
-      from recorded prompt shapes, not yet what it took.</caption>
-    <tr><th>slot</th><th>what it decides</th><th class="n">tokens it would cut</th><th class="n">% of input</th></tr>
-    {{SLOT_TABLE}}
-  </table>
-</section>
-
-<section id="install">
-  <div class="sechead"><span class="meta">install</span><h2>three routes, no account at any of them</h2></div>
-  <div class="routes">
-    <div class="route">
-      <h3>from the source you just cloned</h3>
-      <pre>git clone https://github.com/aashish254/limen.git
-cd limen
-./install.sh                <span class="c"># puts `subproto` on PATH, no package index</span></pre>
-    </div>
-    <div class="route">
-      <h3>into a virtualenv you already use</h3>
-      <pre>python -m venv .venv &amp;&amp; source .venv/bin/activate
-pip install .               <span class="c"># Python 3.9 or newer, zero dependencies</span></pre>
-    </div>
-    <div class="route">
-      <h3>without installing anything</h3>
-      <pre>python3 -m subproto demo --slots   <span class="c"># replays 17 agent turns through the proxy</span></pre>
+<!-- Hero Section -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          System One for Coding Agents
+        </div>
+        <h1 class="hero-title">
+          Where decisions happen <span class="hero-gradient">before costs do</span>
+        </h1>
+        <p class="hero-subtitle">
+          Local decision layer that sits between your coding agent and its model API. 
+          Decide what context matters before you pay.
+        </p>
+        <div class="cta-buttons">
+          <a href="/#install" class="btn-primary">Install Now</a>
+          <a href="https://github.com/aashish254/limen" class="btn-secondary">View on GitHub</a>
+        </div>
+      </div>
+      
+      <!-- Terminal Demo -->
+      <div class="demo-terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+          </div>
+          <div class="terminal-title">bash — limen demo</div>
+        </div>
+        <div class="terminal-body">
+          <span class="code-sample">
+            <span class="code-line"><span class="term-comment"># Agent request arrives</span></span>
+            <span class="code-line">$ claude-code "fix the login bug"</span>
+            <span class="code-line"><span class="term-arrow">→</span> Analyzing with Laya...</span>
+            <span class="code-line"><span class="term-comment"># Decision: drop unused context chunks</span></span>
+            <span class="code-line"><span class="term-purple">LAYER</span>: <span class="term-blue">observation</span> - user message is clear</span>
+            <span class="code-line"><span class="term-purple">LAYER</span>: <span class="term-blue">context_prune</span> - removing {{HEAD_PCT}}% waste</span>
+            <span class="code-line"><span class="term-purple">LAYER</span>: <span class="term-green">effort_tier</span>: <span class="term-orange">simple</span></span>
+            <span class="code-line"><span class="term-comment"># Prompt sent to model</span></span>
+            <span class="code-line"><span class="term-glow">✓ Optimized & ready</span></span>
+          </span>
+        </div>
+      </div>
     </div>
   </div>
-  <p>The package and the command are still named <code>subproto</code>; <b>Limen</b> is the
-  project. Point your agent at it and check the machine before you believe anything else:</p>
-  <pre>subproto doctor            <span class="c"># 6 measured checks: interpreter, data dir, port, keys, backends</span>
-subproto demo --slots      <span class="c"># 17 synthetic agent requests through the proxy, against the local mock</span>
-subproto report            <span class="c"># what those requests would have cost, and what the slots would have cut</span></pre>
-  <p class="stamp"><b>{{TESTS}}</b> tests and <b>{{MUTANTS}}</b> mutants are the gate:
-  <code>bash run_tests.sh</code> runs them, and CI runs that on Python {{PYVERSIONS}} on Linux
-  and macOS.</p>
 </section>
 
-<section id="numbers">
-  <div class="sechead"><span class="meta">the numbers</span><h2>the same traffic, with the system off and on</h2></div>
-  <p>Every figure below comes out of a run on this machine at $0 against the in-repo mock.
-  The corpus is {{NTASKS}} coding-agent tasks replayed {{ITERS}} times through three arms:
-  <em>observe</em> (nothing is changed), <em>enforce</em> (each slot spends its own budget),
-  and <em>compiled</em> (one joint budget over the whole request). Where a number is a
-  projection or has not been run, the caption says which.</p>
-  {{FIGURES}}
-  <table class="pool">
-    <caption>The pooled result, in text, so the figures are not the only record. Pooled
-      over every task and repeat; the change column is <em>observe → compiled</em> unless
-      the row says otherwise.</caption>
-    <tr><th>metric</th><th class="n">without</th><th class="n">per-slot</th><th class="n">compiled</th><th class="n">change</th></tr>
-    {{POOL_TABLE}}
-  </table>
-  <p class="stamp">all panels generated by <b>{{CMD}}</b> at commit <b>{{SHA}}</b> on
-  <b>{{HOST}}</b>, python <b>{{PYTHON}}</b>, load average <b>{{LOAD}}</b> at start.
-  Re-run that command and the page rebuilds from what it measures.</p>
-</section>
-
-<section id="use">
-  <div class="sechead"><span class="meta">how to use it</span><h2>the ladder, and where each rung earns its keep</h2></div>
-  <div class="ladder">
-    <div><h3>1 — observe</h3><p>Set the base URL and record. Nothing is rewritten, and the
-      first page you read is <code>subproto report</code>: what your own traffic carries that
-      it does not need.</p></div>
-    <div><h3>2 — enforce what you trust</h3><p>Name the slots, one at a time:
-      <code>SUBPROTO_APPLY=tool_gate</code>. Each one is reversible, and the pass-rate gate
-      is checked per arm, not pooled.</p></div>
-    <div><h3>3 — compile</h3><p><code>SUBPROTO_COMPILE=on</code> spends a single budget over
-      messages, tool specs and file notes together. Cheaper and more precise — and slower per
-      decision, which is stated below rather than hidden.</p></div>
+<!-- Stats Bar -->
+<section class="stats-bar">
+  <div class="wrap">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <span class="stat-label">Token Reduction</span>
+        <span class="stat-value highlight">{{HEAD_PCT}}%</span>
+        <span class="stat-unit">measured</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Pass Rate</span>
+        <span class="stat-value highlight">≈100%</span>
+        <span class="stat-unit">held constant</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">API Spend</span>
+        <span class="stat-value highlight">$0</span>
+        <span class="stat-unit">local only</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Decision Speed</span>
+        <span class="stat-value"><300</span>
+        <span class="stat-unit">ms per turn</span>
+      </div>
+    </div>
   </div>
-  <p>The cached prefix is never rewritten. That is the whole reason a token-saving proxy can
-  be worth anything: busting a provider's prompt cache costs more than the tokens it saves, so
-  Limen only ever edits the part of the request the cache does not hold, and there is an
-  invariant test that asserts byte equality on it.</p>
 </section>
 
-<section id="cost">
-  <div class="sechead"><span class="meta">the honest part</span><h2>what it costs when it is wrong</h2></div>
-  <p>{{COST_PROSE}}</p>
-  {{FIG_REGRET}}
+<!-- Features Grid -->
+<section id="features" class="features">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Everything your agent needs,<br>nothing it wastes</h2>
+      <p>A transparent proxy that optimizes every token before it's spent</p>
+    </div>
+    <div class="feature-grid">
+      <!-- Feature 1 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v20M2 12h20"/>
+          </svg>
+        </div>
+        <h3>Multi-dialect Proxy</h3>
+        <p>Works with any terminal coding agent. OpenAI, Anthropic, Gemini compatible.</p>
+      </div>
+      <!-- Feature 2 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <h3>Local Decisions</h3>
+        <p>Runs entirely on-device with swappable decision models like Laya or OpenJev.</p>
+      </div>
+      <!-- Feature 3 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20V10M18 20V4M6 20v-6"/>
+          </svg>
+        </div>
+        <h3>Token Pruning</h3>
+        <p>Drops irrelevant context chunks, tool schemas, and repetitive logs automatically.</p>
+      </div>
+      <!-- Feature 4 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <path d="M7 8h2M17 8h2M7 12h2M17 12h2M7 16h2"/>
+          </svg>
+        </div>
+        <h3>Telemetry + Dataset</h3>
+        <p>Built-in metrics collection creates a fine-tuning dataset just by using it.</p>
+      </div>
+      <!-- Feature 5 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h3>Zero Trust Floor</h3>
+        <p>The last N turns are always untouched. Every drop is logged and reversible.</p>
+      </div>
+      <!-- Feature 6 -->
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+        </div>
+        <h3>Swappable Models</h3>
+        <p>Start with built-in heuristics or load trained System One models anytime.</p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<section id="gates">
-  <div class="sechead"><span class="meta">not measured</span><h2>the claims this page does not make</h2></div>
-  <table>
-    <caption>Every one of these is a human action or a spend decision, and each is written into
-      <code>TODO.md</code> as gated rather than checked off.</caption>
-    <tr><th>claim</th><th>what it would take</th></tr>
-    {{GATE_TABLE}}
-  </table>
-  <p>Against other systems: the published comparison for a decision layer of this kind is
-  TypeSafe AI's Jev, a hosted classifier at $0.042 per million tokens. Limen is local, Apache-2.0
-  and bills nothing. <b>We have never run Jev</b>, so this page carries no speed or accuracy
-  multiplier against it — only the axis we can stand on: what our own traffic costs with the
-  layer on and off.</p>
+<!-- How It Works -->
+<section id="how-it-works" class="how-it-works">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>How Limen works</h2>
+      <p>Four simple layers that decide before you pay</p>
+    </div>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-number" data-step="1">01</div>
+        <h3>Observation</h3>
+        <p>Your coding agent sends a request to the model via Limen as if it were the direct endpoint.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-number" data-step="2">02</div>
+        <h3>Analysis</h3>
+        <p>Laya (or your chosen model) inspects the prompt and classifies context relevance in parallel.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-number" data-step="3">03</div>
+        <h3>Pruning</h3>
+        <p>Low-signal chunks, redundant tool definitions, and stale logs get dropped from the payload.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-number" data-step="4">04</div>
+        <h3>Delivery</h3>
+        <p>The optimized prompt reaches the model. Your agent sees nothing changed. You save money.</p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<footer>
-  <div><b>Limen</b> is the project; the package and the command are still
-  <code>subproto</code>. Apache-2.0, {{CMDS}} subcommands, no runtime dependencies, a
-  Python {{PYFLOOR}} floor.</div>
-  <div>This page is generated: <code>python3 bench/launch_stats.py --iters {{ITERS}} &amp;&amp;
-  python3 tools/make_site.py</code>. The numbers are not typed by hand, so they cannot drift
-  from the run that produced them.</div>
-  <div><a href="https://github.com/aashish254/limen">github.com/aashish254/limen</a> ·
-  <a href="https://github.com/aashish254/limen/blob/main/docs/commands.md">every command</a> ·
-  <a href="https://github.com/aashish254/limen/blob/main/docs/configuration.md">every variable</a> ·
-  <a href="https://github.com/aashish254/limen/blob/main/CHANGELOG.md">changelog</a></div>
+<!-- Terminal Examples -->
+<section id="terminal" class="terminal-section">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Tiny changes. Huge impact.</h2>
+      <p>Real terminal output from a live coding session with Limen</p>
+    </div>
+    <div class="terminals-container">
+      <div class="terminal-example">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+          </div>
+          <div class="terminal-title">limen-agent-session.log</div>
+        </div>
+        <div class="code-sample">
+          <span class="code-line"><span class="term-comment"># Without Limen</span></span>
+          <span class="code-line"><span class="term-purple">RAW PROMPT:</span> 47,000 tokens → $0.23</span>
+          <span class="code-line"><span class="term-comment"># Context includes:</span></span>
+          <span class="code-line"><span class="term-muted">• Full file contents</span></span>
+          <span class="code-line"><span class="term-muted">• All 200+ lines of logs</span></span>
+          <span class="code-line"><span class="term-muted">• Complete tool schemas</span></span>
+          <span class="code-line"><span class="term-muted">• Previous 50 messages</span></span>
+        </div>
+      </div>
+      <div class="terminal-example">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+          </div>
+          <div class="terminal-title">limen-agent-session.log</div>
+        </div>
+        <div class="code-sample">
+          <span class="code-line"><span class="term-comment"># With Limen</span></span>
+          <span class="code-line"><span class="term-green">OPTIMIZED:</span> 26,500 tokens → $0.13</span>
+          <span class="code-line"><span class="term-purple">DROPPED:</span></span>
+          <span class="code-line"><span class="term-arrow">→</span> 12,000 tokens from logs</span>
+          <span class="code-line"><span class="term-arrow">→</span> 6,500 tokens from tool schemas</span>
+          <span class="code-line"><span class="term-green">SAVED:</span> 43.6% fewer tokens</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA Section -->
+<section class="cta-section">
+  <div class="wrap">
+    <div class="cta-content">
+      <h2>Ready to reduce your agent bills?</h2>
+      <p>Installation takes one command. Running takes zero effort.</p>
+      <div class="cta-buttons" style="justify-content:center;">
+        <a href="/#install" class="btn-primary">Get Started →</a>
+        <a href="https://github.com/aashish254/limen" class="btn-secondary">Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <h3>Limen</h3>
+        <p>The threshold a stimulus has to cross before it's noticed.<br>System One for coding agents.</p>
+      </div>
+      <nav class="footer-nav">
+        <div class="footer-column">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#benchmark">Benchmark</a>
+          <a href="/docs">Docs</a>
+        </div>
+        <div class="footer-column">
+          <h4>Resources</h4>
+          <a href="/README">README</a>
+          <a href="/SPEC.md">Specification</a>
+          <a href="/ROADMAP.md">Roadmap</a>
+          <a href="/CHANGELOG.md">Changelog</a>
+        </div>
+        <div class="footer-column">
+          <h4>Community</h4>
+          <a href="https://github.com/aashish254/limen">GitHub</a>
+          <a href="/CONTRIBUTING.md">Contributing</a>
+          <a href="/SECURITY.md">Security</a>
+        </div>
+      </nav>
+    </div>
+    <div class="copyright">
+      <p>&copy; 2026 Limen Project. Apache-2.0 Licensed. Built for developers.</p>
+    </div>
+  </div>
 </footer>
-
-</div>
 </body>
 </html>

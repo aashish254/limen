@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limen — the bill is mostly scaffolding</title>
+<meta name="description" content="A local decision layer between a coding agent and its model API. {{HEAD_PCT}}% fewer input tokens on measured traffic, task pass-rate held, zero API spend.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0A0B0D">
+<link rel="canonical" href="https://aashish254.github.io/limen/">
+<meta property="og:title" content="Limen — the bill is mostly scaffolding">
+<meta property="og:description" content="{{HEAD_PCT}}% fewer input tokens on measured traffic, task pass-rate held, running on your own machine at $0.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://aashish254.github.io/limen/assets/og.png">
+<meta property="og:image:alt" content="The headline over two threshold bars: 11,935 tokens in, 6,356 out.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://aashish254.github.io/limen/assets/og.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='6' fill='%230A0B0D'/%3E%3Crect x='3' y='11.5' width='22' height='5' rx='1' fill='%23F2F0EB' opacity='.28'/%3E%3Crect x='3' y='11.5' width='9.5' height='5' rx='1' fill='%23F2F0EB'/%3E%3Crect x='14.4' y='4' width='2.2' height='20' fill='%23C93A3A'/%3E%3C/svg%3E">
+<style>
+@font-face{font-family:'Source Serif 4';font-style:normal;font-weight:200 900;font-display:swap;
+  src:url('assets/fonts/sourceserif4-var.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;
+  src:url('assets/fonts/plexmono-400.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;
+  src:url('assets/fonts/plexmono-500.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:700;font-display:swap;
+  src:url('assets/fonts/plexmono-700.woff2') format('woff2')}
+
+/* ─── tokens ─────────────────────────────────────────────────────────────────── */
+:root{
+  --ink:#0A0B0D; --ink-2:#101215; --ink-3:#16191D;
+  --rule:#22262C; --rule-2:#2E343C;
+  --paper:#F2F0EB; --paper-dim:#C9C6BE; --paper-mute:#8B8D93;
+  --red:#C93A3A; --red-soft:#E05A5A; --red-wash:rgba(201,58,58,.12);
+  --ok:#4E9A6B; --warn:#B98A2E; --bad:#C93A3A;
+  --serif:'Source Serif 4',Georgia,'Times New Roman',serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --gut:clamp(20px,5vw,72px);
+  --max:1240px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:88px}
+body{
+  margin:0;background:var(--ink);color:var(--paper);
+  font-family:var(--serif);font-size:17px;line-height:1.68;font-weight:380;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+/* the page sits on faint graph paper — a proof sheet, not a gradient wash */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(to right,rgba(242,240,235,.028) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(242,240,235,.028) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(ellipse 120% 80% at 50% 0%,#000 20%,transparent 75%);
+          mask-image:radial-gradient(ellipse 120% 80% at 50% 0%,#000 20%,transparent 75%);
+}
+main{position:relative;z-index:1}
+h1,h2,h3,h4{margin:0;font-weight:600;line-height:1.14;letter-spacing:-.014em}
+p{margin:0 0 1.1em}
+a{color:inherit;text-decoration:none}
+b,strong{font-weight:600}
+::selection{background:var(--red);color:#fff}
+
+.mono{font-family:var(--mono)}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 var(--gut)}
+
+/* ─── nav ────────────────────────────────────────────────────────────────────── */
+.nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(10,11,13,.82);backdrop-filter:blur(14px) saturate(1.3);
+  border-bottom:1px solid var(--rule);
+}
+.nav-in{display:flex;align-items:center;gap:28px;height:66px;
+  max-width:var(--max);margin:0 auto;padding:0 var(--gut)}
+.brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:19px;letter-spacing:-.02em}
+.brand svg{width:26px;height:26px;flex:none;display:block}
+.nav-links{display:flex;gap:26px;margin-left:auto;font-family:var(--mono);
+  font-size:12.5px;letter-spacing:.01em;color:var(--paper-mute)}
+.nav-links a{position:relative;padding:4px 0;transition:color .18s ease}
+.nav-links a:hover{color:var(--paper)}
+.nav-links a::after{content:'';position:absolute;left:0;right:100%;bottom:0;height:1px;
+  background:var(--red);transition:right .22s cubic-bezier(.2,.8,.3,1)}
+.nav-links a:hover::after{right:0}
+.nav-cta{font-family:var(--mono);font-size:12.5px;border:1px solid var(--rule-2);
+  padding:7px 14px;border-radius:2px;color:var(--paper-dim);transition:.18s ease}
+.nav-cta:hover{border-color:var(--red);color:var(--paper)}
+.progress{position:absolute;left:0;bottom:-1px;height:2px;width:0;
+  background:linear-gradient(90deg,var(--red),var(--red-soft));z-index:51}
+@media(max-width:820px){.nav-links{display:none}}
+
+/* ─── hero ──────────────────────────────────────────────────────────────────── */
+.hero{padding:clamp(48px,7vw,88px) 0 clamp(48px,7vw,84px);position:relative}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.14fr) minmax(0,1fr);
+  gap:clamp(30px,4.5vw,72px);align-items:end}
+@media(max-width:1000px){.hero-grid{grid-template-columns:1fr;gap:26px;align-items:start}}
+
+h1{font-size:clamp(2.4rem,4.9vw,3.8rem);letter-spacing:-.028em;line-height:1.04;font-weight:600;
+  margin:0}
+h1 .em{color:var(--paper)}
+h1 .cut{position:relative;display:inline-block;color:var(--paper-mute)}
+/* the struck-through word is the whole argument: this is what goes away.
+   Every entrance on this page animates *from* a state rather than *to* one, so a
+   browser that never runs the keyframes still shows the finished design. */
+h1 .cut::after{content:'';position:absolute;left:-3%;right:-3%;top:52%;height:3px;
+  background:var(--red);transform:scaleX(1);transform-origin:left;
+  animation:strike 780ms cubic-bezier(.6,0,.2,1) 620ms backwards}
+@keyframes strike{from{transform:scaleX(0)}}
+.lede{margin:0;font-size:clamp(1.05rem,1.5vw,1.2rem);color:var(--paper-dim);
+  max-width:38em;line-height:1.62}
+.lede b{color:var(--paper);font-weight:600}
+
+/* the threshold bar runs the full width of the sheet: a cut this size wants a long
+   edge to be measured against. */
+.threshold{margin:clamp(38px,4.6vw,58px) 0 0;padding:0}
+.th-row{display:grid;grid-template-columns:196px minmax(0,1fr) 108px;
+  align-items:center;gap:16px;font-family:var(--mono);font-size:12.5px;margin-bottom:10px}
+.th-label{color:var(--paper-mute);letter-spacing:.01em}
+.th-track{height:34px;position:relative;background:var(--ink-2);
+  border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+.th-fill{position:absolute;inset:2px auto 2px 2px;width:var(--w);border-radius:1px;
+  animation:grow 1150ms cubic-bezier(.22,1,.36,1) 260ms backwards}
+@keyframes grow{from{width:0}}
+.th-fill.off{background:linear-gradient(90deg,#525B66,#3B434D)}
+.th-fill.on{background:linear-gradient(90deg,var(--red),#9E2C2C);overflow:hidden}
+.th-fill.on::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.32) 50%,transparent 80%);
+  transform:translateX(-100%);animation:sweep 1100ms ease-out 1250ms backwards}
+@keyframes sweep{to{transform:translateX(100%)}}
+.th-val{text-align:right;font-weight:500;color:var(--paper);letter-spacing:-.01em;font-size:13.5px}
+.th-line{position:absolute;top:0;bottom:0;width:2px;background:var(--paper);
+  left:var(--x);box-shadow:0 0 14px rgba(242,240,235,.55);
+  animation:cross 1150ms cubic-bezier(.22,1,.36,1) 260ms backwards}
+@keyframes cross{from{left:0}}
+@media(max-width:640px){.th-row{grid-template-columns:minmax(0,1fr) 88px;gap:6px 12px}
+  .th-label{grid-column:1/-1}}
+.th-note{font-family:var(--mono);font-size:11.5px;color:var(--paper-mute);margin-top:14px;line-height:1.6}
+.th-note b{color:var(--red-soft);font-weight:500}
+
+.stat-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  margin:clamp(36px,4.4vw,54px) 0 0;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.stat{padding:22px 26px 22px 0;position:relative}
+.stat + .stat{padding-left:26px}
+.stat + .stat::before{content:'';position:absolute;left:0;top:18px;bottom:18px;width:1px;background:var(--rule)}
+.stat-n{font-family:var(--mono);font-size:clamp(1.55rem,2.5vw,2.1rem);font-weight:500;
+  letter-spacing:-.03em;line-height:1;display:flex;align-items:baseline;gap:2px}
+.stat-n .u{font-size:.52em;color:var(--paper-mute);font-weight:400}
+.stat-l{font-family:var(--mono);font-size:11px;color:var(--paper-mute);margin-top:10px;
+  letter-spacing:.01em;line-height:1.5}
+@media(max-width:860px){
+  .stat-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat{padding:18px 20px 18px 0}
+  .stat:nth-child(n+3){border-top:1px solid var(--rule)}
+  .stat:nth-child(odd){padding-left:0}
+  .stat:nth-child(3)::before{display:none}
+}
+@media(max-width:470px){
+  .stat-strip{grid-template-columns:minmax(0,1fr)}
+  .stat{padding-left:0!important;border-top:1px solid var(--rule)}
+  .stat:first-child{border-top:0}
+  .stat::before{display:none}
+}
+
+/* ─── the terminal window ────────────────────────────────────────────────────── */
+.term{margin-top:clamp(34px,4vw,54px);border:1px solid var(--rule-2);border-radius:8px;background:#0D0F12;
+  overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.85),0 0 0 1px rgba(242,240,235,.03) inset;
+  animation:rise 700ms ease 120ms backwards}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}}
+.term-bar{display:flex;align-items:center;gap:8px;padding:11px 14px;
+  background:var(--ink-3);border-bottom:1px solid var(--rule)}
+.dot{width:11px;height:11px;border-radius:50%;background:#3A3F46}
+.term-title{margin-left:10px;font-family:var(--mono);font-size:11.5px;color:var(--paper-mute);
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.term-copy{margin-left:auto;flex:none;white-space:nowrap;font-family:var(--mono);font-size:11px;
+  color:var(--paper-mute);background:transparent;border:1px solid var(--rule-2);border-radius:3px;
+  padding:4px 10px;cursor:pointer;transition:.16s ease}
+.term-copy:hover{color:var(--paper);border-color:var(--paper-mute)}
+.term-copy.done{color:var(--ok);border-color:var(--ok)}
+.term-body{padding:16px 14px 18px;overflow-x:auto;font-family:var(--mono);
+  font-size:11.6px;line-height:1.62}
+.term-foot{display:flex;align-items:baseline;gap:8px;border-top:1px solid var(--rule);
+  background:var(--ink-2);padding:11px 14px;
+  font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--paper-mute)}
+.term-foot code{background:none;padding:0;font-size:inherit;flex:1;min-width:0;word-break:break-all}
+.caret{flex:none;width:7px;height:12px;background:var(--paper-mute);display:inline-block;
+  animation:blink 1.06s steps(1,end) infinite}
+.term-hint{display:none;font-family:var(--mono);font-size:10.5px;color:var(--paper-mute);
+  margin:9px 0 0}
+@media(max-width:1080px){.term-hint{display:block}}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}
+.term-body::-webkit-scrollbar{height:8px}
+.term-body::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:4px}
+
+/* the printout the CLI itself produced — colour only where the CLI puts colour */
+.beforeafter{margin:0 0 14px;padding:0 0 14px;border-bottom:1px dashed var(--rule-2)}
+.mrow{display:flex;align-items:baseline;gap:10px;font-size:12px;padding:3px 0;flex-wrap:wrap}
+.mrow>span:first-child{width:210px;flex:none;color:var(--paper-mute)}
+.mrow .v{font-weight:500;color:var(--paper);letter-spacing:-.01em}
+.mrow .u{color:var(--paper-mute);font-size:11.5px}
+.mrow.compare{margin-bottom:2px}
+.mrow.compare .v{color:var(--paper-mute);text-decoration:line-through;
+  text-decoration-color:var(--red);text-decoration-thickness:1.5px}
+.printout{margin:0;white-space:pre;font-family:var(--mono);font-size:11.6px;line-height:1.62;color:var(--paper-dim)}
+.printout .k{color:var(--paper-mute)}
+.printout .ph{color:var(--paper);font-weight:500}
+.printout .pm{color:#6E737A}
+.printout .quote{color:var(--paper-mute);font-style:normal}
+.printout .cut{color:#6E737A;text-decoration:line-through;text-decoration-color:var(--red);
+  text-decoration-thickness:1px}
+.state-ok{color:var(--ok);font-weight:500}
+.state-warn{color:var(--warn)}
+.state-bad{color:var(--bad)}
+
+/* ─── buttons ───────────────────────────────────────────────────────────────── */
+.acts{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:13px;
+  padding:13px 22px;border-radius:3px;border:1px solid transparent;cursor:pointer;
+  transition:transform .16s cubic-bezier(.2,.8,.3,1),background .16s,border-color .16s;position:relative;overflow:hidden}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:#D84747}
+.btn-ghost{border-color:var(--rule-2);color:var(--paper-dim)}
+.btn-ghost:hover{border-color:var(--paper-mute);color:var(--paper)}
+.btn svg{width:15px;height:15px;flex:none}
+
+/* ─── sections ───────────────────────────────────────────────────────────────── */
+.sec{padding:clamp(52px,6vw,88px) 0;border-top:1px solid var(--rule);position:relative}
+.sec-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,26em);
+  gap:clamp(28px,5vw,72px);align-items:end;margin-bottom:clamp(30px,3.6vw,46px)}
+@media(max-width:900px){.sec-head{grid-template-columns:1fr;gap:20px}}
+.sec-kicker{font-family:var(--mono);font-size:12px;color:var(--paper-mute);
+  margin:0 0 15px;display:flex;align-items:baseline;gap:10px}
+.sec-kicker::before{content:'';width:22px;height:1px;background:var(--red);flex:none;
+  transform:translateY(-4px)}
+.sec-kicker b{color:var(--red-soft);font-weight:500}
+h2{font-size:clamp(1.85rem,3.6vw,2.7rem);letter-spacing:-.024em;line-height:1.12}
+.sec-head p{margin:0;color:var(--paper-dim);font-size:1.02rem}
+
+/* ─── install routes ─────────────────────────────────────────────────────────── */
+.routes{display:grid;grid-template-columns:repeat(auto-fit,minmax(288px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule)}
+.route{background:var(--ink);padding:26px 24px 24px;position:relative;display:flex;
+  flex-direction:column;transition:background .2s ease}
+.route:hover{background:var(--ink-2)}
+.route-n{font-family:var(--mono);font-size:11.5px;color:var(--red-soft);margin-bottom:14px}
+.route h3{font-size:1.16rem;font-weight:600;margin-bottom:8px;letter-spacing:-.01em}
+.route p{font-size:.93rem;color:var(--paper-mute);margin-bottom:18px;min-height:3.9em;line-height:1.55}
+.cmd{display:flex;align-items:flex-start;gap:10px;background:var(--ink-2);
+  margin-top:auto;border:1px solid var(--rule);border-radius:3px;padding:12px;font-family:var(--mono);
+  font-size:11.5px;line-height:1.55}
+.cmd code{flex:1;color:var(--paper-dim)}
+.cmd .pfx{color:var(--red);flex:none;user-select:none}
+.cmd button{flex:none;background:none;border:0;color:var(--paper-mute);cursor:pointer;
+  padding:2px 4px;font-family:var(--mono);font-size:11px;transition:color .15s}
+.cmd button:hover{color:var(--paper)}
+.cmd button.done{color:var(--ok)}
+
+/* ─── how the page was made ──────────────────────────────────────────────────── */
+.pipeline{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.step{background:var(--ink);padding:18px 20px;display:grid;
+  grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:6px 28px;align-items:baseline;
+  transition:background .18s ease}
+.step:hover{background:var(--ink-2)}
+.step code{font-family:var(--mono);font-size:12.5px;color:var(--red-soft);word-break:break-all}
+.step span{font-size:.93rem;color:var(--paper-mute);line-height:1.55}
+@media(max-width:760px){.step{grid-template-columns:minmax(0,1fr)}}
+
+/* ─── tables ─────────────────────────────────────────────────────────────────── */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--rule);background:var(--ink-2)}
+table{width:100%;border-collapse:collapse;font-size:.94rem;min-width:660px}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--paper-mute);font-weight:400;text-align:left;padding:15px 18px;
+  border-bottom:1px solid var(--rule);background:var(--ink-3);white-space:nowrap}
+tbody td{padding:15px 18px;border-bottom:1px solid var(--rule);color:var(--paper-dim);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .16s ease}
+tbody tr:hover{background:rgba(242,240,235,.022)}
+tbody td:first-child{color:var(--paper);font-weight:500}
+td.n,th.n{text-align:right;font-family:var(--mono);font-size:.86rem;letter-spacing:-.01em;white-space:nowrap}
+td .slot{font-family:var(--mono);font-size:.86rem;color:var(--paper)}
+
+/* ─── figures as printed plates ──────────────────────────────────────────────── */
+/* The SVGs are built for paper: white ground, dark ink. Framing them as printouts
+   pinned to the dark sheet is honest — they *are* printouts from the run. Each plate
+   is the same height and the drawing is fitted inside it, so a grid of eight reads as
+   a contact sheet rather than eight different aspect ratios pulling the captions
+   out of line. */
+.figs{display:grid;gap:clamp(30px,3.6vw,48px)}
+/* every plate is the same 976×320 canvas, so the grid row is a fixed ratio and the
+   type inside each drawing is the same size in all of them */
+.fig{margin:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,272px);
+  column-gap:clamp(20px,2.6vw,36px);row-gap:16px;align-items:start}
+.figscroll{background:#fff;border-radius:3px;overflow:hidden;
+  aspect-ratio:976/320;
+  box-shadow:0 20px 44px -26px rgba(0,0,0,.9),0 0 0 1px rgba(242,240,235,.07);
+  transition:transform .34s cubic-bezier(.2,.8,.3,1),box-shadow .34s}
+.fig:hover .figscroll{transform:translateY(-3px);
+  box-shadow:0 30px 60px -26px rgba(0,0,0,.95),0 0 0 1px rgba(201,58,58,.35)}
+.figscroll svg{display:block;width:100%;height:100%}
+.cap{font-size:.98rem;color:var(--paper-dim);line-height:1.6;margin:0;padding-left:16px;
+  border-left:2px solid var(--rule-2)}
+.stamp{font-family:var(--mono);font-size:10.5px;line-height:1.65;color:var(--paper-mute);
+  margin:0;padding-left:16px;border-left:2px solid var(--rule-2)}
+.stamp b{color:var(--paper-dim);font-weight:500;word-break:break-word}
+.stamp b:first-child{color:var(--red-soft)}
+@media(max-width:820px){
+  .fig{grid-template-columns:minmax(0,1fr)}
+  .figscroll{aspect-ratio:auto;overflow-x:auto}
+  .figscroll svg{width:760px;height:auto}
+  .figscroll::-webkit-scrollbar{height:6px}
+  .figscroll::-webkit-scrollbar-thumb{background:#C4C0B7;border-radius:3px}
+}
+
+/* the one figure worth a full plate: the payback, with its prose beside it */
+.cost-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:clamp(24px,3vw,40px)}
+
+/* ─── prose block ────────────────────────────────────────────────────────────── */
+.prose{max-width:64ch;font-size:1.04rem;line-height:1.75;color:var(--paper-dim)}
+.prose b{color:var(--paper);font-weight:600}
+/* under a full-width plate the same prose reads as a stranded column, so it takes
+   the measure in two */
+.prose-full{max-width:none;column-count:2;column-gap:clamp(28px,4vw,64px)}
+@media(max-width:860px){.prose-full{column-count:1}}
+
+/* ─── overflow affordance ────────────────────────────────────────────────────── */
+/* A frame that overflows has to say so: the numbers are the point of these tables,
+   and on a phone they start off-screen. The chip exists only while there is something
+   left to slide to. */
+.scroller{position:relative}
+.scroller::before{display:none}
+@media(max-width:900px){
+  .scroller::before{content:'slide sideways to read the rest \2192';display:block;
+    position:sticky;top:0;left:0;font-family:var(--mono);font-size:10px;line-height:1;
+    color:var(--paper-mute);padding:9px 0 10px;opacity:0;transition:opacity .22s}
+  .scroller[data-more]::before{opacity:1}
+}
+
+/* ─── the honesty table ──────────────────────────────────────────────────────── */
+.refusals{border-top:1px solid var(--rule)}
+.refusals tbody tr:hover{background:var(--red-wash)}
+.refusals tbody td:first-child{width:38%;color:var(--paper)}
+.refusals td{font-size:.93rem;line-height:1.6}
+.refusals tbody td:first-child::before{content:'not claimed';font-family:var(--mono);
+  font-size:10px;color:var(--red);display:block;margin-bottom:6px}
+
+/* ─── footer ─────────────────────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;position:relative}
+.foot{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;justify-content:space-between}
+.foot-meta{font-family:var(--mono);font-size:11.5px;color:var(--paper-mute);
+  display:flex;flex-wrap:wrap;gap:6px 26px;margin:0}
+.foot-meta b{color:var(--paper-dim);font-weight:500}
+.foot-links{display:flex;flex-wrap:wrap;gap:22px;font-family:var(--mono);font-size:12px}
+.foot-links a{color:var(--paper-mute);transition:color .16s}
+.foot-links a:hover{color:var(--paper)}
+.foot-brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:17px}
+.foot-brand svg{width:22px;height:22px}
+
+/* ─── scroll motion ──────────────────────────────────────────────────────────── */
+/* Deliberately nothing here sets opacity on content. A reveal that hides a section
+   until an observer fires is a section that can stay hidden — with scripting off,
+   on a deep link, or in a full-page capture. Motion lives in the hero's one load
+   sequence, the hairlines below, and everything that answers a click. */
+.sec::before{content:'';position:absolute;top:-1px;height:1px;width:0;background:var(--red);
+  left:max(var(--gut), calc(50% - var(--max)/2 + var(--gut)));
+  animation:rule 900ms cubic-bezier(.2,.8,.3,1) both}
+@keyframes rule{from{width:0}to{width:min(120px,18%)}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-delay:0ms!important;
+    transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Limen, home">
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <rect x="2" y="11" width="24" height="5" rx="1" fill="#F2F0EB" opacity=".26"/>
+        <rect x="2" y="11" width="11" height="5" rx="1" fill="#F2F0EB"/>
+        <rect x="14.6" y="3.5" width="2.2" height="20" fill="#C93A3A"/>
+      </svg>
+      Limen
+    </a>
+    <div class="nav-links">
+      <a href="#install">install</a>
+      <a href="#numbers">the numbers</a>
+      <a href="#figures">what it shows</a>
+      <a href="#cost">what it costs</a>
+      <a href="#unmeasured">not measured</a>
+    </div>
+    <a class="nav-cta" href="https://github.com/aashish254/limen">GitHub</a>
+  </div>
+  <div class="progress" id="progress"></div>
+</nav>
+
+<main id="top">
+
+<!-- ══════════════════════════════ HERO ══════════════════════════════ -->
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <h1>Most of your agent's bill is <span class="cut">scaffolding</span>.<br>
+          <span class="em">It answers before the call is made.</span></h1>
+      <div class="hero-side">
+        <p class="lede">Limen sits between a terminal coding agent and its model API and
+          decides, <b>before the request leaves the machine</b>, which tool schemas and
+          which stale turns the call does not need. <b>{{HEAD_PCT}}% fewer input tokens</b>
+          on measured traffic, task pass-rate held, running locally at <b>$0</b>.</p>
+        <div class="acts">
+          <a class="btn btn-red" href="#install">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Install it
+          </a>
+          <a class="btn btn-ghost" href="#numbers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Read the measurement
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="threshold" aria-label="the same request, before and after the layer">
+      <div class="th-row">
+        <span class="th-label">what the client sent</span>
+        <span class="th-track"><span class="th-fill off" style="--w:100%"></span></span>
+        <span class="th-val">{{TH_OFF}} tok</span>
+      </div>
+      <div class="th-row">
+        <span class="th-label">what Limen let through</span>
+        <span class="th-track"><span class="th-fill on" style="--w:{{TH_W}}%"></span>
+          <span class="th-line" style="--x:{{TH_W}}%"></span></span>
+        <span class="th-val">{{TH_ON}} tok</span>
+      </div>
+      <p class="th-note">Request {{TH_REQ}} from the demo corpus, replayed twice — the same
+        pair the printout below carries.
+        <b>−{{TH_PCT}}% of the prompt</b>, and the request still passed.
+        The line is the threshold; everything right of it never reaches the model.</p>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat"><div class="stat-n">−<span data-count="{{HEAD_PCT}}">{{HEAD_PCT}}</span><span class="u">%</span></div>
+        <div class="stat-l">input tokens per task<br>measured on the mock</div></div>
+      <div class="stat"><div class="stat-n"><span data-count="100">100</span><span class="u">%</span></div>
+        <div class="stat-l">task pass-rate held<br>off versus on, by family</div></div>
+      <div class="stat"><div class="stat-n"><span data-count="0">0</span></div>
+        <div class="stat-l">runtime dependencies<br>stdlib only, Python {{PYFLOOR}}+</div></div>
+      <div class="stat"><div class="stat-n">$<span data-count="0.00">0.00</span></div>
+        <div class="stat-l">API spend to run this<br>mock upstream, no key</div></div>
+    </div>
+
+    <div class="term" aria-label="real terminal output from subproto show">
+      <div class="term-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="term-title">subproto show {{TH_REQ}} — captured from this build</span>
+        <button class="term-copy" data-copy="cmd-hero">copy command</button>
+      </div>
+      <div class="term-body">{{HERO}}</div>
+      <div class="term-foot"><code id="cmd-hero">{{CMD_HERO}}</code><span class="caret" aria-hidden="true"></span></div>
+    </div>
+    <p class="term-hint">The printout is a hundred columns wide — slide it sideways to read
+      the cut.</p>
+  </div>
+</header>
+
+<!-- ══════════════════════════════ INSTALL ══════════════════════════════ -->
+<section class="sec" id="install">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">python {{PYFLOOR}}+, zero dependencies</div>
+        <h2>Three routes. All of them run offline.</h2>
+      </div>
+      <p>No key, no account, no GPU. The proxy answers from a heuristic the first second
+        you start it; the local checkpoint is an upgrade you opt into later.</p>
+    </div>
+
+    <div class="routes">
+      <div class="route">
+        <div class="route-n">install.sh</div>
+        <h3>From source</h3>
+        <p>The route the README's first code block uses. Builds a wheel and installs it into the active interpreter.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-git">git clone https://github.com/aashish254/limen &amp;&amp; cd limen &amp;&amp; ./install.sh</code><button data-copy="cmd-git">copy</button></div>
+      </div>
+      <div class="route">
+        <div class="route-n">pip install .</div>
+        <h3>Into a clean venv</h3>
+        <p>What CI does. Nothing on the machine is touched, which is the only honest way to try a tool.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-venv">python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install .</code><button data-copy="cmd-venv">copy</button></div>
+      </div>
+      <div class="route">
+        <div class="route-n">subproto demo</div>
+        <h3>See it decide</h3>
+        <p>Seventeen synthetic agent requests through the proxy, no upstream, no spend. Start here.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-demo">subproto demo --slots &amp;&amp; subproto report</code><button data-copy="cmd-demo">copy</button></div>
+      </div>
+    </div>
+
+    <p class="th-note" style="margin-top:22px">Then <b>subproto doctor</b> — it reads this
+      machine and tells you what is present, what is optional, and what to install. It names key
+      <i>variables</i> and never a key. Gated on <b>{{PYVERSIONS}}</b>; this run was
+      <b>{{PYTHON}}</b> on a {{HOST}} at load {{LOAD}}.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ NUMBERS ══════════════════════════════ -->
+<section class="sec" id="numbers">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">bench/launch_stats.py</div>
+        <h2>The arms, side by side.</h2>
+      </div>
+      <p>{{NTASKS}} tasks × {{ITERS}} repeats against a seeded mock upstream, run on
+        {{HOST}}. Every row is a number the bench printed, not one this page typed.</p>
+    </div>
+
+    <div class="tbl-wrap scroller">
+      <table>
+        <thead><tr>
+          <th>metric</th><th class="n">slots observing</th><th class="n">per-slot budgets</th>
+          <th class="n">one compiled budget</th><th class="n">change</th>
+        </tr></thead>
+        <tbody>{{POOL_TABLE}}</tbody>
+      </table>
+    </div>
+
+    <div class="sec-head" style="margin-top:clamp(56px,8vw,96px);margin-bottom:32px">
+      <div>
+        <div class="sec-kicker">subproto/config.py</div>
+        <h2>What each slot answers, and what it would save.</h2>
+      </div>
+      <p>None of them is on until you name it in <span class="mono">SUBPROTO_APPLY</span>, and
+        each is reversible on its own. The token column is the offline projection.</p>
+    </div>
+
+    <div class="tbl-wrap scroller">
+      <table>
+        <thead><tr><th>slot</th><th>what it decides</th><th class="n">tokens it would cut</th><th class="n">% of input</th></tr></thead>
+        <tbody>{{SLOT_TABLE}}</tbody>
+      </table>
+    </div>
+    <p class="th-note" style="margin-top:18px">A projection from measured prompt shapes —
+      tokens that <i>would not be sent</i>, priced by the estimator the proxy itself uses. It is
+      not a provider invoice, and the page does not present it as one.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ FIGURES ══════════════════════════════ -->
+<section class="sec" id="figures">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">docs/assets/figures/</div>
+        <h2>Eight plates from the run.</h2>
+      </div>
+      <p>Each figure carries the command that produced it, the host it ran on and the commit
+        it came out of. Order is the argument: what a request carries, what comes off, whether
+        the task still passes, and where the naive version breaks.</p>
+    </div>
+    <div class="figs">{{FIGURES}}</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ COST ══════════════════════════════ -->
+<section class="sec" id="cost">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">regret_leg() in bench/launch_stats.py</div>
+        <h2>Enforcing a wrong call bills the token back.</h2>
+      </div>
+      <p>The saving has a price and it sits on this page beside it. A cut that drops a file the
+        agent then reads again costs more than it saved.</p>
+    </div>
+    <div class="cost-grid">
+      <div class="figs">{{FIG_REGRET}}</div>
+      <p class="prose prose-full">{{COST_PROSE}}</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ UNMEASURED ══════════════════════════════ -->
+<section class="sec" id="unmeasured">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">TODO.md, six open items</div>
+        <h2>What this page refuses to claim.</h2>
+      </div>
+      <p>Six claims a proxy like this is expected to make. Limen does not make them, because
+        nothing in the repo has earned them yet. Each row is an open item in
+        <span class="mono">TODO.md</span>; if one gets closed, the build fails until this
+        table is edited on purpose.</p>
+    </div>
+    <div class="tbl-wrap refusals scroller">
+      <table>
+        <thead><tr><th>the claim</th><th>what it would take</th></tr></thead>
+        <tbody>{{GATE_TABLE}}</tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ SOURCE ══════════════════════════════ -->
+<section class="sec" id="source">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">tools/make_site.py</div>
+        <h2>{{CMDS}} subcommands. Every number re-derived.</h2>
+      </div>
+      <p>Nothing on this page was typed by hand. The build replays the demo, reads the bench
+        output, counts the tests and the mutants out of the source, and stops rather than
+        print a figure it cannot find in the run.</p>
+    </div>
+    <div class="pipeline">
+      <div class="step"><code>python3 bench/launch_stats.py --iters {{ITERS}}</code>
+        <span>runs both arms, the regret harvest and the checkpoint curve, then writes the
+        JSON and the eight plates beside it.</span></div>
+      <div class="step"><code>python3 tools/make_site.py</code>
+        <span>replays the demo twice, renders this file, and fails on any token it has no
+        value for.</span></div>
+      <div class="step"><code>bash run_tests.sh</code>
+        <span>{{TESTS}} tests and {{MUTANTS}} mutants on {{PYVERSIONS}} before any of it is
+        committed.</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <div class="foot-brand">
+        <svg viewBox="0 0 28 28" aria-hidden="true">
+          <rect x="2" y="11" width="24" height="5" rx="1" fill="#F2F0EB" opacity=".26"/>
+          <rect x="2" y="11" width="11" height="5" rx="1" fill="#F2F0EB"/>
+          <rect x="14.6" y="3.5" width="2.2" height="20" fill="#C93A3A"/>
+        </svg>
+        Limen
+      </div>
+      <p class="foot-meta" style="margin-top:16px">
+        <span><b>{{TESTS}}</b> tests</span><span><b>{{MUTANTS}}</b> mutants killed</span>
+        <span><b>{{CMDS}}</b> subcommands</span><span>commit <b>{{SHA}}</b></span>
+        <span>Apache-2.0</span><span>Python <b>{{PYFLOOR}}</b>+</span>
+      </p>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/aashish254/limen">repository</a>
+      <a href="https://github.com/aashish254/limen/blob/main/docs/commands.md">every command</a>
+      <a href="https://github.com/aashish254/limen/blob/main/docs/configuration.md">every variable</a>
+      <a href="https://github.com/aashish254/limen/blob/main/CHANGELOG.md">changelog</a>
+      <a href="https://github.com/aashish254/limen/blob/main/SPEC.md">specification</a>
+    </div>
+  </div>
+</footer>
+
+</main>
+
+<script>
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* count-up on the stat strip. The finished number is already in the markup, so this
+     only ever adds motion — a page that never runs it still reads correctly. */
+  function countUp(el){
+    var raw = el.getAttribute('data-count');
+    var target = parseFloat(raw);
+    var dec = (raw.split('.')[1]||'').length;
+    if (reduce || !isFinite(target)) { el.textContent = raw; return; }
+    var t0 = null, dur = 1100;
+    function step(ts){
+      if(!t0) t0 = ts;
+      var p = Math.min((ts-t0)/dur,1);
+      var eased = 1 - Math.pow(1-p,3);
+      el.textContent = (target*eased).toFixed(dec);
+      if(p<1) requestAnimationFrame(step);
+      else el.textContent = raw;
+    }
+    requestAnimationFrame(step);
+  }
+  var nums = document.querySelectorAll('[data-count]');
+  if (!('IntersectionObserver' in window)) {
+    for (var k=0;k<nums.length;k++) countUp(nums[k]);
+  } else {
+    var io2 = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ countUp(e.target); io2.unobserve(e.target);} });
+    },{threshold:.5});
+    for (var m=0;m<nums.length;m++) io2.observe(nums[m]);
+  }
+
+  /* scroll progress */
+  var bar = document.getElementById('progress');
+  function tick(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max>0 ? Math.min(h.scrollTop/max*100,100) : 0) + '%';
+  }
+  document.addEventListener('scroll', tick, {passive:true}); tick();
+
+  /* copy buttons — one handler, reads the element it is told to read */
+  function flash(btn, text){
+    var old = btn.textContent;
+    btn.textContent = text; btn.classList.add('done');
+    setTimeout(function(){ btn.textContent = old; btn.classList.remove('done'); }, 1600);
+  }
+  /* mark any frame that still has content off its right edge */
+  var scrollers = document.querySelectorAll('.scroller');
+  function markScrollers(){
+    for (var q=0;q<scrollers.length;q++){
+      var el = scrollers[q];
+      if (el.scrollWidth - el.scrollLeft - el.clientWidth > 2) el.setAttribute('data-more','1');
+      else el.removeAttribute('data-more');
+    }
+  }
+  for (var r=0;r<scrollers.length;r++) scrollers[r].addEventListener('scroll', markScrollers, {passive:true});
+  window.addEventListener('resize', markScrollers);
+  markScrollers();
+
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
+    if (!btn) return;
+    var src = document.getElementById(btn.getAttribute('data-copy'));
+    var text = src ? src.textContent.trim() : '';
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){ flash(btn,'copied'); },
+        function(){ flash(btn,'select it'); });
+    } else { flash(btn,'select it'); }
+  });
+})();
+</script>
+</body>
+</html>
