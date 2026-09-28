@@ -291,11 +291,30 @@ change what a page does when the reader's input is not what it expected.
   caption, and `docs/assets/first-30-seconds.gif` was re-recorded against the same wheel so
   the hero shows the pages as they now read.
 
+### 0.1.0 is on the index
+
+- `subproto 0.1.0` is published at `pypi.org/project/subproto`, and `v0.1.0` is tagged, so
+  README's first install line is `pip install subproto`. Verified the way a stranger
+  verifies it: a fresh Python 3.11 venv, install from the index alone, then `--version`,
+  `doctor --port 0` and `demo --slots --audit --home /tmp/subproto-try` from a directory
+  that is not the clone. The wheel and sdist the index serves hash-match the files built
+  here (`e07c4a42255d…`, `7e33a22d4251…`).
+- **The first rejection was metadata, not the credential.** `pyproject.toml` declared
+  `Topic :: Software Development :: Debug Tools`, which has never been on
+  <https://pypi.org/classifiers/>; the index 400s the entire upload for one invented trove,
+  after both files have already transferred. Replaced with `Topic :: Internet :: Proxy
+  Servers` and `Topic :: Software Development :: Quality Assurance` — the valid troves for
+  what this is — and the classifier list is now checked against PyPI's own page before a
+  release builds.
+- `.github/workflows/publish.yml` is the release path from here: build from the tag, prove
+  the artifact carries the version the tag was cut from, install the wheel offline and run
+  it outside the clone, then upload by OIDC. No token is stored on a laptop or in this repo.
+
 ### Still gated — not in this tree
 
-- **Version tag and PyPI.** `pyproject.toml` is at `0.1.0` and the entry point is wired,
-  but no release tag or upload has been performed. `README.md` says so and points
-  installers at the source path.
+- **The launch post, and a `1.0`.** The tag and the index are done at `0.1.0` (above). The
+  rest is human, not installable: the HN/Product-Hunt post, and any version number that
+  claims more than an alpha proxy — which is gated on V2-A labels and a billed V2-B run.
 - **The compiler cost gate.** The v5 S32 gate is `compiled decision cost <= per-slot`. It
   is **NOT MET**; the residual row stays in `bench/s32_probe.py`, and a retrain that does
   not clear it must keep printing `not ready`.

@@ -477,8 +477,9 @@ GATES = [
      "7 of its 10 cases have gold sets equal to the heuristic's own answer."),
     ("V2-D", "a shipped routing model", "the same labels, plus a training run and a "
      "weights release."),
-    ("V2-E", "version 1.0", "a tag, a PyPI upload, and the launch post. The install "
-     "routes above are git and pip-from-source until then."),
+    ("V2-E", "version 1.0", "the launch post, and the traffic that would earn the number. "
+     "`0.1.0` is tagged and on PyPI, so `pip install subproto` is a route today; 1.0 is a "
+     "claim about real sessions, not about a version string."),
     ("WIN", "that it works on Windows", "`os.getloadavg` is POSIX and ANSI handling "
      "differs, so CI runs Windows and reports it without gating on it."),
 ]

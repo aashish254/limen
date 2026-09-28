@@ -6,6 +6,7 @@
 agent makes before it spends anything
 
 [![CI](https://github.com/aashish254/limen/actions/workflows/ci.yml/badge.svg)](https://github.com/aashish254/limen/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/subproto)](https://pypi.org/project/subproto/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-informational)](pyproject.toml)
 [![Runtime dependencies: 0](https://img.shields.io/badge/dependencies-none-informational)](pyproject.toml)
@@ -135,10 +136,12 @@ beyond the provider you point it at. Verified on macOS and Linux; Windows runs b
 explicit "not tested by us" (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 ```bash
+pip install subproto                 # or: pipx install subproto
+# or from the clone:
 git clone https://github.com/aashish254/limen && cd limen
 ./install.sh                 # puts a `subproto` shim on your PATH ($HOME/.local/bin)
 # or, without installing anything:  python3 -m subproto …
-# or, as a package:                 pip install .        (pipx-ready: it declares one console script)
+# or, from the clone as a package:  pip install .   (pipx-ready: it declares one console script)
 ```
 
 Then ask it what it can see:
@@ -147,17 +150,11 @@ Then ask it what it can see:
 subproto doctor              # python, data dir, a free port, which backends answer
 ```
 
-There is no release tag and no PyPI upload yet — the name is still free (`pypi.org/pypi/subproto`
-→ 404, checked 2026-09-27) — so `bash run_tests.sh` from the clone is the verification path that
-works today. It takes about an hour, needs no key, and spends nothing.
-
-<details>
-<summary>Once the first tag is pushed</summary>
-
-```bash
-pipx install subproto        # or: pip install subproto
-```
-</details>
+**`subproto 0.1.0` is on PyPI** (`pypi.org/project/subproto`), so `pip install subproto`
+and `pipx install subproto` are the shortest route — same zero runtime dependencies, same
+one console script. `bash run_tests.sh` from the clone is the verification path for the
+source you are reading; it needs no key, spends nothing, and takes about two hours on a
+32 GB laptop because the mutation gate alone runs 157 mutants once per interpreter present.
 
 ## Quick start
 
@@ -655,9 +652,11 @@ integrations compound into an ~8-month lead — is its own spec:
       encoder). Needs labels — roadmap V2-A then V2-D
 - [ ] Hero metric on a real SWE-bench-style suite + billed provider savings
       (needs non-zero API spend — external; mock-measured number ships meanwhile)
-- [ ] Tagged PyPI release + HN/PH launch post (external: human actions). The demo GIF
-      is done — the one at the top of this page was recorded from the installed wheel,
-      and [`docs/assets/first-30-seconds.sh`](docs/assets/first-30-seconds.sh) re-makes it
+- [ ] Tagged PyPI release + HN/PH launch post (external: human actions). Two of its three
+      halves are done: `v0.1.0` is tagged and `subproto 0.1.0` is on PyPI, and the demo GIF
+      at the top of this page was recorded from the installed wheel
+      ([`docs/assets/first-30-seconds.sh`](docs/assets/first-30-seconds.sh) re-makes it).
+      What is left is the launch post, which is a human action rather than a command
 
 ## If it does not work
 

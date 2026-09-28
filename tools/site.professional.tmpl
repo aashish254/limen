@@ -481,22 +481,22 @@ footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;positio
 
     <div class="routes">
       <div class="route">
-        <div class="route-n">install.sh</div>
-        <h3>From source</h3>
-        <p>The route the README's first code block uses. Builds a wheel and installs it into the active interpreter.</p>
-        <div class="cmd"><span class="pfx">$</span><code id="cmd-git">git clone https://github.com/aashish254/limen &amp;&amp; cd limen &amp;&amp; ./install.sh</code><button data-copy="cmd-git">copy</button></div>
+        <div class="route-n">pip install subproto</div>
+        <h3>From the index</h3>
+        <p>The route the README's first code block uses. <b>0.1.0</b> is published: one console script, zero runtime dependencies, Python ≥ 3.9.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-pypi">pip install subproto</code><button data-copy="cmd-pypi">copy</button></div>
       </div>
       <div class="route">
-        <div class="route-n">pip install .</div>
-        <h3>Into a clean venv</h3>
-        <p>What CI does. Nothing on the machine is touched, which is the only honest way to try a tool.</p>
-        <div class="cmd"><span class="pfx">$</span><code id="cmd-venv">python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install .</code><button data-copy="cmd-venv">copy</button></div>
+        <div class="route-n">install.sh</div>
+        <h3>From source</h3>
+        <p>Builds a wheel from the clone and puts a <code>subproto</code> shim on your PATH. This is what you want if you mean to read the tests.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-git">git clone https://github.com/aashish254/limen &amp;&amp; cd limen &amp;&amp; ./install.sh</code><button data-copy="cmd-git">copy</button></div>
       </div>
       <div class="route">
         <div class="route-n">subproto demo</div>
         <h3>See it decide</h3>
-        <p>Seventeen synthetic agent requests through the proxy, no upstream, no spend. Start here.</p>
-        <div class="cmd"><span class="pfx">$</span><code id="cmd-demo">subproto demo --slots &amp;&amp; subproto report</code><button data-copy="cmd-demo">copy</button></div>
+        <p>Seventeen synthetic agent requests through the proxy, no upstream, no spend. Start here. <b>--home on both lines</b>, or the report reads a different directory than the one the demo wrote.</p>
+        <div class="cmd"><span class="pfx">$</span><code id="cmd-demo">subproto demo --slots --home /tmp/subproto-try &amp;&amp; subproto report --home /tmp/subproto-try</code><button data-copy="cmd-demo">copy</button></div>
       </div>
     </div>
 

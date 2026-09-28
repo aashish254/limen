@@ -429,10 +429,9 @@ def test_today_on_this_machine_the_trainer_cannot_finish(tmp_path):
                                         "epochs": 1, "rank": 4})()) in (3, 4)
 
 
-def test_a_split_rebuilt_from_no_traffic_is_empty_and_says_why(tmp_path, monkeypatch):
+def test_a_split_rebuilt_from_no_traffic_is_empty_and_says_why(tmp_path):
     """End-to-end through `dataset`: an empty data dir yields zero rows, and the
     refusal names the missing step instead of reporting a 0-example split as ready."""
-    monkeypatch.setenv("SUBPROTO_NO_VERBOSE_LOG", "1")
     cfg = _cfg(tmp_path)
     train, val, trainer, path = retrain.split_rows(cfg)
     assert (train, val) == ([], [])

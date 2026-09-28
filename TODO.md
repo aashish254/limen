@@ -52,7 +52,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` blocked-external
 
 - [x] **T17** `subproto/live.py`: ANSI terminal savings meter (pure `render(snapshot) -> str`) + `subproto live` command tailing telemetry; `--once` snapshot mode for CI/screenshots.
 - [x] **T18** test: `live.render()` produces the "saved X% / N tok · $A → $B" line from a telemetry snapshot; `subproto live --once` exits 0 and prints the meter.
-- [~] **T19** Tagged PyPI release + Product-Hunt/HN launch post + recorded demo GIF — BLOCKED(external): human actions + real API spend for the on-screen bill.
+- [~] **T19** Tagged PyPI release + Product-Hunt/HN launch post + recorded demo GIF — the tag (`v0.1.0`), the upload (`subproto 0.1.0` on PyPI, 2026-09-28) and the GIF (2026-09-27) are done. BLOCKED(external): the post is a human action, and a billed on-screen number needs real API spend.
 
 ## FR-5 / M4 — dataset moat (pipeline testable; actual training = external)
 
@@ -486,4 +486,4 @@ subproto retrain  ·  cadence policy  ·  2026-09-26
   evidenced, not an implementation to be written; the wiring for both rules already
   exists (`bench/ablation.py` scores each, `adapter_keeps(..., rule=)` takes either).
 - [~] **V2-D** LoRA fine-tune on the split + ship v0 routing model + publish a dataset slice — gate: V2-A labels + a training run.
-- [~] **V2-E** Tagged PyPI release + HN/PH launch post positioned per SPEC §1.3 — gate: human launch actions. (Closes **T19**.) The demo GIF half is **done 2026-09-27**: `docs/assets/first-30-seconds.gif`, recorded from the *installed wheel* (not the checkout) with the capture recipe and the `.cast` beside it, and embedded in README's header. What is left here is the tag, the upload, and the post.
+- [~] **V2-E** Tagged PyPI release + HN/PH launch post positioned per SPEC §1.3 — gate: human launch actions. (Closes **T19**.) The demo GIF half is **done 2026-09-27**: `docs/assets/first-30-seconds.gif`, recorded from the *installed wheel* (not the checkout) with the capture recipe and the `.cast` beside it, and embedded in README's header. The tag and the upload are **done 2026-09-28**: `v0.1.0`, and `subproto 0.1.0` on PyPI, installed from the index into a clean venv and run from outside the clone. What is left here is the launch post.
