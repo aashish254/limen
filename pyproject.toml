@@ -28,7 +28,11 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.9",
     # Add further `:: 3.x` troves here as CI runs them green.
-    "Topic :: Software Development :: Debug Tools",
+    # Every trove below must exist on https://pypi.org/classifiers/ — PyPI rejects the
+    # whole upload for one invented string (a 400 that names it). This used to carry an
+    # invented `:: Debug Tools`; `Proxy Servers` is the valid trove for what this is.
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Software Development :: Quality Assurance",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Utilities",
 ]
