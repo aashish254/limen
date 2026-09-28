@@ -24,7 +24,10 @@ from subproto.systemone.base import timeout_for
 
 BOX = re.compile(u"[┌┐└┘├┤┬┴┼─│═║╔╗╚╝]")
 RULE = re.compile(r"^\s*[+\-=_|]{4,}\s*$")
-COPYABLE = re.compile(r"\S/|\.json|python|^.*--\w")
+# The one exemption to the measure is a line the reader copies, and a copyable line is
+# a *path* as much as a flag — so the path arm reads both separators. `C:\Users\…` is a
+# path; on the Windows leg it was the whole of the `data dir` row's overage.
+COPYABLE = re.compile(r"\S[/\\]|\.json|python|^.*--\w")
 MAX_W = 100
 HUES = ("31", "32", "33")
 ESCAPES = re.compile(r"\033\[([0-9;]*)m([^\033]*)")

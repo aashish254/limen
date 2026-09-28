@@ -42,8 +42,9 @@ from test_learn import _re_read_home
 # a row of four or more rule characters is.
 BOX = re.compile(u"[┌┐└┘├┤┬┴┼─│═║╔╗╚╝]")
 RULE = re.compile(r"^\s*[+\-=_|]{4,}\s*$")
-# The two shapes a reader copies, and so the two allowed to run past the margin.
-COPYABLE = re.compile(r"\S/|\.json|python|^.*--\w")
+# The shapes a reader copies, and so the ones allowed to run past the margin. The path
+# arm carries both separators: a Windows `C:\Users\…` is as copyable as `/tmp/…`.
+COPYABLE = re.compile(r"\S[/\\]|\.json|python|^.*--\w")
 MAX_W = 100
 
 # The vocabulary, spelled out of the constants so a surface inventing a sixth word

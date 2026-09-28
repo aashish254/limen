@@ -96,21 +96,29 @@ def test_a_host_with_no_load_average_still_gets_a_curve(monkeypatch):
 def test_the_conditions_block_reads_the_host_it_ran_on():
     """A `null` load figure is only honest on a machine that has none to give.
 
-    This host has one, so the block has to carry three numbers beside the core count
-    they are read against — and a conditions block that quietly stopped reading its
-    host would still print the same confident curve.
+    The claim is the correspondence, not the value: whatever this host can answer with
+    is what the block has to carry, and a conditions block that quietly stopped reading
+    its host would still print the same confident curve. On a POSIX kernel that means
+    three numbers beside the core count; on a host with no `os.getloadavg` — every
+    Windows one — it means the absence, printed as an absence.
     """
-    assert hasattr(os, "getloadavg"), "this test is the posix half of the branch"
     cond = curve.conditions(4, "cpu")
     assert cond["device"] == "cpu" and cond["cores"] == os.cpu_count()
     assert cond["threads"] == 4
     load = cond["load_avg_start"]
-    assert len(load) == 3 and all(isinstance(x, float) for x in load), load
+    if hasattr(os, "getloadavg"):
+        assert len(load) == 3 and all(isinstance(x, float) for x in load), load
+    else:
+        assert load is None, "this host cannot answer, so the block must not invent it"
     m = _metric(133)
     m["conditions"] = dict(m["conditions"], **cond)
     text = curve.render(m)
-    assert "kept no load average" not in text, "this host answered"
-    assert "host load average at start %s" % ", ".join(str(x) for x in load) in text
+    if load is None:
+        assert "kept no load average" in text
+        assert not any("None" in l for l in text.splitlines() if "load average" in l)
+    else:
+        assert "kept no load average" not in text, "this host answered"
+        assert "host load average at start %s" % ", ".join(str(x) for x in load) in text
 
 
 def test_headings_are_separated_from_the_table_above_them():

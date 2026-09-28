@@ -165,13 +165,19 @@ def test_json_mode_carries_the_text_the_page_clips(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["drops"] == []
 
 
+def _is_body_path(line):
+    """Does this line carry the stored body's path? Spelled with this host's separator,
+    because the page prints whatever ``os.path.join`` produced."""
+    return "bodies/" in line or "bodies\\" in line
+
+
 def test_every_page_line_survives_a_paste(tmp_path, capsys):
     """No frame, no wrap. A line carrying a path may run long: the reader copies it."""
     home, rid, _sha, _db = _session(tmp_path)
     cli.main(["show", str(rid), "--home", home, "--no-color"])
     for line in capsys.readouterr().out.splitlines():
         assert "│" not in line and "───" not in line
-        if "bodies/" in line:
+        if _is_body_path(line):
             continue
         assert len(style.strip(line)) <= 100, "too wide: %r" % line
 
@@ -187,15 +193,31 @@ def test_a_body_under_the_home_prints_as_a_tilde(tmp_path, monkeypatch, capsys):
     home, rid, sha, _db = _session(tmp_path)
     monkeypatch.setattr(cli.os.path, "expanduser", lambda p: str(home))
     cli.main(["show", str(rid), "--home", home, "--no-color"])
-    line = [l for l in capsys.readouterr().out.splitlines() if "bodies/" in l][0]
-    assert "~/bodies/anthropic_%s.json.gz" % sha in line
+    line = [l for l in capsys.readouterr().out.splitlines() if _is_body_path(l)][0]
+    assert "~%sbodies%santhropic_%s.json.gz" % (os.sep, os.sep, sha) in line
     assert len(style.strip(line)) <= 100, "too wide: %r" % line
     # A store on another volume is not under the home, so nothing is elided.
-    assert cli._shown_path("/Volumes/scratch/bodies/a.json.gz",
-                           home=str(home)) == "/Volumes/scratch/bodies/a.json.gz"
+    elsewhere = os.path.join(os.path.abspath(os.sep), "scratch", "bodies", "a.json.gz")
+    assert cli._shown_path(elsewhere, home=str(home)) == elsewhere
     # And a sibling directory whose name only starts with the home is not under it either.
-    assert cli._shown_path(str(home) + "x/bodies/a.json.gz",
-                           home=str(home)).startswith(str(home))
+    sibling = os.path.join(str(home) + "x", "bodies", "a.json.gz")
+    assert cli._shown_path(sibling, home=str(home)) == sibling
+
+
+def test_a_windows_home_elides_the_same_way(tmp_path, monkeypatch):
+    """The elision is the product's answer for a long path, so it has to work with
+    backslashes — a test that only ever handed it `/` would let the Windows page print
+    the absolute path it was supposed to shorten."""
+    monkeypatch.setattr(cli.os, "sep", "\\")
+    home = "C:\\Users\\alice"
+    assert cli._shown_path(home + "\\bodies\\anthropic_a.json.gz",
+                           home=home) == "~\\bodies\\anthropic_a.json.gz"
+    # A sibling whose name only starts with the home is not under it.
+    assert cli._shown_path(home + "x\\bodies\\a.json.gz",
+                           home=home).startswith(home)
+    # And the drive root is never shortened to a bare tilde.
+    assert cli._shown_path("D:\\scratch\\bodies\\a.json.gz",
+                           home=home) == "D:\\scratch\\bodies\\a.json.gz"
 
 
 def test_show_paints_colour_only_on_state_words(tmp_path, capsys):

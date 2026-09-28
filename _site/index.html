@@ -463,7 +463,7 @@ footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;positio
 <pre class="printout"><span class="ph">subproto show</span><span class="pm"> — request 3, anthropic /v1/messages, claude-sonnet-4-5</span>
 
 <span class="k">                     client  </span> claude-code
-<span class="k">                   recorded  </span>2026-09-28 20:43:10
+<span class="k">                   recorded  </span>2026-09-28 21:57:50
 <span class="k">                     stream  </span>yes
 <span class="k">                     status  </span>         200
 <span class="k">                       ttfb  </span>        0 ms
@@ -471,10 +471,10 @@ footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;positio
 <span class="k">               billed input  </span>       6,356<span class="pm">  (2,464 cached)</span>
 <span class="k">                     output  </span>         320
 <span class="k">                      spend  </span>     $0.0246
-<span class="k">                       body  </span><span class="state-ok">present</span>  /tmp/limen-on/bodies/anthropic_aee9702d3da3.json.gz
+<span class="k">                       body  </span><span class="state-ok">present</span>  /tmp/limen-on/bodies/anthropic_bcf7f61fcfca.json.gz
 
 <span class="ph">  decisions</span><span class="pm">  3, and it could save 5,345 tok</span>
-<span class="ph">                  tool_gate  </span><span class="state-ok">delivered</span>  12 kept  12 cut  4,145 tok  1.2 ms  compiled
+<span class="ph">                  tool_gate  </span><span class="state-ok">delivered</span>  12 kept  12 cut  4,145 tok  1.4 ms  compiled
 <span class="k">    tool             </span><span class="cut">exitplanmode                 339 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
                              <span class="quote">Present the current plan for user approval. parameter 0 accepts…</span>
 <span class="k">    tool             </span><span class="cut">killshell                    334 tok</span> <span class="pm">value/token 0.000000 &lt; kept floor 0.003003</span>
@@ -743,7 +743,7 @@ footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;positio
         <span>replays the demo twice, renders this file, and fails on any token it has no
         value for.</span></div>
       <div class="step"><code>bash run_tests.sh</code>
-        <span>443 tests and 157 mutants on 3.9 and 3.11 before any of it is
+        <span>444 tests and 157 mutants on 3.9 and 3.11 before any of it is
         committed.</span></div>
     </div>
   </div>
@@ -761,8 +761,8 @@ footer{border-top:1px solid var(--rule);padding:52px 0 60px;margin-top:0;positio
         Limen
       </div>
       <p class="foot-meta" style="margin-top:16px">
-        <span><b>443</b> tests</span><span><b>157</b> mutants killed</span>
-        <span><b>17</b> subcommands</span><span>commit <b>934e8c1</b></span>
+        <span><b>444</b> tests</span><span><b>157</b> mutants killed</span>
+        <span><b>17</b> subcommands</span><span>commit <b>7968624</b></span>
         <span>Apache-2.0</span><span>Python <b>3.9</b>+</span>
       </p>
     </div>

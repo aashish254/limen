@@ -65,6 +65,40 @@ Work to make this tree something a stranger can clone, install and run. Each ite
 is in the tree and has a test behind it; the items that are *not* in the tree are in
 **Still gated**, at the end, and nothing here checks one of them off.
 
+### The Windows leg's four red rows
+
+`windows-latest` reported `4 failed, 436 passed, 3 skipped` on every run since S41. All
+four were the *tests* reading a POSIX machine that was not there, and the CI log named
+each one exactly:
+
+- `test_doctor.py` and `test_style.py` share a `COPYABLE` class — the line shapes allowed
+  past the 100-column measure, because the reader copies them. Its path arm was `\S/`, so
+  `C:\Users\…` was not a path to the gate, and the `data dir` row's 129 columns failed.
+  The arm now reads both separators. The check that this did not simply widen the
+  exemption: the same gate still refuses a 123-column *sentence*.
+- `test_show.py` searched for the stored body's line as `"bodies/"`, twice. On Windows the
+  page prints `bodies\`, so the paste test lost its one documented exemption and the
+  tilde test indexed an empty list. Both now go through a `_is_body_path` helper that
+  accepts either separator, and the elision assertion builds its expected path from
+  `os.sep` rather than a literal `/`.
+- `test_laya_latency.py` opened with `assert hasattr(os, "getloadavg")` — a premise about
+  the host, stated as a test. It now asserts the *correspondence*: three floats where the
+  kernel answers, `None` where it does not, and the rendered conditions block saying the
+  same either way. The product needed no change; `bench/laya_latency.py:_load_avg` has
+  caught `AttributeError` since S40.
+- Added `test_a_windows_home_elides_the_same_way`, which drives `cli._shown_path` with
+  `os.sep` patched to `\` and a `C:\Users\alice` home. Without it, the elision this repo
+  shipped as the fix for a page that broke mid-token was only ever exercised with slashes.
+
+Witnessed locally by replaying the two over-wide lines from job `108951146157`'s log
+against the fixed gates (both now pass, at 129 and 164 columns), and by the full suite on
+both release interpreters: **444 collected, 442 passed, 2 skipped on 3.11 and on 3.9** —
+the two skips are the laya-backend legs that need an interpreter that can import `laya`.
+The collected count moved 443 → 444 because of the new test, and `_site/index.html` was
+rebuilt so the page prints 444 too. **The next `windows-latest` run is the witness for the
+claim itself** — no Windows machine is in this project's loop, so `continue-on-error` stays
+on and README's "not tested by us" stays true.
+
 ### The machine gets a page of its own
 
 - Added **`subproto doctor`** (`subproto/doctor.py`): six checks, each measured rather
