@@ -482,8 +482,8 @@ GATES = [
     ("V2-D", "a shipped routing model", "the same labels, plus a training run and a "
      "weights release."),
     ("V2-E", "version 1.0", "the launch post, and the traffic that would earn the number. "
-     "`0.1.0` is tagged and on PyPI, so `pip install subproto` is a route today; 1.0 is a "
-     "claim about real sessions, not about a version string."),
+     "`0.1.1` is on PyPI and CI published it, so `pip install subproto` is a route today; "
+     "1.0 is a claim about real sessions, not about a version string."),
     ("WIN", "that it works on Windows", "`os.getloadavg` is POSIX and ANSI handling "
      "differs, so CI runs Windows and reports it without gating on it."),
 ]

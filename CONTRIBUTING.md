@@ -119,7 +119,16 @@ instead of editing its digits.
 out by hand with a short-lived token on 2026-09-28, before any publisher existed, and its tag
 points one commit before the classifier fix — so building `v0.1.0` and uploading it would be
 rejected for a bad Trove classifier. The version is consumed either way, so nothing follows
-from that; the next tag is the first one CI publishes.
+from that.
+
+`0.1.1` is the first release CI published: tag `v0.1.1` → `934e8c1`, run `36438640051`, upload
+by OIDC with no token in sight. Its *first* attempt is the cautionary one, and it is worth
+knowing before you touch the workflow: the tag was cut one commit earlier, the build and every
+pre-flight step went green, and the run still died at *Install the built wheel offline and run
+it* with exit 127 — the step `cd`s into a temp dir so nothing can reach the source tree, then
+addressed its own venv by a **relative** path. A step that leaves the clone has to name every
+path absolutely. Because the upload step never ran, the version was not consumed, so `v0.1.1`
+was re-pointed at the fixed commit rather than skipping to `0.1.2`.
 
 ## Pull requests
 

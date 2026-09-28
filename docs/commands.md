@@ -13,7 +13,7 @@ Run any of them as `subproto <cmd>` (installed entry point) or
 
 ## Conventions that apply to every command
 
-- **Version.** `subproto --version` prints one line — `subproto 0.1.0 (python 3.11.15,
+- **Version.** `subproto --version` prints one line — `subproto 0.1.1 (python 3.11.15,
   darwin arm64)` — with the build, the interpreter that ran it and the platform. It is
   the line to paste into a bug report; `doctor` is the page that diagnoses the machine.
 - **State dir.** `--home DIR` (env `SUBPROTO_HOME`, default `~/.subproto`) holds

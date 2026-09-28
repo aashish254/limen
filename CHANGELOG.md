@@ -18,6 +18,47 @@ left in place on purpose:
 
 ---
 
+## 0.1.1 — the first release published by CI
+
+`subproto 0.1.1` is on the index, and CI put it there. No credential was used by anyone.
+
+- Run `36438640051` (tag `v0.1.1` → commit `934e8c1`), 1m45s, every step green: the
+  classifier preflight against PyPI's own page, `python -m build`, the artifact-carrying-the
+  tag's-version check, the offline install-and-run smoke, then
+  `pypa/gh-action-pypi-publish@release/v1` over OIDC — `Found and verified trusted root`, and
+  two publish attestations. `pypi.org/pypi/subproto/json` now answers
+  `releases: ['0.1.0', '0.1.1']`, `latest: 0.1.1`.
+- **The first attempt did not publish, and that is why the number is reusable.** The same tag
+  name pointed at `e1717e6` an hour earlier; its run `36428218899` died at
+  *Install the built wheel offline and run it* with
+  `.smoke/bin/subproto: No such file or directory`, exit 127. The step `cd`s into a fresh
+  temp dir precisely so nothing can reach the source tree, then addressed its own venv by a
+  *relative* path — so the path resolved against the temp dir, not the clone. The upload step
+  was `skipped`, the index still served only `0.1.0`, and a red run consumes no version, so
+  `v0.1.1` was re-pointed at the fixed commit instead of skipping to `0.1.2`.
+- `subproto doctor --port 0` exits 0 from that scrubbed position (`env -i`, no provider keys,
+  no local model server, no `laya`), so the smoke leg passes on a machine that has nothing —
+  which is what a runner is.
+- Verified from the index like a stranger: fresh 3.11 venv, `pip install subproto==0.1.1` with
+  no local artifacts, `pip check` → `No broken requirements found.`, then
+  `subproto 0.1.1 (python 3.11.15, darwin arm64)` and `tools/check_install.sh` → exit 0 from a
+  directory that is not the clone. The files the index serves hash-match the ones that run
+  built: wheel `40805f2153f663ae…`, sdist `2fb9a6a41ce0c565…`.
+- The pruned tree reached the artifact, checked on the *published* sdist rather than a local
+  rebuild: 141 members, and `SPEC.md` / `TODO.md` / `ROADMAP.md` return 0 matches. `0.1.0`'s
+  sdist is immutable and still carries all three; that is history, not something a later
+  release can undo.
+- Gated on run `36429332435` (`completed success`, 1h10m11s on `934e8c1`): the four
+  pytest legs and four offline pip-install legs on macOS and Linux at 3.9 and 3.11, plus the
+  one-command leg — benches, demo, mutation gate (`bench/mutation_gate.py` carries 157
+  mutants against a 443-test suite). Windows stays non-gating and its leg failed again with
+  `4 failed, 436 passed, 3 skipped`: four posix-only assumptions in the *tests* — a `/`-only
+  copyable-path class, two `bodies/` searches, and an `os.getloadavg` premise — one of which
+  shows a Windows temp path overflowing the 100-column terminal measure. Fixing those is test
+  work, not a portability claim this release can make.
+
+---
+
 ## Unreleased — the release-readiness pass
 
 Work to make this tree something a stranger can clone, install and run. Each item below
@@ -312,7 +353,7 @@ change what a page does when the reader's input is not what it expected.
 
 ### Still gated — not in this tree
 
-- **The launch post, and a `1.0`.** The tag and the index are done at `0.1.0` (above). The
+- **The launch post, and a `1.0`.** The tag and the index are done at `0.1.1` (above). The
   rest is human, not installable: the HN/Product-Hunt post, and any version number that
   claims more than an alpha proxy — which is gated on V2-A labels and a billed V2-B run.
 - **The compiler cost gate.** The v5 S32 gate is `compiled decision cost <= per-slot`. It
