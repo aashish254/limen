@@ -136,7 +136,11 @@ jobs:
           assert path.startswith(pkg + os.sep), "%s is outside the package" % path
           data = json.load(open(path))
           assert {"heuristic", "adapters"} <= set(data), sorted(data)
-          assert "laya" in data["adapters"], sorted(data["adapters"])
+          # `adapters` is a list of records keyed by "name" — the schema load_evidence()
+          # reads. This used to test `"laya" in data["adapters"]`, a shape guess that was
+          # never true of the file and reddened all four install legs of the first public
+          # run: the suite proves this through load_evidence(), so nothing local saw it.
+          assert "laya" in [a.get("name") for a in data["adapters"]], data["adapters"]
           ev = router.load_evidence()
           assert {"heuristic", "laya"} <= set(ev), sorted(ev)
           print("installed Router ranks on %s" % os.path.relpath(path, pkg))
