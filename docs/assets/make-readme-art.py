@@ -2,9 +2,10 @@
 """Regenerate the two images the README embeds.
 
 Both are crops of the built Pages page, so neither can drift from what the site shows:
-`logo.png` is the page's own brand band set larger, and `results-grid.png` is the page's
-figures section — same eight plates, same order, same captions and same provenance
-stamps — at the width the README column actually renders at.
+`logo.png` is the page's own brand mark — the glyph alone, because the README's `# Limen`
+heading is the wordmark and a page does not need the name twice — and `results-grid.png` is
+the page's figures section, same eight plates, same order, same captions and same
+provenance stamps, at the width the README column actually renders at.
 
     python3 tools/make_site.py && python3 docs/assets/make-readme-art.py
 
@@ -36,8 +37,6 @@ body{margin:0}
 .sec{padding:44px 0 20px}
 """
 
-BRAND_SIZE = ".brand{font-size:46px;gap:24px}.brand svg{width:64px;height:64px}"
-
 
 def read_page():
     if not os.path.isfile(SITE):
@@ -53,8 +52,18 @@ def piece(html, pattern, what):
     return m.group(0)
 
 
-def shoot(tmp, name, body, width, height=100):
-    """Render `body` at `width` CSS px, scaled by SCALE, into docs/assets/<name>."""
+MARK_SIZE = 176                # CSS px of the glyph in the render; GitHub shows intrinsic px
+MARK_PAD = 34                  # ink around it, so the card is not cut to the bar itself
+MARK_SIDE = MARK_SIZE + 2 * MARK_PAD + 8      # canvas the glyph is drawn on
+
+
+def shoot(tmp, name, body, width, height=100, margin=28, crop=True, fit=None):
+    """Render `body` on a `width` x `height` CSS canvas, scaled by SCALE, to docs/assets.
+
+    `crop` measures the art off the render (whatever is not the page's own ink) so nothing
+    has to be hand-tuned; `fit` skips that and resamples to a fixed square, for the case
+    where the canvas *is* the composition.
+    """
     doc = os.path.join(tmp, name[:-4] + ".html")
     page = ("<!doctype html><html><head><meta charset='utf-8'>"
             "<style>%s</style><style>%s</style></head>"
@@ -65,26 +74,30 @@ def shoot(tmp, name, body, width, height=100):
     out = os.path.join(OUTDIR, name)
     subprocess.run(
         ["npx", "--no-install", "playwright", "screenshot", "--full-page",
-         "--viewport-size=%d,%d" % (width * SCALE, height), "file://" + doc, out],
+         "--viewport-size=%d,%d" % (width * SCALE, height * SCALE), "file://" + doc, out],
         check=True, capture_output=True)
     from PIL import Image, ImageChops
     im = Image.open(out).convert("RGB")
-    # The viewport is a guess at the canvas; the art is whatever is not the page's own
-    # ink, so the crop is measured off the render rather than off a hand-tuned width.
-    bg = Image.new("RGB", im.size, im.getpixel((2, 2)))
-    box = ImageChops.difference(im, bg).convert("L").point(lambda v: 255 if v > 8 else 0).getbbox()
-    if box:
-        m = 28 * SCALE
-        box = (max(0, box[0] - m), max(0, box[1] - m),
-               min(im.width, box[2] + m), min(im.height, box[3] + m))
-        im.crop(box).save(out)
-    w, h = Image.open(out).size
-    print("%-20s %5dx%-5d px  %s" % (name, w, h, "%d KB" % (os.path.getsize(out) // 1024)))
+    if crop:
+        # The viewport is a guess at the canvas; the art is whatever is not the page's own
+        # ink, so the crop is measured off the render rather than off a hand-tuned width.
+        bg = Image.new("RGB", im.size, im.getpixel((2, 2)))
+        box = ImageChops.difference(im, bg).convert("L").point(lambda v: 255 if v > 8 else 0).getbbox()
+        if box:
+            m = margin * SCALE
+            im = im.crop((max(0, box[0] - m), max(0, box[1] - m),
+                          min(im.width, box[2] + m), min(im.height, box[3] + m)))
+    if fit:
+        im = im.resize((fit, fit), Image.LANCZOS)
+    im.save(out)
+    print("%-20s %5dx%-5d px  %s" % (name, im.width, im.height,
+                                     "%d KB" % (os.path.getsize(out) // 1024)))
 
 
 html = read_page()
 CSS = re.search(r"<style>(.*?)</style>", html, re.S).group(1)
 brand = piece(html, r'<a class="brand".*?</a>', "the nav brand band")
+mark = piece(brand, r"<svg.*?</svg>", "the brand mark inside it")
 section = piece(html, r'<section class="sec" id="figures">.*?</section>',
                 "the figures section")
 
@@ -94,8 +107,10 @@ try:
     # the art is set in the same families rather than a fallback.
     os.symlink(os.path.join(ROOT, "_site", "assets"), os.path.join(tmp, "assets"))
     shoot(tmp, "logo.png",
-          "<style>%s</style><div class='nav-in' style='height:132px;max-width:none;"
-          "padding:0 44px;border-bottom:0'>%s</div>" % (BRAND_SIZE, brand), 420)
+          "<style>.mark svg{width:%dpx;height:%dpx;display:block}</style>"
+          "<div class='mark' style='display:flex;align-items:center;justify-content:center;"
+          "height:%dpx'>%s</div>" % (MARK_SIZE, MARK_SIZE, MARK_SIDE, mark),
+          MARK_SIDE, height=MARK_SIDE, crop=False, fit=MARK_SIDE)
     shoot(tmp, "results-grid.png", section, 1040)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
