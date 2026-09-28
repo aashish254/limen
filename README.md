@@ -152,9 +152,11 @@ Then ask it what it can see:
 subproto doctor              # python, data dir, a free port, which backends answer
 ```
 
-**`subproto 0.1.0` is on PyPI** (`pypi.org/project/subproto`), so `pip install subproto`
+**`subproto` is on PyPI** (`pypi.org/project/subproto`), so `pip install subproto`
 and `pipx install subproto` are the shortest route — same zero runtime dependencies, same
-one console script. `bash run_tests.sh` from the clone is the verification path for the
+one console script. *No version is named here on purpose: this paragraph travels inside the
+release it would date, and the badge above reads what the index actually serves.*
+`bash run_tests.sh` from the clone is the verification path for the
 source you are reading; it needs no key, spends nothing, and takes about two hours on a
 32 GB laptop because the mutation gate alone runs 157 mutants once per interpreter present.
 
@@ -670,11 +672,10 @@ integrations compound into an ~8-month lead — is its own spec:
       encoder). Needs labels — roadmap V2-A then V2-D
 - [ ] Hero metric on a real SWE-bench-style suite + billed provider savings
       (needs non-zero API spend — external; mock-measured number ships meanwhile)
-- [ ] Tagged PyPI release + HN/PH launch post (external: human actions). Two of its three
-      halves are done: `v0.1.0` is tagged and `subproto 0.1.0` is on PyPI, and the demo GIF
+- [ ] HN/PH launch post (external: a human action, not a command). The release half of this
+      line is done — the tag is cut and the index serves it, and the demo GIF
       at the top of this page was recorded from the installed wheel
-      ([`docs/assets/first-30-seconds.sh`](https://github.com/aashish254/limen/blob/main/docs/assets/first-30-seconds.sh) re-makes it).
-      What is left is the launch post, which is a human action rather than a command
+      ([`docs/assets/first-30-seconds.sh`](https://github.com/aashish254/limen/blob/main/docs/assets/first-30-seconds.sh) re-makes it)
 
 ## If it does not work
 
