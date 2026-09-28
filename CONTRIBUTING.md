@@ -92,6 +92,27 @@ you write one:
 For terminal/ANSI work, `subproto live --once` and every `report` section render
 deterministically from their input, so assert on the string, not on a screen.
 
+## Cutting a release
+
+The `__version__` in `subproto/__init__.py` *is* the release:
+`.github/workflows/publish.yml` builds the
+tag, fails if the wheel it produced does not carry the version the tag was cut from, installs
+that wheel into a fresh offline venv, runs it from a directory that is not the clone, and only
+then uploads. So the sequence is: land the change, wait for `verify` to go green on it,
+rebuild the page (`python3 tools/make_site.py`, commit `_site/`), bump the version, tag, and
+push the tag — `git tag -a v0.1.1 -m "…" && git push origin v0.1.1`.
+
+No upload credential lives in this repo or on anyone's laptop. The identity is a *trusted
+publisher* registered on pypi.org for the project: owner `aashish254`, repository `limen`,
+workflow `publish.yml`, environment `pypi`. If that registration is missing or wrong the run
+goes red and nothing is spent — a version number is only consumed when the upload succeeds.
+
+`0.1.0` is the exception, and it is worth knowing before you diff it against the rule: it went
+out by hand with a short-lived token on 2026-09-28, before any publisher existed, and its tag
+points one commit before the classifier fix — so building `v0.1.0` and uploading it would be
+rejected for a bad Trove classifier. The version is consumed either way, so nothing follows
+from that; the next tag is the first one CI publishes.
+
 ## Pull requests
 
 - One rule per PR, and its test in the same commit.

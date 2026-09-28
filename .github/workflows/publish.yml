@@ -5,6 +5,11 @@ name: publish
 # "pending publisher" on pypi.org. Nothing here recomputes a number — `verify` is the
 # gate on the code, and this job only packages the tagged tree, proves the artifact
 # installs and runs, and hands it to the index.
+#
+# Status, so the next reader does not assume more than is true: every step below except the
+# upload has been run locally against a clean clone of the tree, and the first release this
+# workflow publishes will be the one after 0.1.0 — which went out by hand with a short-lived
+# API token on 2026-09-28, before any publisher was registered.
 
 on:
   push:
