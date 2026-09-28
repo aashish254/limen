@@ -52,17 +52,17 @@ def piece(html, pattern, what):
     return m.group(0)
 
 
-MARK_SIZE = 176                # CSS px of the glyph in the render; GitHub shows intrinsic px
-MARK_PAD = 34                  # ink around it, so the card is not cut to the bar itself
-MARK_SIDE = MARK_SIZE + 2 * MARK_PAD + 8      # canvas the glyph is drawn on
+MARK_SIDE = 168                # the tile, in CSS px — GitHub shows intrinsic px, so this is
+MARK_GLYPH = 140               # what it displays at; the glyph fills ~70% of the tile
+MARK_RADIUS = 13               # CSS px, and the PIL mask uses the same radius times SCALE
 
 
-def shoot(tmp, name, body, width, height=100, margin=28, crop=True, fit=None):
+def shoot(tmp, name, body, width, height=100, margin=28, crop=True, tile=None):
     """Render `body` on a `width` x `height` CSS canvas, scaled by SCALE, to docs/assets.
 
     `crop` measures the art off the render (whatever is not the page's own ink) so nothing
-    has to be hand-tuned; `fit` skips that and resamples to a fixed square, for the case
-    where the canvas *is* the composition.
+    has to be hand-tuned. `tile` skips that and cuts the square canvas loose on a transparent
+    rounded card instead, for the case where the canvas *is* the composition.
     """
     doc = os.path.join(tmp, name[:-4] + ".html")
     page = ("<!doctype html><html><head><meta charset='utf-8'>"
@@ -76,19 +76,30 @@ def shoot(tmp, name, body, width, height=100, margin=28, crop=True, fit=None):
         ["npx", "--no-install", "playwright", "screenshot", "--full-page",
          "--viewport-size=%d,%d" % (width * SCALE, height * SCALE), "file://" + doc, out],
         check=True, capture_output=True)
-    from PIL import Image, ImageChops
+    from PIL import Image
     im = Image.open(out).convert("RGB")
     if crop:
         # The viewport is a guess at the canvas; the art is whatever is not the page's own
         # ink, so the crop is measured off the render rather than off a hand-tuned width.
+        from PIL import ImageChops
         bg = Image.new("RGB", im.size, im.getpixel((2, 2)))
         box = ImageChops.difference(im, bg).convert("L").point(lambda v: 255 if v > 8 else 0).getbbox()
         if box:
             m = margin * SCALE
             im = im.crop((max(0, box[0] - m), max(0, box[1] - m),
                           min(im.width, box[2] + m), min(im.height, box[3] + m)))
-    if fit:
-        im = im.resize((fit, fit), Image.LANCZOS)
+    if tile:
+        # A square of flat ink on GitHub's near-black canvas reads as a missing image. The
+        # corners go transparent and a hairline follows the same radius, so it reads as a
+        # card that was drawn. The mask is cut at 4x so its edge is antialiased.
+        from PIL import ImageDraw
+        side = tile * SCALE
+        mask = Image.new("L", (side * 4, side * 4), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, side * 4 - 1, side * 4 - 1],
+                                               radius=MARK_RADIUS * SCALE * 4, fill=255)
+        im = im.resize((side, side), Image.LANCZOS)
+        im.putalpha(mask.resize((side, side), Image.LANCZOS))
+        im = im.resize((tile, tile), Image.LANCZOS)
     im.save(out)
     print("%-20s %5dx%-5d px  %s" % (name, im.width, im.height,
                                      "%d KB" % (os.path.getsize(out) // 1024)))
@@ -107,10 +118,11 @@ try:
     # the art is set in the same families rather than a fallback.
     os.symlink(os.path.join(ROOT, "_site", "assets"), os.path.join(tmp, "assets"))
     shoot(tmp, "logo.png",
-          "<style>.mark svg{width:%dpx;height:%dpx;display:block}</style>"
+          "<style>.art{border-radius:%dpx;box-shadow:inset 0 0 0 1px rgba(242,240,235,.14)}"
+          ".mark svg{width:%dpx;height:%dpx;display:block}</style>"
           "<div class='mark' style='display:flex;align-items:center;justify-content:center;"
-          "height:%dpx'>%s</div>" % (MARK_SIZE, MARK_SIZE, MARK_SIDE, mark),
-          MARK_SIDE, height=MARK_SIDE, crop=False, fit=MARK_SIDE)
+          "height:%dpx'>%s</div>" % (MARK_RADIUS, MARK_GLYPH, MARK_GLYPH, MARK_SIDE, mark),
+          MARK_SIDE, height=MARK_SIDE, crop=False, tile=MARK_SIDE)
     shoot(tmp, "results-grid.png", section, 1040)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

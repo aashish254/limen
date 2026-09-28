@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command verification gate. Every task in TODO.md is checked against this.
+# One-command verification gate: the suite, every bench, and the mutation score.
 # Runs the whole suite + all benches under the primary interpreter and, when a second
 # one exists, under that too — each labelled with the version it actually ran, never
 # with the version this script hoped for. Exits non-zero on the first failure.

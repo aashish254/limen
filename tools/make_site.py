@@ -463,8 +463,12 @@ def slot_table(stats):
     return "\n".join(rows)
 
 
-# Each row is a claim the page refuses to make, keyed by the TODO.md item that holds it
-# open. If someone checks the box, the build stops: the page has to be edited on purpose.
+# Each row is a claim the page refuses to make. The list used to be keyed to a task box
+# in TODO.md, so that closing the box broke the build until the page was edited on
+# purpose; TODO.md is no longer published, so this table is the source and a row is
+# deleted by hand, when the number that replaces it is real. That is a weaker guard than
+# the one it replaces, and it should be read as such: nothing fails if a gate opens here
+# and nobody notices.
 GATES = [
     ("V2-A", "−X% on your own traffic", "a real agent session across ≥2 vendors, run by "
      "you. Nothing here has seen a human conversation; every number on this page comes "
@@ -485,20 +489,9 @@ GATES = [
 ]
 
 
-def gate_table(todo):
-    rows = []
-    for key, claim, why in GATES:
-        if key == "WIN":
-            opened = "windows-latest" in todo or "Windows" in todo
-        else:
-            pattern = r"^- \[[ x~]\] \*\*%s\*\*" % re.escape(key)
-            done = re.search(r"^- \[x\] \*\*%s\*\*" % re.escape(key), todo, re.M)
-            opened = bool(re.search(pattern, todo, re.M)) and not done
-        if not opened:
-            raise SystemExit("%s is no longer an open item in TODO.md — the page still "
-                             "says it is not measured" % key)
-        rows.append("<tr><td>%s</td><td>%s</td></tr>" % (esc(claim), esc(why)))
-    return "\n".join(rows)
+def gate_table():
+    return "\n".join("<tr><td>%s</td><td>%s</td></tr>" % (esc(claim), esc(why))
+                     for _key, claim, why in GATES)
 
 
 # --------------------------------------------------------------------- repo counts
@@ -584,7 +577,6 @@ def main():
     py_floor = python_floor()
     py_lo, py_hi = py_versions()
     head_pct = "%.1f" % stats["overall"]["reduction_pct"]
-    todo = read(os.path.join(ROOT, "TODO.md"))
 
     page = read(TEMPLATE) if args.design == "original" else read(os.path.join(HERE, "site.professional.tmpl"))
     tokens = {
@@ -610,7 +602,7 @@ def main():
         "FIGURES": figures(stats),
         "FIG_REGRET": regret_figure(stats),
         "COST_PROSE": cost_prose(stats),
-        "GATE_TABLE": gate_table(todo),
+        "GATE_TABLE": gate_table(),
         "CMD": stats["command"],
         "CMD_HERO": hero_cmd,
         "CMDS": str(subcommands()),

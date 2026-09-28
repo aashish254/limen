@@ -27,7 +27,7 @@ heuristics it ships with, instead of your frontier model.
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
 just by using it.*
 
-[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](https://github.com/aashish254/limen/blob/main/WIRING.md) · [Reference docs](https://github.com/aashish254/limen/blob/main/docs/index.md) · [Live measurement page](https://aashish254.github.io/limen/) · [Benchmark](#benchmark) · [Roadmap v2→v13](https://github.com/aashish254/limen/blob/main/ROADMAP.md)
+[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](https://github.com/aashish254/limen/blob/main/WIRING.md) · [Reference docs](https://github.com/aashish254/limen/blob/main/docs/index.md) · [Live measurement page](https://aashish254.github.io/limen/) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
 
 ![The first thirty seconds: doctor reads the machine, demo replays agent traffic, live prices the headroom](https://github.com/aashish254/limen/raw/main/docs/assets/first-30-seconds.gif)
 
@@ -39,9 +39,11 @@ screen is what the mock's pricing says the traffic *would* have cost, and `$0.40
 the same 17 requests would cost with the headroom removed.
 [How this was captured](https://github.com/aashish254/limen/blob/main/docs/assets/first-30-seconds.sh).*
 
-The full product & engineering spec — goal, requirements, success criteria — lives in
-[`SPEC.md`](https://github.com/aashish254/limen/blob/main/SPEC.md), and the forward plan (why there's no room to catch us for ~8
-months) lives in [`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md).
+What this project promises is enforced by code, not by a plan document: the six invariants
+are named tests in [`subproto/tests/test_invariants.py`](https://github.com/aashish254/limen/blob/main/subproto/tests/test_invariants.py),
+every command is documented in [`docs/`](https://github.com/aashish254/limen/tree/main/docs),
+and every number is labelled measured, projected or gated on the
+[live measurement page](https://aashish254.github.io/limen/#unmeasured).
 
 </div>
 
@@ -79,8 +81,7 @@ models, vendors, or your editor:
 
 ### Not another router, not a regex token-killer
 
-This space is live and crowded, so the honest comparison (full table in
-[`SPEC.md` §1.3](https://github.com/aashish254/limen/blob/main/SPEC.md)):
+This space is live and crowded, so the honest comparison:
 
 - **vs [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)** — Jev is
   a *closed cloud service* you build apps **with**. subproto is the open, local
@@ -461,7 +462,7 @@ real provider billing:
 
 subproto ships with heuristics so it is useful on day zero, and the decision model is a
 **pluggable backend** — Laya is just adapter #1, so when a better small model lands you
-swap it, you don't fork the project (see [`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md) §1). It also ships a
+swap it, you don't fork the project. It also ships a
 local scoring server that speaks the adapter's `/health` + `/score` contract. It has two
 backends: a deterministic lexical scorer (no weights, no torch, the same signal the
 heuristics use, and it says it is a stand-in), and **the real Laya checkpoint** —
@@ -614,9 +615,9 @@ including the refusals, with their reasons — and only a run that *finished* be
 `mlx / mlx-lm not installed`, and that refusal is one honest step short of the whole truth:
 `train/finetune_mlx.py` is a `mlx_lm` LoRA script, and the checkpoint we actually serve
 is an encoder with a classification head, which that script cannot fine-tune at all (the
-architecture was only read after the decision was locked — see [`SPEC.md`](https://github.com/aashish254/limen/blob/main/SPEC.md) §11.1).
-Installing MLX would not open V2-D; a sequence-classification LoRA over torch/PEFT is the
-build that would, and it needs labels first (roadmap V2-A/V2-D). A command that cannot
+architecture was only read after the decision was locked).
+Installing MLX would not open the fine-tune; a sequence-classification LoRA over torch/PEFT
+is the build that would, and it needs labels before it can be judged. A command that cannot
 honour the run says so instead of pretending to train.
 
 ## Design tenets
@@ -644,10 +645,9 @@ honour the run says so instead of pretending to train.
 
 ## Roadmap
 
-The full forward plan — **v2→v13**, engineered so the pluggable model core, the
-labelled-decision dataset, the pass-rate-held measurement and the breadth of
-integrations compound into an ~8-month lead — is its own spec:
-**[`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md)**. The short version, v1:
+What is shipped and what is outstanding, item by item. The later versions are planned
+but not published — the checklist below is the part of this project's future that is a
+promise rather than a position.
 
 - [x] Transparent OpenAI + Anthropic proxy with SSE-aware usage capture
 - [x] Gemini native + OpenAI `responses` dialects (usage, routing, mock, tests)
@@ -669,7 +669,7 @@ integrations compound into an ~8-month lead — is its own spec:
       `--backend laya`, plus the published per-decision curve (`bench/laya_latency.py`)
 - [ ] A fine-tune that fits the architecture: a sequence-classification LoRA over the
       exported split (`train/finetune_mlx.py` is a causal-LM script and cannot train this
-      encoder). Needs labels — roadmap V2-A then V2-D
+      encoder). Needs labels first, and then a trainer that matches the architecture
 - [ ] Hero metric on a real SWE-bench-style suite + billed provider savings
       (needs non-zero API spend — external; mock-measured number ships meanwhile)
 - [ ] HN/PH launch post (external: a human action, not a command). The release half of this

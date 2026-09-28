@@ -3,7 +3,7 @@
 # `run_tests.sh` from it. Setuptools would ship only the installable packages plus the
 # top-level metadata, so the gates and the mock provider are named explicitly here.
 include README.md LICENSE run_tests.sh install.sh requirements-dev.txt
-include SPEC.md ROADMAP.md TODO.md WIRING.md CONTRIBUTING.md SECURITY.md CHANGELOG.md
+include WIRING.md CONTRIBUTING.md SECURITY.md CHANGELOG.md
 include .subproto.example.json
 include tools/check_install.sh
 

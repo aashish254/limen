@@ -78,7 +78,7 @@ def _title_words(text):
 
 
 def parse_doc(src, lang):
-    """Return (symbols, doc) for markdown / rst-txt / sql. See S27 in TODO.md."""
+    """Return (symbols, doc) for markdown / rst-txt / sql."""
     if lang == "markdown":
         heads = [m.group(1) for m in MD_HEADING_RE.finditer(src)]
     elif lang == "sql":
@@ -176,7 +176,7 @@ def _csv_columns(src, delim):
 
 
 def parse_data(src, lang, delim=None):
-    """(symbols, doc, key_names) for a json / yaml / csv file. See S31 in TODO.md."""
+    """Return (symbols, doc, key_names) for a json / yaml / csv file."""
     if lang == "json":
         try:
             paths = _json_key_paths(json.loads(src))

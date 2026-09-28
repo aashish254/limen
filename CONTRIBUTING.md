@@ -126,7 +126,7 @@ from that; the next tag is the first one CI publishes.
 - One rule per PR, and its test in the same commit.
 - Paste the command you ran and its real output into the PR description. If a number
   moved, say what it was before.
-- If your change weakens a claim in `README.md`, `SPEC.md` or `ROADMAP.md`, update the
+- If your change weakens a claim in `README.md` or a row on the live page, update the
   claim in the same PR. Docs that outrun the code get reverted, not starred.
 
 Issues: bugs need the command, the Python version, the OS and `subproto doctor`.

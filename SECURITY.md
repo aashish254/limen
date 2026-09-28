@@ -40,8 +40,9 @@ isolation between users, and it would need all three.
   reversible, but a wrong drop can still degrade an answer. The measured price of
   enforcing is printed by `subproto report` as *regrettable drops*; read it before you
   turn a slot on.
-- The accuracy of the routing decisions is not yet measured on real traffic
-  (`TODO.md` V2-A). Every public number is labelled measured, projected or gated.
+- The accuracy of the routing decisions is not yet measured on real traffic — that
+  needs a labelled corpus, which is a human action rather than a code task. Every
+  public number is labelled measured, projected or gated.
 
 ## Reporting a vulnerability
 

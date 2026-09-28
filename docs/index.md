@@ -4,9 +4,8 @@ A local *System One* layer between a terminal coding agent and its LLM provider:
 decides, before the turn is paid for, which tools and which context that turn needs.
 Zero runtime dependencies, Python 3.9+, stdlib only, no key and no network to run.
 
-**Limen** is the project. Every command below is `subproto`, the package name, and
-[`SPEC.md`](../SPEC.md) / [`ROADMAP.md`](../ROADMAP.md) keep that name in their titles
-because they document the code, not the brand.
+**Limen** is the project. Every command below is `subproto`, the package name, because
+these pages document the code rather than the brand.
 
 This is the map. Read `README.md` first; the rest is reference.
 
@@ -16,9 +15,7 @@ This is the map. Read `README.md` first; the rest is reference.
 |---|---|
 | [`README.md`](../README.md) | The front page: what it does, one-command install, the quick start, the honest number and its conditions, the design-system note. Start here. |
 | [`WIRING.md`](../WIRING.md) | Per-agent setup. The `base_url` each supported tool uses (Claude Code, Codex, Gemini CLI, Cline, aider, OpenCode, Antigravity), the endpoints subproto serves, and how to confirm it is live. |
-| [`SPEC.md`](../SPEC.md) | Product and engineering spec: the goal, users, non-goals, the six core invariants (I1–I6), functional requirements FR-1…FR-11 with acceptance criteria, milestones and definition of done. |
-| [`ROADMAP.md`](../ROADMAP.md) | The forward plan, v2→v13: how the tiny decision model is a pluggable backend and which steps are gated. |
-| [`TODO.md`](../TODO.md) | What is outstanding and **why it is gated** — external labels, non-zero API spend, a public task suite. Items marked `BLOCKED(external)` are blocked on a human action, not on code. |
+| [`subproto/tests/test_invariants.py`](../subproto/tests/test_invariants.py) | The six invariants (I1–I6) as executable checks — byte-for-byte passthrough, tail protection, the correctness floor. What the project promises is a test, not a paragraph. |
 | [`CHANGELOG.md`](../CHANGELOG.md) | Release history grouped by what a user gets, honest negatives kept visible, ending in the release-readiness work in flight. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`SECURITY.md`](../SECURITY.md), [`LICENSE`](../LICENSE) | How to contribute; the security and disclosure posture; Apache-2.0. |
 
@@ -46,4 +43,4 @@ traffic would do), and **gated** (blocked on a human action) — see SPEC invari
 
 The **billed hero number** (input tokens down, p50 TTFT down, at a held pass rate against
 a real provider) is **gated** on real API spend and a public task suite; it is not in these
-files. See `TODO.md` and `ROADMAP.md` for the gate.
+files. `README.md`'s roadmap names each open item and what it waits on.
