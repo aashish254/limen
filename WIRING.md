@@ -31,6 +31,16 @@ it to the vendor upstream untouched. Nothing is uploaded anywhere (invariant I4)
 Override an upstream with `SUBPROTO_ANTHROPIC_UPSTREAM`, `SUBPROTO_OPENAI_UPSTREAM`,
 or `SUBPROTO_GEMINI_UPSTREAM` (handy for pointing a dialect at the test mock).
 
+An override is the **origin only** — no `/v1`, no trailing slash. The proxy forwards to
+`<override> + the path the agent asked for`, so `http://127.0.0.1:11434/v1` sends
+`/v1/chat/completions` to `/v1/v1/chat/completions` and the upstream answers 404. This
+is the opposite of the client-side variables below, which do take the `/v1` because the
+client is the one appending the path. To run a dialect against a local Ollama:
+
+```bash
+SUBPROTO_OPENAI_UPSTREAM=http://127.0.0.1:11434 subproto up
+```
+
 ## Per-tool wiring
 
 ### Claude Code
@@ -69,15 +79,36 @@ aider --model gpt-5            # or --anthropic-api-key + ANTHROPIC_BASE_URL
 ```
 
 ### OpenCode
-`~/.opencode/config.json`:
-```json
+Global config is `~/.config/opencode/opencode.jsonc`, and the key is **`provider`**
+(singular) — `~/.opencode/config.json` with `providers` is not read by OpenCode, so
+editing it silently does nothing.
+
+```jsonc
 {
-  "providers": {
-    "openai": { "options": { "baseURL": "http://127.0.0.1:8787/v1" } },
-    "anthropic": { "options": { "baseURL": "http://127.0.0.1:8787" } }
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "limen": {
+      "name": "Limen",
+      "npm": "@ai-sdk/anthropic",
+      "options": { "baseURL": "http://127.0.0.1:8787" },
+      "models": { "claude-sonnet-4-5": { "name": "sonnet via limen" } }
+    },
+    "limen-openai": {
+      "name": "Limen (OpenAI)",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://127.0.0.1:8787/v1" },
+      "models": { "gpt-5": { "name": "gpt-5 via limen" } }
+    }
   }
 }
 ```
+
+Pick the model in `opencode` (`/models`) after starting the proxy. The key is
+supplied through `opencode auth login`, and subproto forwards it untouched.
+
+Use a model name the vendor really serves: subproto relays to `api.anthropic.com`
+or `api.openai.com` for that dialect, so a name that only exists on some other
+inference host will be rejected upstream.
 
 ### Antigravity (Gemini-native)
 Point the model endpoint at the Gemini base above:

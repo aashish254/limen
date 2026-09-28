@@ -286,6 +286,27 @@ def test_cli_where_takes_a_repo_not_just_an_index(tmp_path, capsys):
     assert rc == 0 and isinstance(_json.loads(captured.out), list)
 
 
+def test_a_multi_line_docstring_never_orphans_a_line_in_where(tmp_path, capsys):
+    """The preview under a path is one line; a module docstring is not.
+
+    Truncating the docstring before collapsing its newlines spilled the remainder
+    onto the page at column 0 — a two-letter orphan in the middle of a list whose
+    whole point is one column of names.
+    """
+    from subproto import cli
+
+    (tmp_path / "refund_helper.py").write_text(
+        '"""refund helper\n\nThe retry path is documented at length below."""\n')
+    rc = cli.main(["where", "refund", "--graph", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "refund_helper.py" in out, "the fixture did not reach the page at all"
+    orphans = [ln for ln in out.splitlines()
+               if ln.strip() and not ln.startswith(" ")
+               and "subproto where" not in ln]
+    assert not orphans, "line starts at column 0: %r" % orphans
+
+
 def test_a_rebuilt_index_is_not_scored_with_the_previous_indexs_view():
     """S32: `score_files` caches its lowered/symbol-set view, keyed to the node table.
 

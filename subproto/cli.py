@@ -528,7 +528,7 @@ def cmd_where(args):
             print(style.table("%.1f" % score, (rel, "", -52),
                               (",".join(why)[:44], "", 0), name_w=6,
                               indent=style.INDENT, color=color))
-            doc = (node.get("doc") or "").strip()[:70]
+            doc = " ".join((node.get("doc") or "").split())[:70]
             # Hang the qualifier under the path column (2 of indent + the 6-wide
             # score + the cell's leading space), not under some other block's margin.
             print(style.note("%d lines%s" % (
@@ -1159,6 +1159,17 @@ def cmd_learn(args):
                        "(%d never stored)" % (s["requests_scanned"],
                                               s["bodies_available"],
                                               s["skipped_no_body"]), color=color))
+    if not s["requests_scanned"]:
+        # `--store-bodies` cannot fix this: with no decision on the request there is no
+        # drop to contradict, whatever the body says. `subproto demo` without --slots
+        # records exactly this shape, so the sentence names the flag that changes it.
+        print("")
+        print(style.prose("Nothing to judge — no recorded request carries a decision, so "
+                          "there is nothing for the traffic to contradict. Compile one per "
+                          "request with subproto up --slots, or watch it happen on scripted "
+                          "traffic with subproto demo --slots.",
+                          indent=style.INDENT, color=color))
+        return 0
     if not s["bodies_available"]:
         print("")
         print(style.prose("Nothing to judge — a re-read is only visible in the recorded "

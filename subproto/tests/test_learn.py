@@ -6,6 +6,7 @@ under pytest's default import mode the tests dir is on `sys.path`, so the two fi
 share one definition of "a session that re-reads a file it just lost".
 """
 
+import gzip
 import json
 import os
 import re
@@ -74,6 +75,31 @@ def test_learn_dry_run_writes_nothing(tmp_path, capsys):
     assert "written  nothing  (--dry-run)" in out
     assert not os.path.exists(implicit.implicit_path(config))
     assert implicit.load_implicit(config) == {}
+    telemetry.close()
+
+
+def test_learn_on_traffic_with_no_decisions_names_the_slots_flag(tmp_path, capsys):
+    """`subproto demo` without --slots leaves exactly this shape: rows, no decisions.
+
+    The old sentence blamed `--store-bodies` for every empty harvest, but bodies were
+    on disk the whole time — what was missing was a compiled decision to contradict,
+    which is `--slots`. Naming the wrong flag sends the reader to the wrong command.
+    """
+    config = _home(tmp_path)
+    telemetry = _telemetry(config)
+    raw = protocol.dump_body(_turn_a())
+    sha = protocol.sha256_12(raw)
+    with gzip.open(os.path.join(config.bodies_dir, "anthropic_%s.json.gz" % sha),
+                   "wb") as f:
+        f.write(raw)
+    telemetry.record({"ts": 1000.0, "api": "anthropic", "path": "/v1/messages",
+                      "client": "claude-code", "model": "claude-sonnet-x",
+                      "status": 200, "body_sha": sha, "decisions": None})
+    cli.main(["learn", "--home", str(tmp_path / "home")])
+    out = capsys.readouterr().out
+    assert "Nothing to judge" in out
+    assert "--slots" in out, "the page must name the flag that compiles a decision"
+    assert "--store-bodies" not in out, "the body is on disk here; that advice is a lie"
     telemetry.close()
 
 
