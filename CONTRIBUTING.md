@@ -98,14 +98,22 @@ The `__version__` in `subproto/__init__.py` *is* the release:
 `.github/workflows/publish.yml` builds the
 tag, fails if the wheel it produced does not carry the version the tag was cut from, installs
 that wheel into a fresh offline venv, runs it from a directory that is not the clone, and only
-then uploads. So the sequence is: land the change, wait for `verify` to go green on it,
-rebuild the page (`python3 tools/make_site.py`, commit `_site/`), bump the version, tag, and
-push the tag — `git tag -a v0.1.1 -m "…" && git push origin v0.1.1`.
+then uploads. So the sequence is: land the change, wait for `verify` to go green on it, bump
+the version, tag, and push the tag — `git tag -a v0.1.1 -m "…" && git push origin v0.1.1`.
+Then, once the index actually carries it, rebuild the page (`python3 tools/make_site.py`,
+commit `_site/`) and update the prose that quotes the number.
 
 No upload credential lives in this repo or on anyone's laptop. The identity is a *trusted
 publisher* registered on pypi.org for the project: owner `aashish254`, repository `limen`,
 workflow `publish.yml`, environment `pypi`. If that registration is missing or wrong the run
 goes red and nothing is spent — a version number is only consumed when the upload succeeds.
+
+The bump is one line, but the number is also quoted in prose: `README.md`, `docs/commands.md`,
+`tools/site.professional.tmpl` and `tools/make_site.py`. Those surfaces say what the index
+*has*, so they are updated in the commit after the upload goes green — never in the commit the
+tag is cut from, which would claim a release that does not exist yet. `docs/commands.md` quotes
+the literal output of `subproto --version`, so re-capture that line from the installed wheel
+instead of editing its digits.
 
 `0.1.0` is the exception, and it is worth knowing before you diff it against the rule: it went
 out by hand with a short-lived token on 2026-09-28, before any publisher existed, and its tag

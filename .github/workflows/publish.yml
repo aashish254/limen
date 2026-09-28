@@ -17,8 +17,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Which tag to publish
-        default: v0.1.0
+        description: Which tag to publish, e.g. v0.1.1
+        default: ""
         type: string
 
 permissions:
