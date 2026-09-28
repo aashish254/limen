@@ -3,6 +3,7 @@ every endpoint the docs promise — so the README wiring claims stay auditable
 (invariant I6: measured, not claimed)."""
 
 import os
+import re
 import socket
 import threading
 import time
@@ -50,6 +51,17 @@ def test_wiring_covers_every_target_agent():
     for tool in ("claude code", "codex", "gemini cli", "cline", "aider",
                  "opencode", "antigravity"):
         assert tool in text, "WIRING.md is missing wiring for %s" % tool
+
+
+def test_readme_links_are_absolute():
+    """PyPI renders README verbatim and does not resolve a relative link target
+    (pypa/readme_renderer#163), so one turns into a 404 against pypi.org on the page a
+    stranger lands on straight after `pip install` — and only publishing a new version
+    can repair it. So the tree that is tagged must not contain one."""
+    text = open(os.path.join(ROOT, "README.md")).read()
+    rel = [t for t in re.findall(r"\]\(([^)\s]+)\)", text)
+           if not t.startswith(("http://", "https://", "mailto:", "#"))]
+    assert not rel, "README.md has relative link targets, which PyPI cannot resolve: %s" % rel
 
 
 def test_dialect_routes_every_documented_path():

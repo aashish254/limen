@@ -7,9 +7,9 @@ agent makes before it spends anything
 
 [![CI](https://github.com/aashish254/limen/actions/workflows/ci.yml/badge.svg)](https://github.com/aashish254/limen/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/subproto)](https://pypi.org/project/subproto/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-informational)](pyproject.toml)
-[![Runtime dependencies: 0](https://img.shields.io/badge/dependencies-none-informational)](pyproject.toml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/aashish254/limen/blob/main/LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-informational)](https://github.com/aashish254/limen/blob/main/pyproject.toml)
+[![Runtime dependencies: 0](https://img.shields.io/badge/dependencies-none-informational)](https://github.com/aashish254/limen/blob/main/pyproject.toml)
 
 **A System One layer for coding agents — decide before you pay.**
 
@@ -25,9 +25,9 @@ heuristics it ships with, instead of your frontier model.
 *Faster first token, fewer replayed tokens, and a fine-tuning dataset you build
 just by using it.*
 
-[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](WIRING.md) · [Reference docs](docs/index.md) · [Benchmark](#benchmark) · [Roadmap v2→v13](ROADMAP.md)
+[Install](#install) · [30-second demo](#quick-start) · [How it works](#how-it-works) · [Wiring your agent](https://github.com/aashish254/limen/blob/main/WIRING.md) · [Reference docs](https://github.com/aashish254/limen/blob/main/docs/index.md) · [Live measurement page](https://aashish254.github.io/limen/) · [Benchmark](#benchmark) · [Roadmap v2→v13](https://github.com/aashish254/limen/blob/main/ROADMAP.md)
 
-![The first thirty seconds: doctor reads the machine, demo replays agent traffic, live prices the headroom](docs/assets/first-30-seconds.gif)
+![The first thirty seconds: doctor reads the machine, demo replays agent traffic, live prices the headroom](https://github.com/aashish254/limen/raw/main/docs/assets/first-30-seconds.gif)
 
 *The first thirty seconds, on an installed wheel: `subproto --version`, then `doctor`
 reads the machine, `demo` replays 17 synthetic agent requests through the proxy against a
@@ -35,11 +35,11 @@ local mock, and `live` prices the headroom those requests still carry — 32% he
 the slots are **observing**, not enforcing. No key, and nothing billed: the `$0.59` on
 screen is what the mock's pricing says the traffic *would* have cost, and `$0.40` is what
 the same 17 requests would cost with the headroom removed.
-[How this was captured](docs/assets/first-30-seconds.sh).*
+[How this was captured](https://github.com/aashish254/limen/blob/main/docs/assets/first-30-seconds.sh).*
 
 The full product & engineering spec — goal, requirements, success criteria — lives in
-[`SPEC.md`](SPEC.md), and the forward plan (why there's no room to catch us for ~8
-months) lives in [`ROADMAP.md`](ROADMAP.md).
+[`SPEC.md`](https://github.com/aashish254/limen/blob/main/SPEC.md), and the forward plan (why there's no room to catch us for ~8
+months) lives in [`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md).
 
 </div>
 
@@ -78,7 +78,7 @@ models, vendors, or your editor:
 ### Not another router, not a regex token-killer
 
 This space is live and crowded, so the honest comparison (full table in
-[`SPEC.md` §1.3](SPEC.md)):
+[`SPEC.md` §1.3](https://github.com/aashish254/limen/blob/main/SPEC.md)):
 
 - **vs [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)** — Jev is
   a *closed cloud service* you build apps **with**. subproto is the open, local
@@ -133,7 +133,7 @@ says `subproto`. One brand for people to point at, one name for a shell to type.
 
 Python 3.9 or newer, **zero runtime dependencies**, stdlib only, no key, no network
 beyond the provider you point it at. Verified on macOS and Linux; Windows runs behind an
-explicit "not tested by us" (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
+explicit "not tested by us" (see [`CONTRIBUTING.md`](https://github.com/aashish254/limen/blob/main/CONTRIBUTING.md)).
 
 ```bash
 pip install subproto                 # or: pipx install subproto
@@ -216,7 +216,7 @@ subproto retrain              # the cadence verdict + the exact trainer command,
 
 `subproto inject claude|codex|gemini|aider` prints the exact env vars for each tool.
 For the precise `base_url`/endpoint every supported agent uses, see
-[`WIRING.md`](WIRING.md).
+[`WIRING.md`](https://github.com/aashish254/limen/blob/main/WIRING.md).
 
 ## What it prints
 
@@ -229,24 +229,24 @@ of API spend, no key.
 what each model and client cost, the headroom the slots price without touching, and the
 decision latency the routing model actually answered at.
 
-![report after the demo: 179,280 tok billed input, p50 1.2ms slot decision latency, 56.1% of input in tool schemas](docs/assets/terminal/demo-slots.png)
+![report after the demo: 179,280 tok billed input, p50 1.2ms slot decision latency, 56.1% of input in tool schemas](https://github.com/aashish254/limen/raw/main/docs/assets/terminal/demo-slots.png)
 
 **`subproto show 3`** — one request and every decision it carried, with the reason beside
 each cut. `delivered` is a verdict the model made and the compiler paid for; `potential` is
 advice only. The `body present ~/…` line is the stored request, so a pointer can be opened
 and checked rather than trusted.
 
-![show 3: tool_gate delivered 12 kept 12 cut 4,145 tok, compact delivered 10 kept 3 cut 1,200 tok, effort potential](docs/assets/terminal/show-compiled.png)
+![show 3: tool_gate delivered 12 kept 12 cut 4,145 tok, compact delivered 10 kept 3 cut 1,200 tok, effort potential](https://github.com/aashish254/limen/raw/main/docs/assets/terminal/show-compiled.png)
 
 **`subproto doctor --port 0`** — the machine readout a stranger gets when something is
 wrong: six checks, each one measured rather than assumed, two state words that need
 fixing, and no key material on the page.
 
-![doctor: 6 checks, 2 to fix — python ok, data dir ok, port ok, provider keys warn, laya runtime not ready, backend not configured](docs/assets/terminal/doctor.png)
+![doctor: 6 checks, 2 to fix — python ok, data dir ok, port ok, provider keys warn, laya runtime not ready, backend not configured](https://github.com/aashish254/limen/raw/main/docs/assets/terminal/doctor.png)
 
 `live`'s meter and the `report` page over traffic with no decisions are in
-[`docs/assets/terminal/`](docs/assets/terminal), and
-[`docs/assets/terminal-stills.sh`](docs/assets/terminal-stills.sh) re-runs every command
+[`docs/assets/terminal/`](https://github.com/aashish254/limen/tree/main/docs/assets/terminal), and
+[`docs/assets/terminal-stills.sh`](https://github.com/aashish254/limen/blob/main/docs/assets/terminal-stills.sh) re-runs every command
 above and re-draws every picture — including the row count, which each page measures for
 itself so nothing scrolls out of the frame.
 
@@ -441,7 +441,7 @@ real provider billing:
 
 subproto ships with heuristics so it is useful on day zero, and the decision model is a
 **pluggable backend** — Laya is just adapter #1, so when a better small model lands you
-swap it, you don't fork the project (see [`ROADMAP.md`](ROADMAP.md) §1). It also ships a
+swap it, you don't fork the project (see [`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md) §1). It also ships a
 local scoring server that speaks the adapter's `/health` + `/score` contract. It has two
 backends: a deterministic lexical scorer (no weights, no torch, the same signal the
 heuristics use, and it says it is a stand-in), and **the real Laya checkpoint** —
@@ -594,7 +594,7 @@ including the refusals, with their reasons — and only a run that *finished* be
 `mlx / mlx-lm not installed`, and that refusal is one honest step short of the whole truth:
 `train/finetune_mlx.py` is a `mlx_lm` LoRA script, and the checkpoint we actually serve
 is an encoder with a classification head, which that script cannot fine-tune at all (the
-architecture was only read after the decision was locked — see [`SPEC.md`](SPEC.md) §11.1).
+architecture was only read after the decision was locked — see [`SPEC.md`](https://github.com/aashish254/limen/blob/main/SPEC.md) §11.1).
 Installing MLX would not open V2-D; a sequence-classification LoRA over torch/PEFT is the
 build that would, and it needs labels first (roadmap V2-A/V2-D). A command that cannot
 honour the run says so instead of pretending to train.
@@ -627,7 +627,7 @@ honour the run says so instead of pretending to train.
 The full forward plan — **v2→v13**, engineered so the pluggable model core, the
 labelled-decision dataset, the pass-rate-held measurement and the breadth of
 integrations compound into an ~8-month lead — is its own spec:
-**[`ROADMAP.md`](ROADMAP.md)**. The short version, v1:
+**[`ROADMAP.md`](https://github.com/aashish254/limen/blob/main/ROADMAP.md)**. The short version, v1:
 
 - [x] Transparent OpenAI + Anthropic proxy with SSE-aware usage capture
 - [x] Gemini native + OpenAI `responses` dialects (usage, routing, mock, tests)
@@ -655,14 +655,14 @@ integrations compound into an ~8-month lead — is its own spec:
 - [ ] Tagged PyPI release + HN/PH launch post (external: human actions). Two of its three
       halves are done: `v0.1.0` is tagged and `subproto 0.1.0` is on PyPI, and the demo GIF
       at the top of this page was recorded from the installed wheel
-      ([`docs/assets/first-30-seconds.sh`](docs/assets/first-30-seconds.sh) re-makes it).
+      ([`docs/assets/first-30-seconds.sh`](https://github.com/aashish254/limen/blob/main/docs/assets/first-30-seconds.sh) re-makes it).
       What is left is the launch post, which is a human action rather than a command
 
 ## If it does not work
 
-[`docs/troubleshooting.md`](docs/troubleshooting.md) takes the failures a first run
-actually hits — symptom, meaning, fix — and [`docs/commands.md`](docs/commands.md) /
-[`docs/configuration.md`](docs/configuration.md) are the reference for every subcommand
+[`docs/troubleshooting.md`](https://github.com/aashish254/limen/blob/main/docs/troubleshooting.md) takes the failures a first run
+actually hits — symptom, meaning, fix — and [`docs/commands.md`](https://github.com/aashish254/limen/blob/main/docs/commands.md) /
+[`docs/configuration.md`](https://github.com/aashish254/limen/blob/main/docs/configuration.md) are the reference for every subcommand
 and every env var. For a diagnosis of *your* machine rather than a list of possibilities,
 run `subproto doctor`: it binds the port, writes and deletes a witness in the data dir,
 and probes each configured backend's `/health` with the shipped timeout.
@@ -675,4 +675,4 @@ the JSONL. That is how a fast base model becomes an accurate one.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/aashish254/limen/blob/main/LICENSE).

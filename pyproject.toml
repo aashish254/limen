@@ -43,7 +43,11 @@ dependencies = []
 Homepage = "https://github.com/aashish254/limen"
 Repository = "https://github.com/aashish254/limen"
 Issues = "https://github.com/aashish254/limen/issues"
-Documentation = "https://github.com/aashish254/limen#readme"
+# `Documentation` used to resolve to `limen#readme`, i.e. to the very page these URLs
+# appear on. It now names the reference docs, and the Pages site gets its own key so a
+# reader on pypi.org can reach the printout rather than only the source.
+Documentation = "https://github.com/aashish254/limen/blob/main/docs/index.md"
+"Live measurement page" = "https://aashish254.github.io/limen/"
 
 [project.optional-dependencies]
 dev = ["pytest"]
