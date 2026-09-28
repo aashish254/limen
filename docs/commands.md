@@ -449,7 +449,7 @@ subproto doctor — 6 checks, 2 to fix
           python  ok  3.11.15
                   >= 3.9, read from pyproject.toml — this interpreter:
                   /opt/homebrew/opt/python@3.11/bin/python3.11
-        data dir  ok  /Users/aashish/.subproto
+        data dir  ok  /Users/you/.subproto
                   a file was written here and removed — telemetry.db lands
                   in this directory
             port  ok  63438  127.0.0.1
