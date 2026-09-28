@@ -75,12 +75,18 @@ jobs:
       - name: Install the built wheel offline and run it
         run: |
           set -euo pipefail
-          python -m venv .smoke
-          .smoke/bin/python -m pip install --quiet --no-index --find-links dist subproto
-          .smoke/bin/python -m pip check
+          SMOKE="$PWD/.smoke"
+          python -m venv "$SMOKE"
+          "$SMOKE/bin/python" -m pip install --quiet --no-index --find-links "$PWD/dist" subproto
+          "$SMOKE/bin/python" -m pip check
+          # The point of the next cd is that nothing here can reach the source tree: a
+          # wheel that only works from inside the clone is not a release. So every path
+          # the smoke uses after it has to be absolute — a relative `.smoke/bin/subproto`
+          # resolved against the clone, printed "No such file or directory" in an empty
+          # temp dir, and cost the first trusted-publishing run (2026-09-28).
           cd "$(mktemp -d)"
-          SUBPROTO_HOME="$PWD" .smoke/bin/subproto --version
-          SUBPROTO_HOME="$PWD" .smoke/bin/subproto doctor --port 0 > /dev/null
+          SUBPROTO_HOME="$PWD" "$SMOKE/bin/subproto" --version
+          SUBPROTO_HOME="$PWD" "$SMOKE/bin/subproto" doctor --port 0 > /dev/null
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           verbose: true
