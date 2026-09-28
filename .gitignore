@@ -23,3 +23,7 @@ bodies/
 
 # pytest
 .pytest_cache/
+
+# The share sheet this tool writes is a 3 MB artifact of one bench run, not a page the
+# README embeds. It goes to wherever it is being posted from, never into the tree.
+docs/assets/comparison-poster.png

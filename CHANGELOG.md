@@ -99,6 +99,16 @@ rebuilt so the page prints 444 too. **The next `windows-latest` run is the witne
 claim itself** — no Windows machine is in this project's loop, so `continue-on-error` stays
 on and README's "not tested by us" stays true.
 
+### One sheet of every comparison
+
+`docs/assets/make-comparison-poster.py` cuts the page's eight plates onto one share sheet
+(3060×2055) for the feeds that render no links. It extracts the plates, captions and
+provenance stamps out of the built `_site/index.html` and reads its four headline figures
+out of `bench/launch_stats.json`, so no number on the sheet is typed — including the two
+costs it prints, the parity gate's own `NOT MET` string and the 4,088 tokens billed back on
+10 regrettable drops. Its output is gitignored: a committed 3 MB PNG is a claim that goes
+stale the moment the bench runs again.
+
 ### The machine gets a page of its own
 
 - Added **`subproto doctor`** (`subproto/doctor.py`): six checks, each measured rather
