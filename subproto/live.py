@@ -56,6 +56,7 @@ def snapshot(tel, mode="auto"):
         "cost_usd": cost,
         "saved_tok": saved_tok,
         "saved_pct": 100.0 * saved_tok / denom if denom else 0.0,
+        "denom_tok": int(denom) if denom else 0,
         "after_usd": max(0.0, cost - saved_usd),
         "mode": mode,
     }
@@ -88,6 +89,16 @@ def render(snap, color=False):
         + _style.field(snap["saved_tok"], width=9, color=color)
         + _style.unit("tok", color=color), label_w=_style.METRIC_W, color=color,
         styled=True))
+    # The percentage is a ratio against the whole estimated prompt, not the billed
+    # input printed two rows down. Without the denominator on the page the two
+    # figures look contradictory (66,493 / 179,280 reads 37%, not 32%), so the
+    # basis is stated as its own row rather than left in a comment in the source.
+    if snap.get("denom_tok"):
+        lines.append(_style.row(
+            "prompt incl. cached",
+            _style.field(snap["denom_tok"], width=9, color=color)
+            + _style.unit("tok", color=color), label_w=_style.METRIC_W,
+            color=color, styled=True))
     lines.append(_style.row(
         "spend before", _style.field("$%.2f" % snap["cost_usd"], width=9,
                                      color=color),

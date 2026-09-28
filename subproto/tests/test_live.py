@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from subproto import cli, live
+from subproto import cli, live, style
 from subproto.config import Config
 from subproto.telemetry import Telemetry
 
@@ -93,3 +93,49 @@ def test_cli_live_once_exits_zero_and_prints(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "subproto" in out and "save" in out
+
+
+def test_the_saved_percent_is_reproducible_from_the_page():
+    """66,493 / 179,280 reads 37%, but the meter said 32%: the ratio is against the
+    whole estimated prompt, not the billed input. If the page shows a percent and
+    two token figures that do not divide into it, a reader cannot check the number
+    from a screenshot, so the denominator has to be on the page with them."""
+    snap = {"n": 17, "in_tok": 179280, "cost_usd": 0.59, "saved_tok": 66493,
+            "saved_pct": 32.1, "denom_tok": 207168, "after_usd": 0.40,
+            "mode": "potential"}
+    plain = live.render(snap, color=False)
+    assert "prompt incl. cached" in plain
+    assert "207,168" in plain
+    # the three printed figures have to agree with each other, not just with the
+    # reader's trust: percent == round(100 * saved / denom), and the denominator is
+    # never the billed line two rows down.
+    shown = int([w for w in plain.split() if w.endswith("%")][0].rstrip("%"))
+    assert shown == int(round(100.0 * snap["saved_tok"] / snap["denom_tok"]))
+    assert snap["denom_tok"] != snap["in_tok"]
+    # the new row goes through the same one gate as every other field
+    assert style.strip(live.render(snap, color=True)) == plain
+
+
+def test_snapshot_reports_the_divisor_it_actually_used(tmp_path):
+    """The percent on the page must be reproducible from the denominator the page
+    prints, so `snapshot` has to hand render the divisor it really used — not let
+    render re-guess it from the billed line."""
+    cfg = Config(source={"data_dir": str(tmp_path)})
+    tel = Telemetry(cfg.db_path)
+    tel.record({"ts": 1.0, "api": "anthropic", "model": "claude-x", "status": 200,
+                "usage": {"model": "claude-x", "input_uncached": 1000,
+                          "cache_write": 0, "cache_read": 500, "output": 10,
+                          "reasoning": 0, "source": "anthropic"},
+                "features": {"cat_chars": {}, "est_in_tok": 1500},
+                "decisions": [{"slot": "tool_gate", "savings_est_tok": 300}]})
+    snap = live.snapshot(tel)
+    assert snap["saved_tok"] == 300
+    assert snap["denom_tok"] == 1500          # the whole prompt, not the 1000 billed
+    assert snap["in_tok"] == 1000
+    assert snap["saved_pct"] == pytest.approx(20.0)
+    # and the rendered page divides out to the percent it printed
+    plain = live.render(snap, color=False)
+    assert "1,500" in plain
+    shown = int([w for w in plain.split() if w.endswith("%")][0].rstrip("%"))
+    assert shown == int(round(100.0 * snap["saved_tok"] / snap["denom_tok"]))
+    tel.close()
