@@ -32,13 +32,9 @@ run "--help"        subproto --help
 run "demo --slots"  subproto demo --port "$PORT" --slots
 run "report"        subproto report
 
-# `subproto doctor` is on the roadmap but not implemented yet (the --help
-# subcommand list has no `doctor`). Skip loudly instead of failing.
-if subproto --help 2>&1 | grep -qw doctor; then
-  run "doctor" subproto doctor
-else
-  echo "== doctor: SKIPPED — 'subproto doctor' does not exist in this version"
-  echo
-fi
+# `--port 0` asks the kernel for a free port instead of testing the default 8787.
+# A machine already running `subproto up` has a working install, and doctor
+# correctly exits 1 on a port it cannot bind — which is not this script's failure.
+run "doctor" subproto doctor --port 0
 
 exit "$fail"
