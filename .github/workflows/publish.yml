@@ -1,0 +1,65 @@
+name: publish
+
+# The release is built and uploaded from the tag, by CI, with no credential stored on
+# anybody's laptop: PyPI trusts this workflow's OIDC identity, registered once as a
+# "pending publisher" on pypi.org. Nothing here recomputes a number — `verify` is the
+# gate on the code, and this job only packages the tagged tree, proves the artifact
+# installs and runs, and hands it to the index.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Which tag to publish
+        default: v0.1.0
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the sdist and the wheel
+        run: |
+          python -m pip install --quiet build twine
+          python -m build
+          twine check dist/*
+      - name: The artifact must carry the version the tag was cut from
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${REF#v}"
+          SRC="$(python -c 'import subproto; print(subproto.__version__)')"
+          WHEEL="$(basename dist/*.whl)"
+          echo "tag=$TAG source=$SRC wheel=$WHEEL"
+          test "$SRC" = "$TAG" || { echo "subproto.__version__ disagrees with the tag"; exit 1; }
+          test "$WHEEL" = "subproto-$TAG-py3-none-any.whl" \
+            || { echo "the built wheel is not tagged $TAG"; exit 1; }
+      - name: Install the built wheel offline and run it
+        run: |
+          set -euo pipefail
+          python -m venv .smoke
+          .smoke/bin/python -m pip install --quiet --no-index --find-links dist subproto
+          .smoke/bin/python -m pip check
+          cd "$(mktemp -d)"
+          SUBPROTO_HOME="$PWD" .smoke/bin/subproto --version
+          SUBPROTO_HOME="$PWD" .smoke/bin/subproto doctor --port 0 > /dev/null
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
