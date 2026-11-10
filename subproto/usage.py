@@ -265,4 +265,3 @@ class ByteFeeder:
             return
         if getattr(self, "acc_pending", b""):
             self.acc.feed_sse(self.acc_pending.decode("utf-8", "replace"))
-

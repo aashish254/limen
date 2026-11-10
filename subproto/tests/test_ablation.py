@@ -125,4 +125,3 @@ def test_the_corpus_reports_its_own_ceiling():
         len(d["only_in_gold"]) + len(d["only_in_heuristic"])
         for d in c["differing_cases"])
     assert "cannot measure" in ablation.render(ablation.run_ablation(labels=["laya"]))
-
