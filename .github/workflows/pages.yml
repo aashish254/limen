@@ -27,7 +27,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Refuse to publish a page with an unrendered token
         run: |
           if grep -rl '{{[A-Z_]*}}' _site >/dev/null 2>&1; then
