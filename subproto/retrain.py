@@ -538,4 +538,3 @@ def render_text(state, command_line, ran=None, color=False):
         lines.append(st.prose("nothing was run. --run starts the trainer once ready.",
                               indent=style.INDENT, color=color))
     return "\n".join(lines)
-
