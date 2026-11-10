@@ -424,4 +424,3 @@ def test_live_answer_fits_the_shipped_budget(live_url):
     assert adapter.last_latency_ms <= Config(source={}).model_timeout_ms, \
         "%d ms > the shipped %d ms budget; raise SUBPROTO_MODEL_TIMEOUT_MS" % (
             adapter.last_latency_ms, Config(source={}).model_timeout_ms)
-
