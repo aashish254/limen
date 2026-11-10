@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        files: ^\.github/.*\.ya?ml$
+      - id: check-json
+        files: (^|/)(package\.json|package-lock\.json|tsconfig[^/]*\.json|\.eslintrc\.json)$
+      - id: check-toml
+        files: (^|/)(pyproject\.toml|Cargo\.toml)$
+
+ci:
+  autofix_prs: true
+  autoupdate_schedule: quarterly
