@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
           test -s _site/index.html
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
